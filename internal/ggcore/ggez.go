@@ -37,6 +37,26 @@ func (t *TrayMenu) OnChange(fn func(items []any)) {
 	t.mu.Unlock()
 }
 
+// pinnableTab is one entry of the side navigation (pinned apps show in the
+// sidebar, the rest live in the apps tray).
+type pinnableTab struct {
+	Name     string `json:"name"`
+	IsPinned bool   `json:"isPinned"`
+}
+
+var defaultTabs = []pinnableTab{
+	{"engine", true}, {"sonar", true}, {"moments", true},
+	{"giveaways", false}, {"news", false}, {"aimtools", false},
+}
+
+func (c *Core) pinnableTabs() []pinnableTab {
+	var tabs []pinnableTab
+	if !c.db.Get("pinnableTabs", &tabs) || len(tabs) == 0 {
+		tabs = append([]pinnableTab{}, defaultTabs...)
+	}
+	return tabs
+}
+
 func (c *Core) ggezRoutes() {
 	s := c.srv
 	s.Handle("GET /v1/appKeyStore", func(w http.ResponseWriter, r *http.Request) {
@@ -74,15 +94,19 @@ func (c *Core) ggezRoutes() {
 	})
 
 	s.Handle("GET /pinnableTab", func(w http.ResponseWriter, r *http.Request) {
-		var tab any
-		c.db.Get("pinnableTab", &tab)
-		httpx.JSON(w, map[string]any{"pinnableTab": tab})
+		httpx.JSON(w, c.pinnableTabs())
 	})
 	s.Handle("POST /pinnableTab", func(w http.ResponseWriter, r *http.Request) {
-		p, _ := decode[map[string]any](r)
-		c.db.Set("pinnableTab", p)
+		p, _ := decode[pinnableTab](r)
+		tabs := c.pinnableTabs()
+		for i := range tabs {
+			if tabs[i].Name == p.Name {
+				tabs[i].IsPinned = p.IsPinned
+			}
+		}
+		c.db.Set("pinnableTabs", tabs)
 		c.Broadcast("EVENT_PINNABLE_TAB_CHANGED", p)
-		httpx.OK(w)
+		httpx.JSON(w, tabs)
 	})
 
 	s.Handle("GET /appsTray", func(w http.ResponseWriter, r *http.Request) {

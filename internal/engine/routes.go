@@ -219,12 +219,14 @@ func (e *Engine) routes() {
 		}
 		httpx.JSON(w, map[string]any{"application_settings": e.appSettings()})
 	})
-	s.Handle("GET /color_sequences", func(w http.ResponseWriter, r *http.Request) {
-		httpx.JSON(w, map[string]any{"color_sequences": e.queryRows(`SELECT sequence_id, background_image, data, custom_gradient_data, type FROM color_sequences`)})
-	})
-	s.Handle("GET /breathe_sequences", func(w http.ResponseWriter, r *http.Request) {
-		httpx.JSON(w, map[string]any{"breathe_sequences": []any{}})
-	})
+	// color_sequences rows are typed color_sequence or breathe_sequence.
+	sequences := func(kind string) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			httpx.JSON(w, map[string]any{"sequences": e.queryRows(`SELECT sequence_id, background_image, data, custom_gradient_data FROM color_sequences WHERE type = ?`, kind)})
+		}
+	}
+	s.Handle("GET /color_sequences", sequences("color_sequence"))
+	s.Handle("GET /breathe_sequences", sequences("breathe_sequence"))
 	s.Handle("GET /oemInfo", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, map[string]any{"isMsi": false}) })
 	s.Handle("GET /isHpHost", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, map[string]any{"isHpHost": false}) })
 	s.Handle("GET /featureSplashInfos", func(w http.ResponseWriter, r *http.Request) {

@@ -93,7 +93,11 @@ func (c *Core) withLoadouts(fn func(st *loadoutState) (any, int)) (any, int) {
 	v, code := fn(&st)
 	if code == 0 || code == 200 {
 		c.saveLoadouts(st)
-		c.Broadcast("EVENT_LOADOUT_MODIFIED", map[string]any{})
+		ids := make([]string, 0, len(st.Loadouts))
+		for _, l := range st.Loadouts {
+			ids = append(ids, l.ID)
+		}
+		c.Broadcast("EVENT_LOADOUT_MODIFIED", map[string]any{"loadout_ids": ids})
 	}
 	return v, code
 }
