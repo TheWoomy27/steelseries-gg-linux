@@ -67,3 +67,35 @@ func (e *Engine) handleDeviceEvent(ev deviceEvent) {
 		e.emit("EVENT_DEVICE_STATUS_CHANGED", map[string]any{"deviceId": l.dbID, "status": ev.data})
 	}
 }
+
+// genericStatuses renders the battery / wireless link / firmware status
+// cards the client shows for a device (generic_device_settings statuses).
+func (e *Engine) genericStatuses(deviceName string) map[string]any {
+	out := map[string]any{}
+	var l *liveDevice
+	e.mu.Lock()
+	for _, x := range e.live {
+		if x.cat.Name == deviceName {
+			l = x
+		}
+	}
+	e.mu.Unlock()
+	if l == nil {
+		return out
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.battery != nil {
+		out["batteryLevels"] = map[string]any{"type": "single_battery", "statusKnown": true,
+			"percent": l.battery.percent, "charging": l.battery.charging}
+	}
+	if l.linkKnown {
+		st := "not_connected"
+		if l.linkUp {
+			st = "connected"
+		}
+		out["wirelessConnection"] = map[string]any{"type": "radio_bt_wired", "twoFourGHZStatus": st,
+			"btStatus": "not_connected", "wiredStatus": "not_connected", "uwbStatus": "not_connected"}
+	}
+	return out
+}

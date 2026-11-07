@@ -38,6 +38,15 @@ type Engine struct {
 
 	deviceEvents chan deviceEvent
 	sequencer    *sequencer
+	subApps      func() any
+}
+
+// SetSubAppSource lets the Engine's /subApps mirror the GG core's list;
+// the device config window reads the PrismSync address from it.
+func (e *Engine) SetSubAppSource(fn func() any) {
+	e.mu.Lock()
+	e.subApps = fn
+	e.mu.Unlock()
 }
 
 func New(ctx context.Context) (*Engine, error) {

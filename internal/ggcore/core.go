@@ -69,6 +69,9 @@ func New(ctx context.Context, token string, eng *engine.Engine) (*Core, error) {
 		token: token,
 	}
 	c.initSubApps()
+	c.sock.OnAuthenticated(c.replaySubApps)
+	c.evts.OnAuthenticated(c.replaySubApps)
+	eng.SetSubAppSource(func() any { return c.SubApps() })
 	c.srv.Public("/healthCheck")
 	c.srv.Public("/analytics/track")
 	c.routes()

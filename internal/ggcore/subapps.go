@@ -95,16 +95,34 @@ func (c *Core) RegisterSubApp(name string, md SubAppMetadata) {
 	}
 }
 
+// SubApps returns a snapshot of every sub-app, as GET /subApps reports it.
+func (c *Core) SubApps() map[string]SubApp {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := map[string]SubApp{}
+	for k, v := range c.subApps {
+		out[k] = *v
+	}
+	return out
+}
+
+// replaySubApps tells a newly connected client about running sub-apps;
+// it would otherwise only learn addresses from events sent before it
+// connected.
+func (c *Core) replaySubApps(send func(event string, data any)) {
+	for name, a := range c.SubApps() {
+		if a.IsRunning {
+			ev := subAppEvent{SubAppName: name, Metadata: a.Metadata, IsEnabled: a.IsEnabled}
+			send("EVENT_SUB_APP_CREATED", ev)
+			send("EVENT_SUB_APP_READY", ev)
+		}
+	}
+}
+
 func (c *Core) subAppRoutes() {
 	s := c.srv
 	s.Handle("GET /subApps", func(w http.ResponseWriter, r *http.Request) {
-		c.mu.Lock()
-		out := map[string]SubApp{}
-		for k, v := range c.subApps {
-			out[k] = *v
-		}
-		c.mu.Unlock()
-		httpx.JSON(w, map[string]any{"subApps": out})
+		httpx.JSON(w, map[string]any{"subApps": c.SubApps()})
 	})
 	s.Handle("POST /subApps/status", func(w http.ResponseWriter, r *http.Request) {
 		p, err := decode[struct {

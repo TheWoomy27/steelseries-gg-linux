@@ -235,18 +235,26 @@ func (e *Engine) miscRoutes() {
 
 	// Loadout-scoped generic device settings.
 	s.Handle("GET /v2/device/config/loadout", func(w http.ResponseWriter, r *http.Request) {
-		httpx.JSON(w, map[string]any{"settings": map[string]any{}})
+		name := r.URL.Query().Get("device")
+		httpx.JSON(w, map[string]any{"loadoutConfiguration": map[string]any{
+			"device": name, "loadoutId": r.URL.Query().Get("loadoutId"), "configId": "",
+			"settings": map[string]any{}, "statuses": e.genericStatuses(name),
+		}})
 	})
 	s.Handle("POST /v1/device/settings", func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })
 
 	// "Audio lite": the Windows Engine's built-in audio EQ for headsets
 	// when Sonar is off. On Linux, audio processing is Sonar (PipeWire).
-	s.Handle("GET /v1/audioLite/devices", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, []string{}) })
+	s.Handle("GET /v1/audioLite/devices", func(w http.ResponseWriter, r *http.Request) {
+		httpx.JSON(w, map[string]any{"compatibleDeviceNames": []string{}})
+	})
 	s.Handle("GET /v1/audioLite/status", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, map[string]any{"audioliteStatus": false}) })
 	s.Handle("GET /v1/audioLite/deviceStatus", func(w http.ResponseWriter, r *http.Request) {
 		httpx.JSON(w, map[string]any{"deviceName": "", "deviceDisplayName": "", "isDeviceActive": false, "isDeviceDefaulted": false, "isChatActive": false, "isChatDefaulted": false})
 	})
-	s.Handle("GET /v1/audioLite/deviceMetadata", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, map[string]any{"mmDeviceIds": map[string]any{}}) })
+	s.Handle("GET /v1/audioLite/deviceMetadata", func(w http.ResponseWriter, r *http.Request) {
+		httpx.JSON(w, map[string]any{"mmDeviceIds": map[string]any{}})
+	})
 	for _, p := range []string{"/v1/audioLite/setupDevice", "/v1/audioLite/setupChat", "/v1/audioLite/loopback/start", "/v1/audioLite/loopback/stop",
 		"/v1/audioSamplePlayer/play", "/v1/audioSamplePlayer/stop", "/backgroundInstall/{id}"} {
 		s.Handle("POST "+p, func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })

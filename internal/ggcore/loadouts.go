@@ -151,7 +151,7 @@ func (c *Core) loadoutRoutes() {
 		return map[string]any{"loadouts": st.Loadouts}, 200
 	}))
 	s.Handle("GET /v1/loadouts/active", c.loadoutHandler(func(st *loadoutState, r *http.Request) (any, int) {
-		return map[string]any{"loadout": findLoadout(st, st.ActiveID)}, 200
+		return map[string]any{"activeLoadout": findLoadout(st, st.ActiveID)}, 200
 	}))
 	s.Handle("GET /v1/loadouts/status", c.loadoutHandler(func(st *loadoutState, r *http.Request) (any, int) {
 		return map[string]any{"status": map[string]bool{"active": true, "profiles_enabled": st.ProfilesEnabled}}, 200

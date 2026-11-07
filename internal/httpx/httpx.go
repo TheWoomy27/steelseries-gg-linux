@@ -58,16 +58,34 @@ func (w *statusWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return h.Hijack()
 }
 
+// clientOrigin reports whether a browser request comes from the GG client
+// itself, whose pages load from file://.
+func clientOrigin(origin string) bool { return origin == "file://" || origin == "null" }
+
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	origin := r.Header.Get("Origin")
+	// Only the client's own pages may call these local APIs from a
+	// browser context; any web page origin is refused outright.
+	if origin != "" && !clientOrigin(origin) {
+		Error(w, http.StatusForbidden, "origin not allowed")
+		return
+	}
 	h := w.Header()
-	h.Set("Access-Control-Allow-Origin", "*")
-	h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept")
-	h.Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+	if origin != "" {
+		h.Set("Access-Control-Allow-Origin", origin)
+		h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept")
+		h.Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+	}
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	if s.Token != "" && !s.Open[r.URL.Path] && !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+	// Requests from outside a browser (no Origin and no Sec-Fetch-*
+	// headers: the Electron main process, scripts) must carry the bearer
+	// token. Browser requests without an Origin are same-site navigations
+	// whose responses a web page cannot read.
+	fromBrowser := origin != "" || r.Header.Get("Sec-Fetch-Mode") != ""
+	if s.Token != "" && !fromBrowser && !s.Open[r.URL.Path] && !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
 		if r.Header.Get("Authorization") != "Bearer "+s.Token {
 			slog.Warn("unauthorized", "svc", s.Name, "method", r.Method, "path", r.URL.Path)
 			Error(w, http.StatusUnauthorized, "unauthorized")

@@ -38,6 +38,27 @@ type Hub struct {
 	clients  map[*client]bool
 	handlers map[string]Handler
 	upgrader websocket.Upgrader
+	onAuth   func(send func(event string, data any))
+}
+
+// OnAuthenticated runs when a client has authenticated, so the server can
+// replay current state (running sub-apps...) to that client only.
+func (h *Hub) OnAuthenticated(fn func(send func(event string, data any))) {
+	h.mu.Lock()
+	h.onAuth = fn
+	h.mu.Unlock()
+}
+
+func (h *Hub) sendTo(c *client, event string, data any) {
+	b, err := json.Marshal(Message{Event: event, Data: data})
+	if err != nil {
+		return
+	}
+	defer func() { recover() }() // client may have gone away
+	select {
+	case c.send <- b:
+	default:
+	}
 }
 
 func NewHub(name, token string) *Hub {
@@ -90,13 +111,24 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	slog.Debug("ws connect", "hub", h.name, "path", r.URL.Path)
 
 	go h.writer(c)
-	if !c.authed {
+	if c.authed {
+		h.replay(c)
+	} else {
 		for _, ev := range []string{"EVENT_SOCKET_AUTHENTICATION_REQUESTED", "GG_API_AUTH_TOKEN"} {
 			b, _ := json.Marshal(Message{Event: ev})
 			c.send <- b
 		}
 	}
 	h.reader(c)
+}
+
+func (h *Hub) replay(c *client) {
+	h.mu.Lock()
+	fn := h.onAuth
+	h.mu.Unlock()
+	if fn != nil {
+		fn(func(event string, data any) { h.sendTo(c, event, data) })
+	}
 }
 
 func (h *Hub) reader(c *client) {
@@ -126,8 +158,12 @@ func (h *Hub) reader(c *client) {
 			}
 			json.Unmarshal(m.Data, &d)
 			h.mu.Lock()
+			was := c.authed
 			c.authed = d.Token == h.token
 			h.mu.Unlock()
+			if c.authed && !was {
+				h.replay(c)
+			}
 			continue
 		}
 		h.mu.Lock()

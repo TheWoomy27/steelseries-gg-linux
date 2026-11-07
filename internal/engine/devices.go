@@ -34,6 +34,14 @@ type liveDevice struct {
 	connected time.Time
 	ready     bool
 	status    map[string]any // generic status properties (battery, link...)
+	battery   *batteryState
+	linkKnown bool
+	linkUp    bool
+}
+
+type batteryState struct {
+	percent  int
+	charging bool
 }
 
 func (l *liveDevice) decls() []*devicert.Decl {
