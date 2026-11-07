@@ -180,7 +180,7 @@ func (e *Engine) routes() {
 		httpx.OK(w)
 	})
 	s.Handle("POST /configuration/validate", func(w http.ResponseWriter, r *http.Request) {
-		httpx.JSON(w, map[string]any{"valid": true})
+		httpx.JSON(w, map[string]any{"validation": map[string]any{"nameValidations": []string{}, "appValidations": []string{}}})
 	})
 	s.Handle("POST /configuration/liveDeploy", func(w http.ResponseWriter, r *http.Request) {
 		var p struct {
@@ -437,7 +437,7 @@ func (e *Engine) handleCreateConfig(w http.ResponseWriter, r *http.Request, depl
 		httpx.Error(w, 400, err.Error())
 		return
 	}
-	c, err := e.createConfig(p.DeviceID, p.Name, jsonText(p.Settings), 0, 0)
+	c, err := e.createConfig(p.DeviceID, p.Name, jsonText(p.Settings), jsonText(p.UndeployedSettings), 0, 0)
 	if err != nil {
 		httpx.Error(w, 500, err.Error())
 		return

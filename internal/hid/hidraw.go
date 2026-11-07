@@ -8,8 +8,10 @@ package hid
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -100,10 +102,17 @@ type Device struct {
 	mu      sync.Mutex
 	waiting chan []byte
 	events  func([]byte)
+	last    []byte    // most recent input report, when it arrived and how
+	lastAt  time.Time // many times in a row it has repeated
+	repeats int
+	opened  time.Time
 	closed  chan struct{}
 }
 
 var ErrTimeout = errors.New("hid: timed out waiting for report")
+
+// traceReports logs every input report (GG_LINUX_HID_TRACE=1).
+var traceReports = os.Getenv("GG_LINUX_HID_TRACE") != ""
 
 // Open opens a hidraw node read/write.
 func Open(info Info) (*Device, error) {
@@ -111,7 +120,7 @@ func Open(info Info) (*Device, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", info.Path, err)
 	}
-	d := &Device{Info: info, f: os.NewFile(uintptr(fd), info.Path), closed: make(chan struct{})}
+	d := &Device{Info: info, f: os.NewFile(uintptr(fd), info.Path), closed: make(chan struct{}), opened: time.Now()}
 	go d.readLoop()
 	return d, nil
 }
@@ -144,8 +153,17 @@ func (d *Device) readLoop() {
 			r = append(r, 0)
 		}
 		r = append(r, buf[:n]...)
+		if traceReports {
+			slog.Debug("hid report", "pid", fmt.Sprintf("%04x", d.ProductID), "if", d.Interface, "data", fmt.Sprintf("% x", r[:min(len(r), 12)]))
+		}
 		d.mu.Lock()
 		w, ev := d.waiting, d.events
+		if bytes.Equal(r, d.last) {
+			d.repeats++
+		} else {
+			d.repeats = 1
+		}
+		d.last, d.lastAt = r, time.Now()
 		d.mu.Unlock()
 		delivered := false
 		if w != nil {
@@ -191,22 +209,36 @@ func pad(data []byte, n int) []byte {
 func (d *Device) Write(data []byte, size int) error {
 	b := pad(data, size)
 	b = b[:min(len(b), d.outputLen(b[0], len(b)))]
+	if traceReports {
+		slog.Debug("hid write", "pid", fmt.Sprintf("%04x", d.ProductID), "if", d.Interface, "data", fmt.Sprintf("% x", b[:min(len(b), 12)]))
+	}
 	_, err := d.f.Write(b)
 	return err
 }
 
-// Exchange writes an output report and waits for its reply. Devices also
-// push unsolicited reports on command interfaces, so a reply is the first
-// report echoing the request's command byte (dongles set flag bits on
-// tunnelled replies, so only the low six bits are compared). If no report
-// matches shortly after the first one arrives, that first report is
-// returned, which covers protocols that do not echo.
+// Exchange writes an output report and waits for its reply.
+//
+// Command interfaces also carry reports the device pushes on its own; some
+// dongles even repeat the same report continuously. A reply is therefore
+// the first report that echoes the request's command byte (dongles set flag
+// bits on tunnelled replies, so only the low six bits are compared) or that
+// differs from the report the interface was repeating just before the
+// request. Repeats of that background report are passed to OnEvent.
 func (d *Device) Exchange(data []byte, size int, timeout time.Duration) ([]byte, error) {
 	d.reqMu.Lock()
 	defer d.reqMu.Unlock()
-	ch := make(chan []byte, 16)
+	// Right after opening, give a streaming interface a moment so its
+	// background report is known before the request goes out.
+	if wait := 150*time.Millisecond - time.Since(d.opened); wait > 0 {
+		time.Sleep(wait)
+	}
+	ch := make(chan []byte, 64)
 	d.mu.Lock()
 	d.waiting = ch
+	var background []byte
+	if d.repeats >= 2 && time.Since(d.lastAt) < 100*time.Millisecond {
+		background = d.last
+	}
 	d.mu.Unlock()
 	defer func() {
 		d.mu.Lock()
@@ -221,35 +253,21 @@ func (d *Device) Exchange(data []byte, size int, timeout time.Duration) ([]byte,
 	if timeout <= 0 {
 		timeout = 500 * time.Millisecond
 	}
-	matches := func(r []byte) bool {
-		return len(data) < 2 || len(r) < 2 || r[1]&0x3f == data[1]&0x3f
-	}
+	echoes := func(r []byte) bool { return len(data) >= 2 && len(r) >= 2 && r[1]&0x3f == data[1]&0x3f }
 	deadline := time.After(timeout)
-	var first []byte
-	var grace <-chan time.Time
 	for {
 		select {
 		case r := <-ch:
-			if matches(r) {
+			if echoes(r) || background == nil || !bytes.Equal(r, background) {
 				return r, nil
 			}
-			if first == nil {
-				first = r
-				grace = time.After(250 * time.Millisecond)
-			}
-			// Not our reply: it is a pushed report, so pass it on.
 			d.mu.Lock()
 			ev := d.events
 			d.mu.Unlock()
 			if ev != nil {
 				ev(r)
 			}
-		case <-grace:
-			return first, nil
 		case <-deadline:
-			if first != nil {
-				return first, nil
-			}
 			return nil, ErrTimeout
 		case <-d.closed:
 			return nil, os.ErrClosed

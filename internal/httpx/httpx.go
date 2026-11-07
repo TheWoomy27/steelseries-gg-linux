@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"path"
 	"strings"
 	"time"
 )
@@ -91,6 +92,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Error(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
+	}
+	// The client sometimes builds URLs with a doubled slash.
+	if strings.Contains(r.URL.Path, "//") {
+		r.URL.Path = path.Clean(r.URL.Path)
 	}
 	start := time.Now()
 	sw := &statusWriter{ResponseWriter: w, status: 200}

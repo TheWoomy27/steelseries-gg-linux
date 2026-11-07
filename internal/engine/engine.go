@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"ggl/internal/hid"
 	"ggl/internal/httpx"
 	"ggl/internal/paths"
+	"ggl/internal/store"
 )
 
 type Engine struct {
@@ -24,9 +26,10 @@ type Engine struct {
 	gs  *httpx.Server
 	hub *events.Hub // wss://<engine>/sock
 
-	db  *sql.DB
-	rt  *devicert.Runtime
-	hid *hid.Manager
+	db    *sql.DB
+	state *store.Store // gg-linux bookkeeping the Engine schema has no place for
+	rt    *devicert.Runtime
+	hid   *hid.Manager
 
 	mu        sync.Mutex
 	addr      string
@@ -64,6 +67,9 @@ func New(ctx context.Context) (*Engine, error) {
 		deviceEvents: make(chan deviceEvent, 64),
 		sequencer:    newSequencer(),
 	}
+	if e.state, err = store.Open(filepath.Join(paths.State(), "engine.json")); err != nil {
+		return nil, err
+	}
 	if err := e.ensureUser(); err != nil {
 		return nil, err
 	}
@@ -71,6 +77,9 @@ func New(ctx context.Context) (*Engine, error) {
 	e.rt, err = devicert.New(paths.DeviceSpecs(), paths.EngineRoot(), NewTransport(e.hid), e)
 	if err != nil {
 		return nil, err
+	}
+	if err := e.rt.LoadMigrations(paths.Migrations()); err != nil {
+		slog.Warn("configuration migrations", "err", err)
 	}
 	e.routes()
 	e.gameSenseRoutes()

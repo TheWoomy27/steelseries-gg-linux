@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
 	"strings"
-	"time"
 
 	"ggl/internal/devicert"
 )
@@ -21,7 +21,7 @@ type config struct {
 	Settings           string `json:"settings"`
 	UndeployedSettings string `json:"undeployedSettings"`
 	DeviceID           int    `json:"device_id"`
-	LastDeployed       int64  `json:"last_deployed"`
+	LastDeployed       int    `json:"last_deployed"` // 1 on the device's current configuration
 	Mutable            int    `json:"mutable"`
 	CloudLastUpdatedAt string `json:"cloud_last_updated_at"`
 	IsDeleted          int    `json:"is_deleted"`
@@ -92,8 +92,10 @@ func (e *Engine) configByID(id string) (*config, error) {
 	return scanConfig(e.db.QueryRow(`SELECT `+configCols+` FROM configurations WHERE id = ?`, id))
 }
 
+// activeConfig returns the device's current configuration, the one last
+// deployed to it.
 func (e *Engine) activeConfig(deviceID int) (*config, error) {
-	return scanConfig(e.db.QueryRow(`SELECT `+configCols+` FROM configurations WHERE device_id = ? AND user_id = ? AND active = 1 AND is_deleted = 0 LIMIT 1`, deviceID, e.userID))
+	return scanConfig(e.db.QueryRow(`SELECT `+configCols+` FROM configurations WHERE user_id = ? AND device_id = ? AND last_deployed = 1 AND is_deleted = 0 LIMIT 1`, e.userID, deviceID))
 }
 
 func (e *Engine) configMetadata(deviceID int) []map[string]any {
@@ -112,41 +114,119 @@ func (e *Engine) configMetadata(deviceID int) []map[string]any {
 // same presets the Windows Engine creates on first plug-in.
 func (e *Engine) ensureConfig(cat *catalogDevice) {
 	cfgs, err := e.configsForDevice(cat.ID)
-	if err != nil || len(cfgs) > 0 {
+	if err != nil {
 		return
 	}
-	type preset struct{ name, settings string }
+	if len(cfgs) > 0 {
+		e.repairConfigs(cat, cfgs)
+		return
+	}
+	type preset struct{ name, settings, undeployed string }
 	var presets []preset
-	rows, err := e.db.Query(`SELECT name, settings FROM initial_configurations WHERE device_id = ? ORDER BY id`, cat.ID)
+	rows, err := e.db.Query(`SELECT name, settings, undeployedSettings FROM initial_configurations WHERE device_id = ? ORDER BY id`, cat.ID)
 	if err == nil {
 		for rows.Next() {
 			var p preset
-			rows.Scan(&p.name, &p.settings)
+			rows.Scan(&p.name, &p.settings, &p.undeployed)
+			if p.undeployed == "" || p.undeployed == "{}" {
+				p.undeployed = cat.Undeployed
+			}
 			presets = append(presets, p)
 		}
 		rows.Close()
 	}
 	if len(presets) == 0 {
-		presets = []preset{{"Default", cat.Settings}}
+		presets = []preset{{"Default", cat.Settings, cat.Undeployed}}
 	}
+	// The first preset becomes the current configuration, as the Engine's
+	// migrations do for "Default". It is not deployed until the user
+	// deploys from GG, so the device keeps its onboard settings.
 	for i, p := range presets {
-		active := 0
+		current := 0
 		if i == 0 {
-			active = 1
+			current = 1
 		}
-		if _, err := e.createConfig(cat.ID, p.name, p.settings, active, 0); err != nil {
+		if _, err := e.createConfig(cat.ID, p.name, p.settings, p.undeployed, current, current); err != nil {
 			slog.Warn("create initial configuration", "device", cat.Name, "err", err)
 		}
 	}
 }
 
-func (e *Engine) createConfig(deviceID int, name, settings string, active int, lastDeployed int64) (*config, error) {
+// repairConfigs fixes rows written by earlier gg-linux builds: undeployed
+// defaults missing (the editors read UI state from them), and last_deployed
+// holding a timestamp instead of the current-configuration flag.
+func (e *Engine) repairConfigs(cat *catalogDevice, cfgs []*config) {
+	var current, stamped *config
+	for _, c := range cfgs {
+		if c.UndeployedSettings == "" || c.UndeployedSettings == "{}" {
+			c.UndeployedSettings = cat.Undeployed
+			e.db.Exec(`UPDATE configurations SET undeployedsettings = ? WHERE id = ?`, cat.Undeployed, c.ID)
+		}
+		if s, u := e.migrate(cat, c.Name, c.Settings, c.UndeployedSettings); s != c.Settings || u != c.UndeployedSettings {
+			c.Settings, c.UndeployedSettings = s, u
+			e.db.Exec(`UPDATE configurations SET settings = ?, undeployedsettings = ? WHERE id = ?`, s, u, c.ID)
+		}
+		switch {
+		case c.LastDeployed == 1:
+			current = c
+		case c.LastDeployed > 1 && (stamped == nil || c.LastDeployed > stamped.LastDeployed):
+			stamped = c
+		}
+	}
+	if stamped != nil {
+		e.markManaged(cat.ID)
+	}
+	if current == nil {
+		current = stamped
+	}
+	if current == nil {
+		current = cfgs[0]
+		for _, c := range cfgs {
+			if c.Active == 1 {
+				current = c
+				break
+			}
+		}
+	}
+	e.db.Exec(`UPDATE configurations SET last_deployed = (id = ?) WHERE user_id = ? AND device_id = ?`, current.ID, e.userID, cat.ID)
+}
+
+func (e *Engine) createConfig(deviceID int, name, settings, undeployed string, active, lastDeployed int) (*config, error) {
 	id := newUUID()
-	if _, err := e.db.Exec(`INSERT INTO configurations (id, device_id, name, settings, active, user_id, mutable, last_deployed)
-		VALUES (?, ?, ?, ?, ?, ?, 1, ?)`, id, deviceID, name, settings, active, e.userID, lastDeployed); err != nil {
+	cat, err := e.catalogByID(deviceID)
+	if err != nil {
+		return nil, fmt.Errorf("device %d: %w", deviceID, err)
+	}
+	// A new blank configuration starts from the device defaults.
+	if settings == "" || settings == "{}" {
+		settings = cat.Settings
+	}
+	if undeployed == "" || undeployed == "{}" {
+		undeployed = cat.Undeployed
+	}
+	if undeployed == "" {
+		undeployed = "{}"
+	}
+	settings, undeployed = e.migrate(cat, name, settings, undeployed)
+	if _, err := e.db.Exec(`INSERT INTO configurations (id, device_id, name, settings, undeployedsettings, active, user_id, mutable, last_deployed)
+		VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`, id, deviceID, name, settings, undeployed, active, e.userID, lastDeployed); err != nil {
 		return nil, err
 	}
 	return e.configByID(id)
+}
+
+// migrate runs the device's configuration migrations over settings; on
+// failure the settings are kept as they were.
+func (e *Engine) migrate(cat *catalogDevice, configName, settings, undeployed string) (string, string) {
+	s, u, changed, err := e.rt.MigrateSettings(cat.Name, settings, undeployed)
+	if err != nil {
+		slog.Warn("configuration migration", "device", cat.Name, "config", configName, "err", err)
+		return settings, undeployed
+	}
+	if changed {
+		slog.Debug("configuration migrated", "device", cat.Name, "config", configName)
+	}
+	return s, u
 }
 
 func (e *Engine) saveConfig(c *config) error {
@@ -155,9 +235,29 @@ func (e *Engine) saveConfig(c *config) error {
 	return err
 }
 
-func (e *Engine) setActive(c *config) {
-	e.db.Exec(`UPDATE configurations SET active = 0 WHERE device_id = ? AND user_id = ?`, c.DeviceID, e.userID)
-	e.db.Exec(`UPDATE configurations SET active = 1, last_deployed = ? WHERE id = ?`, time.Now().Unix(), c.ID)
+// setCurrent makes c its device's current configuration.
+func (e *Engine) setCurrent(c *config) {
+	e.db.Exec(`UPDATE configurations SET last_deployed = 0 WHERE user_id = ? AND device_id = ?`, e.userID, c.DeviceID)
+	e.db.Exec(`UPDATE configurations SET last_deployed = 1 WHERE id = ?`, c.ID)
+	c.LastDeployed = 1
+}
+
+// Devices GG has deployed a configuration to. Only these get their current
+// configuration re-applied when they connect; a device GG has never
+// configured keeps its onboard settings.
+func (e *Engine) managed(deviceID int) bool {
+	var ids []int
+	e.state.Get("managedDevices", &ids)
+	return slices.Contains(ids, deviceID)
+}
+
+func (e *Engine) markManaged(deviceID int) {
+	if e.managed(deviceID) {
+		return
+	}
+	var ids []int
+	e.state.Get("managedDevices", &ids)
+	e.state.Set("managedDevices", append(ids, deviceID))
 }
 
 // DeployConfigByID activates a configuration and writes it to its device
@@ -171,7 +271,8 @@ func (e *Engine) DeployConfigByID(id string) {
 }
 
 func (e *Engine) deployConfig(c *config, force bool) error {
-	e.setActive(c)
+	e.setCurrent(c)
+	e.markManaged(c.DeviceID)
 	l := e.liveByID(c.DeviceID)
 	if l == nil {
 		return nil // applied on next connect

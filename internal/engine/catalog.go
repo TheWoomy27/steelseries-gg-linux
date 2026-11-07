@@ -15,6 +15,7 @@ type catalogDevice struct {
 	FullName          string
 	Type              int
 	Settings          string
+	Undeployed        string
 	Hidden            bool
 	AboutPageDisabled bool
 	PersistChanges    bool
@@ -25,13 +26,13 @@ type catalogDevice struct {
 	GlobalSettings    string
 }
 
-const catalogCols = `id, product_id, name, full_name, type, settings, hidden, about_page_disabled,
+const catalogCols = `id, product_id, name, full_name, type, settings, undeployedsettings, hidden, about_page_disabled,
 	persist_changes, deployment_disabled, hide_device_card, has_onboard_macros, model_type_id, global_device_settings`
 
 func scanCatalog(row interface{ Scan(...any) error }) (*catalogDevice, error) {
 	var d catalogDevice
 	var hidden, about, persist, deploy, hideCard, macros int
-	err := row.Scan(&d.ID, &d.ProductID, &d.Name, &d.FullName, &d.Type, &d.Settings, &hidden, &about,
+	err := row.Scan(&d.ID, &d.ProductID, &d.Name, &d.FullName, &d.Type, &d.Settings, &d.Undeployed, &hidden, &about,
 		&persist, &deploy, &hideCard, &macros, &d.ModelTypeID, &d.GlobalSettings)
 	if err != nil {
 		return nil, err

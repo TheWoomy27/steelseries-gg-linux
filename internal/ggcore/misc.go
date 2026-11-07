@@ -81,10 +81,16 @@ func (c *Core) miscRoutes() {
 	})
 	s.Handle("POST /cvGamesense/stop", func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })
 
-	// GameSense and overlay registries (raw JSON arrays, as on Windows).
-	for _, p := range []string{"/overlays", "/game_integration_games", "/game_integration_devices", "/known_games"} {
-		s.Handle("GET "+p, func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, []any{}) })
+	// GameSense and overlay registries: the Windows handlers wrap each
+	// result in a key named after the operation.
+	for path, key := range map[string]string{"/overlays": "get_overlay_settings", "/game_integration_games": "game_integration_games",
+		"/game_integration_devices": "game_integration_devices", "/known_games": "known_games"} {
+		k := key
+		s.Handle("GET "+path, func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, map[string]any{k: []any{}}) })
 	}
+	s.Handle("GET /game_integration/oled_active_for_device/{id}", func(w http.ResponseWriter, r *http.Request) {
+		httpx.JSON(w, map[string]any{"handleGameIntegrationOledActiveCheck": false})
+	})
 
 	// Engine -> core notifications.
 	for _, p := range []string{"/engine/device/connected", "/engine/device/disconnected", "/engine/device/preConnect", "/engine/device/preConnectionsComplete", "/cacheDevices"} {

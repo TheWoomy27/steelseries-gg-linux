@@ -156,7 +156,7 @@ func (e *Engine) miscRoutes() {
 	// OS mouse settings (Windows pointer speed / acceleration). Linux
 	// desktops own these; report neutral values.
 	s.Handle("GET /systemSettings/mouse", func(w http.ResponseWriter, r *http.Request) {
-		httpx.JSON(w, map[string]any{"mouse": map[string]any{"speed": 10, "enhancePointerPrecision": false}})
+		httpx.JSON(w, map[string]any{"get_mouse_settings": map[string]any{"cpi": 10, "accel": 0}})
 	})
 	s.Handle("POST /systemSettings/setMouse", func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })
 	s.Handle("POST /systemSettings/setDefaultMouseSettings", func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })

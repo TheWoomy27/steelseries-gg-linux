@@ -203,7 +203,7 @@ func (e *Engine) initDevice(l *liveDevice, d *devicert.Decl) {
 	// deployed from GG, reconnecting the device re-applies it, as the
 	// Windows Engine does. A device GG has never configured keeps its
 	// onboard settings untouched.
-	if cfg, err := e.activeConfig(l.dbID); err == nil && cfg.LastDeployed > 0 {
+	if cfg, err := e.activeConfig(l.dbID); err == nil && e.managed(l.dbID) {
 		if err := e.deploy(l, cfg.settingsMap(), false, false); err != nil {
 			slog.Warn("deploy on connect", "device", l.cat.Name, "err", err)
 		}

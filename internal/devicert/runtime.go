@@ -69,6 +69,7 @@ type Runtime struct {
 	transport    Transport
 	hooks        Hooks
 	globals      map[string]*golisp.Data
+	migrations   map[string][]migrationSchema // by device name
 	curFile      string
 	// AllowFirmware gates APIs marked (is-firmware-update).
 	AllowFirmware bool
