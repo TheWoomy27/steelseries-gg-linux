@@ -213,3 +213,42 @@ func (d *Decl) SequenceForSetting(key string) (string, *Sequence) {
 	}
 	return "", nil
 }
+
+// TranslateSync hands a report from the sync interface to the spec's
+// (translate_sync_data payload). It returns JSON settings the user
+// changed on the device itself, or "".
+func (d *Decl) TranslateSync(report []byte) (string, error) {
+	v, err := d.Call("translate_sync_data", bytesObj(report))
+	if err != nil || v == nil || !golisp.StringP(v) {
+		return "", err
+	}
+	return golisp.StringValue(v), nil
+}
+
+// SyncSettings runs (sync_settings_function), which reads the device's
+// current settings so GG's configuration can match the hardware.
+func (d *Decl) SyncSettings() (string, error) {
+	v, err := d.Call("sync_settings_function")
+	if err != nil || v == nil || !golisp.StringP(v) {
+		return "", err
+	}
+	return golisp.StringValue(v), nil
+}
+
+// SetCachedValues records values as already present on the device.
+func (d *Decl) SetCachedValues(api string, v map[string]any) { d.setCache(api, v) }
+
+// PostDeploy runs (post_deploy save-to-flash) after a configuration
+// deploy; older specs define it without the argument.
+func (d *Decl) PostDeploy(saveToFlash bool) error {
+	fn := d.Env.ValueOf(golisp.Intern("post_deploy"))
+	if golisp.NilP(fn) || !golisp.FunctionOrPrimitiveP(fn) {
+		return nil
+	}
+	if golisp.FunctionP(fn) && golisp.Length(golisp.FunctionValue(fn).Params) == 0 {
+		_, err := d.Call("post_deploy")
+		return err
+	}
+	_, err := d.Call("post_deploy", golisp.BooleanWithValue(saveToFlash))
+	return err
+}

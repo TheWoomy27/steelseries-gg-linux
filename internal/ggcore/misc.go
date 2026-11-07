@@ -81,6 +81,11 @@ func (c *Core) miscRoutes() {
 	})
 	s.Handle("POST /cvGamesense/stop", func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })
 
+	// GameSense and overlay registries (raw JSON arrays, as on Windows).
+	for _, p := range []string{"/overlays", "/game_integration_games", "/game_integration_devices", "/known_games"} {
+		s.Handle("GET "+p, func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, []any{}) })
+	}
+
 	// Engine -> core notifications.
 	for _, p := range []string{"/engine/device/connected", "/engine/device/disconnected", "/engine/device/preConnect", "/engine/device/preConnectionsComplete", "/cacheDevices"} {
 		s.Handle("POST "+p, func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })

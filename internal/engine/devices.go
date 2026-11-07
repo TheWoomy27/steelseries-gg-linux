@@ -169,8 +169,22 @@ func (e *Engine) initDevice(l *liveDevice, d *devicert.Decl) {
 	if d.StartDelayMs > 0 {
 		time.Sleep(time.Duration(d.StartDelayMs) * time.Millisecond)
 	}
+	if d.HasSync {
+		e.listenSync(l, d)
+	}
 	if err := withTimeout(15*time.Second, d.RunInit); err != nil {
 		slog.Warn("device init", "spec", d.Name, "err", err)
+	}
+	if d.HasFunction("post-init") {
+		if _, err := d.Call("post-init"); err != nil {
+			slog.Debug("post-init", "spec", d.Name, "err", err)
+		}
+	}
+	if s, err := d.SyncSettings(); err == nil {
+		e.applyDeviceSettings(l, d, s)
+	}
+	if d.HasFunction("read_headset_status") {
+		d.Call("read_headset_status")
 	}
 	if v, err := d.Call("get_fw_version"); err == nil && golisp.StringP(v) {
 		fw := golisp.StringValue(v)
@@ -190,7 +204,7 @@ func (e *Engine) initDevice(l *liveDevice, d *devicert.Decl) {
 	// Windows Engine does. A device GG has never configured keeps its
 	// onboard settings untouched.
 	if cfg, err := e.activeConfig(l.dbID); err == nil && cfg.LastDeployed > 0 {
-		if err := e.deploy(l, cfg.settingsMap(), false); err != nil {
+		if err := e.deploy(l, cfg.settingsMap(), false, false); err != nil {
 			slog.Warn("deploy on connect", "device", l.cat.Name, "err", err)
 		}
 	}

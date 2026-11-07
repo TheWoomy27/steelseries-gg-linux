@@ -113,9 +113,11 @@ func (e *Engine) routes() {
 			httpx.Error(w, 500, err.Error())
 			return
 		}
-		httpx.JSON(w, map[string]any{"result": lispResult(v)})
+		httpx.JSON(w, map[string]any{"function_data": lispResult(v)})
 	}
 	s.Handle("POST /device/{id}/function/{fn}", deviceFunc)
+	s.Handle("POST /device/{id}/function/{fn}/checkBootloader", deviceFunc)
+	s.Handle("POST /device/{id}/physicalDevice/{pid}/function/{fn}/checkBootloader", deviceFunc)
 	s.Handle("POST /device/{id}/deviceFunction/{fn}", deviceFunc)
 	s.Handle("POST /device/{id}/physicalDevice/{pid}/function/{fn}", deviceFunc)
 	s.Handle("GET /device/{id}/readFromDevice/{fn}", func(w http.ResponseWriter, r *http.Request) {
@@ -193,7 +195,7 @@ func (e *Engine) routes() {
 		}
 		settings := map[string]any{}
 		json.Unmarshal([]byte(jsonText(p.Settings)), &settings)
-		if err := e.deploy(l, settings, false); err != nil {
+		if err := e.deploy(l, settings, false, false); err != nil {
 			slog.Debug("live deploy", "err", err)
 		}
 		httpx.OK(w)
@@ -236,7 +238,14 @@ func (e *Engine) routes() {
 	s.Handle("GET /cloud_settings", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, map[string]any{"cloud_settings": []any{}}) })
 	s.Handle("POST /cloud_settings", func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })
 	s.Handle("GET /cloudSyncInfo", func(w http.ResponseWriter, r *http.Request) {
-		httpx.JSON(w, map[string]any{"cloudSyncInfo": map[string]any{}})
+		httpx.JSON(w, map[string]any{"cloud_sync_info": map[string]any{"last_sync_at": "", "last_sync_error_at": "", "last_sync_error_msg": ""}})
+	})
+	s.Handle("GET /resetAndRegisterUrls", func(w http.ResponseWriter, r *http.Request) {
+		httpx.JSON(w, map[string]any{"urls": map[string]string{
+			"signUp":        "https://steelseries.com/register",
+			"resetPassword": "https://steelseries.com/password-reset",
+			"myAccount":     "https://steelseries.com/account",
+		}})
 	})
 	s.Handle("POST /cloudSync", func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })
 	s.Handle("POST /forceCloudSync", func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })
@@ -364,8 +373,10 @@ func (e *Engine) wirelessStatuses() []map[string]any {
 	return out
 }
 
-// handleDeviceWrite runs a raw settings write from the UI:
-// {"device_id": N, "command": {"api": {...}}} style payloads.
+// handleDeviceWrite runs a device command from the UI:
+// {"id": N, "command": "{\"api\": {...}}"}. Commands naming read-only
+// APIs perform the read (the spec's success handler reports the result as
+// device events); the outcome is reported with a deviceLibRet event.
 func (e *Engine) handleDeviceWrite(w http.ResponseWriter, r *http.Request) {
 	var p struct {
 		DeviceID int `json:"device_id"`
@@ -383,7 +394,7 @@ func (e *Engine) handleDeviceWrite(w http.ResponseWriter, r *http.Request) {
 		id = p.ID
 	}
 	l := e.liveByID(id)
-	if l == nil {
+	if l == nil || l.primary() == nil {
 		httpx.Error(w, 404, "device not connected")
 		return
 	}
@@ -394,12 +405,29 @@ func (e *Engine) handleDeviceWrite(w http.ResponseWriter, r *http.Request) {
 	if payload == nil {
 		payload = p.Data
 	}
-	settings := map[string]any{}
-	json.Unmarshal([]byte(jsonText(payload)), &settings)
-	if err := e.deploy(l, settings, true); err != nil {
-		httpx.Error(w, 500, err.Error())
-		return
+	cmd := map[string]any{}
+	json.Unmarshal([]byte(jsonText(payload)), &cmd)
+	slog.Debug("device command", "device", l.cat.Name, "path", r.URL.Path, "command", truncateJSON(cmd))
+	d := l.primary()
+	ok := true
+	for name, vals := range cmd {
+		api := d.Api(name)
+		var err error
+		switch {
+		case api == nil:
+			continue
+		case len(api.Write) == 0 && api.Read != nil:
+			m, _ := vals.(map[string]any)
+			_, err = d.ReadApi(name, m)
+		default:
+			err = e.writeSetting(d, name, vals, true)
+		}
+		if err != nil {
+			ok = false
+			slog.Debug("device command", "api", name, "err", err)
+		}
 	}
+	e.emit("deviceLibRet", map[string]any{"id": id, "ssecmd": 0, "data": map[bool]int{true: 0, false: 1}[ok], "generic": true})
 	httpx.OK(w)
 }
 
@@ -453,7 +481,6 @@ func (e *Engine) handleSaveConfig(w http.ResponseWriter, r *http.Request, deploy
 			slog.Warn("deploy", "config", c.Name, "err", err)
 		}
 	}
-	e.emit("configSettingsChanged", map[string]any{"id": c.DeviceID, "configId": c.ID})
 	httpx.JSON(w, map[string]any{"configuration": c})
 }
 
@@ -470,4 +497,12 @@ func (e *Engine) handleDeploy(w http.ResponseWriter, r *http.Request, force bool
 	}
 	slog.Info("configuration deployed", "config", c.Name, "ms", time.Since(start).Milliseconds())
 	httpx.OK(w)
+}
+
+func truncateJSON(v any) string {
+	b, _ := json.Marshal(v)
+	if len(b) > 300 {
+		return string(b[:300]) + "…"
+	}
+	return string(b)
 }

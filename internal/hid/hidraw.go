@@ -146,13 +146,16 @@ func (d *Device) readLoop() {
 		r = append(r, buf[:n]...)
 		d.mu.Lock()
 		w, ev := d.waiting, d.events
-		if w != nil {
-			d.waiting = nil
-		}
 		d.mu.Unlock()
+		delivered := false
 		if w != nil {
-			w <- r
-		} else if ev != nil {
+			select {
+			case w <- r:
+				delivered = true
+			default:
+			}
+		}
+		if !delivered && ev != nil {
 			ev(r)
 		}
 	}
@@ -192,21 +195,66 @@ func (d *Device) Write(data []byte, size int) error {
 	return err
 }
 
-// Exchange writes an output report and waits for the next input report.
+// Exchange writes an output report and waits for its reply. Devices also
+// push unsolicited reports on command interfaces, so a reply is the first
+// report echoing the request's command byte (dongles set flag bits on
+// tunnelled replies, so only the low six bits are compared). If no report
+// matches shortly after the first one arrives, that first report is
+// returned, which covers protocols that do not echo.
 func (d *Device) Exchange(data []byte, size int, timeout time.Duration) ([]byte, error) {
 	d.reqMu.Lock()
 	defer d.reqMu.Unlock()
-	ch := make(chan []byte, 1)
+	ch := make(chan []byte, 16)
 	d.mu.Lock()
 	d.waiting = ch
 	d.mu.Unlock()
-	if err := d.Write(data, size); err != nil {
+	defer func() {
 		d.mu.Lock()
-		d.waiting = nil
+		if d.waiting == ch {
+			d.waiting = nil
+		}
 		d.mu.Unlock()
+	}()
+	if err := d.Write(data, size); err != nil {
 		return nil, err
 	}
-	return d.await(ch, timeout)
+	if timeout <= 0 {
+		timeout = 500 * time.Millisecond
+	}
+	matches := func(r []byte) bool {
+		return len(data) < 2 || len(r) < 2 || r[1]&0x3f == data[1]&0x3f
+	}
+	deadline := time.After(timeout)
+	var first []byte
+	var grace <-chan time.Time
+	for {
+		select {
+		case r := <-ch:
+			if matches(r) {
+				return r, nil
+			}
+			if first == nil {
+				first = r
+				grace = time.After(250 * time.Millisecond)
+			}
+			// Not our reply: it is a pushed report, so pass it on.
+			d.mu.Lock()
+			ev := d.events
+			d.mu.Unlock()
+			if ev != nil {
+				ev(r)
+			}
+		case <-grace:
+			return first, nil
+		case <-deadline:
+			if first != nil {
+				return first, nil
+			}
+			return nil, ErrTimeout
+		case <-d.closed:
+			return nil, os.ErrClosed
+		}
+	}
 }
 
 // ReadInput waits for the next input report without writing.

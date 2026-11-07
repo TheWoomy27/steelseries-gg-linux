@@ -199,7 +199,7 @@ func (e *Engine) miscRoutes() {
 		e.db.Exec(`INSERT OR REPLACE INTO global_device_settings (device_id, settings) VALUES (?, ?)`, pathInt(r, "id"), string(b))
 		if l := e.liveByID(pathInt(r, "id")); l != nil {
 			if m, ok := p.(map[string]any); ok {
-				e.deploy(l, m, false)
+				e.deploy(l, m, false, false)
 			}
 		}
 		httpx.OK(w)
@@ -208,7 +208,7 @@ func (e *Engine) miscRoutes() {
 		var p map[string]any
 		httpx.Decode(r, &p)
 		if l := e.liveByID(pathInt(r, "id")); l != nil {
-			e.deploy(l, p, false)
+			e.deploy(l, p, false, false)
 		}
 		httpx.OK(w)
 	})

@@ -9,6 +9,8 @@
 //	gorev xref   BIN REGEX     list functions that call matching functions
 //	gorev str    BIN ADDR LEN  dump bytes at a virtual address
 //	gorev types  BIN [REGEX]   print struct types with field offsets and tags
+//	gorev routes BIN [REGEX]   print HTTP routes registered by matching funcs
+//	gorev summary BIN REGEX    string literals and callees per function
 package main
 
 import (
@@ -238,6 +240,10 @@ func main() {
 		os.Stdout.Write(b.read(a, n))
 	case "types":
 		b.dumpTypes(regexp.MustCompile(arg(3, ".")))
+	case "routes":
+		b.routes(regexp.MustCompile(arg(3, `\.Routes$`)))
+	case "summary":
+		b.summary(regexp.MustCompile(arg(3, "^$")))
 	default:
 		fmt.Fprintln(os.Stderr, "unknown command", os.Args[1])
 		os.Exit(2)

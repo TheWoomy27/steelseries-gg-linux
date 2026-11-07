@@ -49,22 +49,80 @@ func (e *Engine) handleDeviceEvent(ev deviceEvent) {
 	if l == nil {
 		return
 	}
+	l.mu.Lock()
 	if ev.kind&evGenericStatus != 0 {
-		l.mu.Lock()
 		if l.status == nil {
 			l.status = map[string]any{}
 		}
 		for k, v := range ev.data {
 			l.status[k] = v
 		}
-		l.mu.Unlock()
 	}
+	l.trackStatus(ev.data)
+	l.mu.Unlock()
 	if w, ok := ev.data["wirelessDevConnStatusEvent"].(map[string]any); ok {
 		e.emit("EVENT_WIRELESS_DEVICE_CONNECTION_STATUS", map[string]any{"deviceId": l.dbID, "isConnected": w["isConnected"], "physicalId": w["physicalId"]})
 	}
 	if ev.kind&(evDispatchToUI|evGenericStatus) != 0 {
-		e.emit("device_event", map[string]any{"id": l.dbID, "product_id": l.cat.ProductID, "data": ev.data})
-		e.emit("EVENT_DEVICE_STATUS_CHANGED", map[string]any{"deviceId": l.dbID, "status": ev.data})
+		// The client matches device_event on a top-level id and reads the
+		// event fields beside it.
+		msg := map[string]any{"id": l.dbID}
+		for k, v := range ev.data {
+			msg[k] = v
+		}
+		e.emit("device_event", msg)
+		e.emit("EVENT_DEVICE_STATUS_CHANGED", map[string]any{"deviceId": l.dbID, "device": l.cat.Name, "status": ev.data})
+	}
+}
+
+// trackStatus records battery, charging and link state from the event
+// shapes device specs emit. Callers hold l.mu.
+func (l *liveDevice) trackStatus(d map[string]any) {
+	num := func(v any) (int, bool) {
+		switch x := v.(type) {
+		case int64:
+			return int(x), true
+		case float64:
+			return int(x), true
+		case int:
+			return x, true
+		}
+		return 0, false
+	}
+	battery := func() *batteryState {
+		if l.battery == nil {
+			l.battery = &batteryState{}
+		}
+		return l.battery
+	}
+	if b, ok := d["battery_status"].(map[string]any); ok { // mice: {level, charging 0/1/2}
+		if n, ok := num(b["level"]); ok {
+			battery().percent = n
+		}
+		if n, ok := num(b["charging"]); ok {
+			battery().charging = n == 1
+		}
+	}
+	if b, ok := d["batteryEvent"].(map[string]any); ok { // headsets
+		if n, ok := num(b["batteryPercent"]); ok {
+			battery().percent = n
+		}
+	}
+	if c, ok := d["chargingEvent"].(map[string]any); ok {
+		battery().charging = c["chargingStatus"] == "PLUGGED_IN_CHARGING"
+	}
+	if c, ok := d["connectionEvent"].(map[string]any); ok {
+		l.linkKnown, l.linkUp = true, c["connectionStatus"] == "PAIRED_CONNECTED"
+	}
+	if c, ok := d["connection_status"].(map[string]any); ok {
+		if n, ok := num(c["status"]); ok {
+			l.linkKnown, l.linkUp = true, n != 0
+		}
+	}
+	if w, ok := d["wirelessDevConnStatusEvent"].(map[string]any); ok {
+		if up, ok := w["isConnected"].(bool); ok {
+			l.linkKnown, l.linkUp = true, up
+		}
 	}
 }
 

@@ -176,8 +176,8 @@ func (e *Engine) deployConfig(c *config, force bool) error {
 	if l == nil {
 		return nil // applied on next connect
 	}
-	err := e.deploy(l, c.settingsMap(), force)
-	e.emit("switchConfig", map[string]any{"id": c.DeviceID, "configId": c.ID})
+	err := e.deploy(l, c.settingsMap(), force, l.cat.PersistChanges)
+	e.emit("switchConfig", map[string]any{"deviceId": c.DeviceID, "configId": c.ID})
 	e.emit("reloadConfigs", map[string]any{"id": c.DeviceID})
 	return err
 }
@@ -185,7 +185,9 @@ func (e *Engine) deployConfig(c *config, force bool) error {
 // deploy writes configuration settings through the device's APIs. Each
 // top-level key names an api (or a lighting sequence); values are that
 // api's struct fields. Unchanged apis are skipped unless force is set.
-func (e *Engine) deploy(l *liveDevice, settings map[string]any, force bool) error {
+// saveToFlash is passed to the spec's (post_deploy save-to-flash), which
+// persists settings to onboard memory on devices that have it.
+func (e *Engine) deploy(l *liveDevice, settings map[string]any, force, saveToFlash bool) error {
 	d := l.primary()
 	if d == nil {
 		return fmt.Errorf("%s has no connected interface", l.cat.FullName)
@@ -201,10 +203,8 @@ func (e *Engine) deploy(l *liveDevice, settings map[string]any, force bool) erro
 			errs = append(errs, k+": "+err.Error())
 		}
 	}
-	if d.HasFunction("post_deploy") {
-		if _, err := d.Call("post_deploy"); err != nil {
-			slog.Debug("post_deploy", "device", d.Name, "err", err)
-		}
+	if err := d.PostDeploy(saveToFlash); err != nil {
+		slog.Debug("post_deploy", "device", d.Name, "err", err)
 	}
 	if len(errs) > 0 {
 		slog.Warn("deploy finished with errors", "device", l.cat.Name, "errors", strings.Join(errs, "; "))
