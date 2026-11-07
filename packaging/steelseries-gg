@@ -1,0 +1,27 @@
+#!/bin/sh
+# Launches the SteelSeries GG client on Linux. The client is the Electron app
+# imported from your installer by gg-setup; ggd is started on demand.
+set -e
+
+data="${GG_LINUX_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/steelseries-gg}"
+app="$data/client/app"
+
+if [ ! -f "$app/package.json" ]; then
+    echo "SteelSeries GG has not been imported yet. Run: gg-setup /path/to/SteelSeriesGG<version>Setup.exe" >&2
+    exit 1
+fi
+
+electron="${GG_LINUX_ELECTRON:-}"
+if [ -z "$electron" ]; then
+    # The Windows client ships Electron 31; newer releases keep the
+    # BrowserView/WebContentsView APIs it uses.
+    for e in electron37 electron39 electron38 electron36 electron35 electron34 electron33 electron32 electron31 electron; do
+        if command -v "$e" >/dev/null 2>&1; then electron="$e"; break; fi
+    done
+fi
+if [ -z "$electron" ]; then
+    echo "No Electron runtime found. Install electron37 (or set GG_LINUX_ELECTRON)." >&2
+    exit 1
+fi
+
+exec "$electron" "$app" "$@"

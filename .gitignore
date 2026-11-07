@@ -1,0 +1,15 @@
+# Installers and anything extracted from them stay local (proprietary)
+*.exe
+*.pkg
+/extracted/
+/data/
+
+# Build output
+/bin/
+/dist/
+*.test
+
+# Editors
+.idea/
+.vscode/
+*.swp
