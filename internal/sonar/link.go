@@ -3,7 +3,7 @@ package sonar
 import (
 	"fmt"
 	"log/slog"
-	"slices"
+	"maps"
 	"strings"
 	"time"
 )
@@ -99,6 +99,11 @@ func pairPorts(from, to []pwPort) [][2]int {
 
 // relink makes each running channel's links match its device, and
 // reapplies the settings of channels that started running.
+//
+// In streamer mode a playback channel's monitoring ports go to the
+// monitoring device and its streaming ports (see streamPorts) to the
+// streaming device; the targets map holds "Monitoring", "Streaming" and,
+// while the user listens to the stream, "Listen".
 func (a *audio) relink() {
 	a.relinking.Lock()
 	defer a.relinking.Unlock()
@@ -108,7 +113,7 @@ func (a *audio) relink() {
 	for k, v := range a.targets {
 		targets[k] = v
 	}
-	micSample, monitor, monitorNode := a.micSample, a.monitor, a.monitorNode
+	stream, micSample, monitor, extra := a.stream, a.micSample, a.monitor, a.extra
 	a.mu.Unlock()
 	if running == nil {
 		return
@@ -118,25 +123,46 @@ func (a *audio) relink() {
 		slog.Warn("sonar: reading the audio graph", "err", err)
 		return
 	}
+	device := func(target string) (int, bool) {
+		id, ok := nodes[targets[target]]
+		return id, ok && targets[target] != ""
+	}
 	linked, active := map[string]bool{}, map[string]bool{}
 	for _, c := range running {
-		stream, ok := nodes[c.deviceStream()]
+		node, ok := nodes[c.deviceStream()]
 		if !ok {
 			continue
 		}
 		// The stream's side facing the device.
-		own := portsOf(ports, stream, !c.capture)
+		own := portsOf(ports, node, !c.capture)
 		ownIDs := map[int]bool{}
+		mon, str := own, []pwPort(nil)
+		if stream && !c.capture {
+			mon = nil
+			for _, p := range own {
+				if ch, ok := streamPorts[p.channel]; ok {
+					p.channel = ch
+					str = append(str, p)
+				} else {
+					mon = append(mon, p)
+				}
+			}
+		}
 		for _, p := range own {
 			ownIDs[p.id] = true
 		}
 		want := map[[2]int]bool{}
-		if dev, ok := nodes[targets[c.redirect]]; ok && targets[c.redirect] != "" {
-			pairs := pairPorts(own, portsOf(ports, dev, false))
+		if dev, ok := device(c.redirect); ok {
+			pairs := pairPorts(mon, portsOf(ports, dev, false))
 			if c.capture {
 				pairs = pairPorts(sourcePorts(ports, dev), own)
 			}
 			for _, p := range pairs {
+				want[p] = true
+			}
+		}
+		if dev, ok := device("Streaming"); ok && len(str) > 0 {
+			for _, p := range pairPorts(str, portsOf(ports, dev, false)) {
 				want[p] = true
 			}
 		}
@@ -165,67 +191,95 @@ func (a *audio) relink() {
 		linked[c.node] = have > 0
 		active[c.node] = states[c.deviceStream()] == "running"
 	}
-	monitorNode = relinkMonitor(nodes, ports, links, targets["Chat"], monitor, monitorNode)
+
+	// Links between other nodes: the processed microphone monitored on the
+	// chat device while the mic sample plays, and in streamer mode the
+	// microphone copy and listening to the stream.
+	want := map[[2]int]bool{}
+	add := func(pairs [][2]int) {
+		for _, p := range pairs {
+			want[p] = true
+		}
+	}
+	mic, haveMic := nodes["sonar_mic"]
+	if dev, ok := device("Chat"); ok && monitor && haveMic {
+		add(pairPorts(sourcePorts(ports, mic), portsOf(ports, dev, false)))
+	}
+	if stream {
+		if in, ok := nodes[micCopy]; ok && haveMic {
+			add(pairPorts(sourcePorts(ports, mic), portsOf(ports, in, false)))
+		}
+		if out, ok := nodes[micCopy+".device"]; ok {
+			for _, mix := range []struct{ port, target string }{{"FL", "Monitoring"}, {"RL", "Streaming"}} {
+				dev, ok := device(mix.target)
+				if !ok {
+					continue
+				}
+				for _, p := range portsOf(ports, out, true) {
+					if p.channel == mix.port {
+						p.channel = "MONO"
+						add(pairPorts([]pwPort{p}, portsOf(ports, dev, false)))
+					}
+				}
+			}
+		}
+		if listen, ok := device("Listen"); ok {
+			if str, ok := device("Streaming"); ok {
+				var monitors []pwPort
+				for _, p := range ports {
+					if p.node == str && p.output && p.monitor {
+						monitors = append(monitors, p)
+					}
+				}
+				add(pairPorts(monitors, portsOf(ports, listen, false)))
+			}
+		}
+	}
+	extra = relinkExtras(want, links, extra)
+	copyOn := states[micCopy] == "running"
+
 	a.mu.Lock()
-	a.monitorNode = monitorNode
 	var started []channel
+	copyStarted := false
 	if a.running != nil {
 		for _, c := range running {
 			if active[c.node] && !a.active[c.node] {
 				started = append(started, c)
 			}
 		}
-		a.linked, a.active = linked, active
+		copyStarted = copyOn && !a.copyOn
+		a.linked, a.active, a.extra, a.copyOn = linked, active, extra, copyOn
 	}
-	onRunning := a.onRunning
+	onRunning, onCopyRunning := a.onRunning, a.onCopyRunning
 	a.mu.Unlock()
 	for _, c := range started {
 		if onRunning != nil {
 			onRunning(c)
 		}
 	}
+	if copyStarted && onCopyRunning != nil {
+		onCopyRunning()
+	}
 }
 
-// relinkMonitor links the processed microphone to the chat device while it
-// is monitored, removing the links to a device it was monitored on before.
-// It returns the device it is monitored on now.
-func relinkMonitor(nodes map[string]int, ports []pwPort, links []pwLink, chat string, on bool, before int) int {
-	mic, ok := nodes["sonar_mic"]
-	if !ok {
-		return 0
-	}
-	micPorts := sourcePorts(ports, mic)
-	dev, ok := nodes[chat]
-	if !on || !ok || chat == "" {
-		dev = 0
-	}
-	want := map[[2]int]bool{}
-	if dev != 0 {
-		for _, p := range pairPorts(micPorts, portsOf(ports, dev, false)) {
-			want[p] = true
-		}
-	}
-	portNode := map[int]int{}
-	for _, p := range ports {
-		portNode[p.id] = p.node
-	}
+// relinkExtras makes the links ggd manages between other nodes match want:
+// it removes the ones it made before that are no longer wanted and makes
+// the missing ones. It returns the links it now manages.
+func relinkExtras(want map[[2]int]bool, links []pwLink, before map[[2]int]bool) map[[2]int]bool {
+	missing := maps.Clone(want)
 	for _, l := range links {
-		if !slices.ContainsFunc(micPorts, func(p pwPort) bool { return p.id == l.out }) {
-			continue
-		}
-		if n := portNode[l.in]; n == 0 || (n != before && n != dev) {
-			continue
-		}
-		if want[[2]int{l.out, l.in}] {
-			delete(want, [2]int{l.out, l.in})
-		} else {
+		pair := [2]int{l.out, l.in}
+		switch {
+		case want[pair]:
+			delete(missing, pair)
+		case before[pair]:
 			pwLinkCmd("-d", fmt.Sprint(l.id))
 		}
 	}
-	for p := range want {
+	for p := range missing {
 		pwLinkCmd(fmt.Sprint(p[0]), fmt.Sprint(p[1]))
 	}
-	return dev
+	return want
 }
 
 func pwLinkCmd(args ...string) bool {

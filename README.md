@@ -64,9 +64,9 @@ In progress / not done:
   macro area is written empty.
 - Sonar: setup, mixer and settings pages, and classic mode audio on
   PipeWire (channels, EQ, volumes, ChatMix, device routing, default
-  devices), per-app routing, samples, fallback devices and the Arctis
-  Nova 7's ChatMix dial; see docs/sonar.md. Streamer mode and the mic
-  effects are next.
+  devices), per-app routing, samples, fallback devices, the Arctis Nova
+  7's ChatMix dial and streamer mode; see docs/sonar.md. The mic effects,
+  and the mixer's device volumes and level meters, are next.
 - Moments (capture), macro recording, GameSense
   lighting effects, PrismSync rendering, headset-specific Go logic
   (applying Arctis Gen2 EQ to the headset), and keyboard binding

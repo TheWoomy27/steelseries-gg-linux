@@ -87,8 +87,16 @@ func (c channel) stages() []string {
 
 func isGainStage(name string) bool { return name == "gain" || name == "mix" }
 
-// moduleConf is the filter-chain module for a channel.
-func (c channel) moduleConf() string {
+// Streamer mode splits each playback channel into the monitoring mix (the
+// user's headset) and the streaming mix, each with its own gain: the
+// channel's device stream gets a second pair of ports. They are named as
+// rear speakers because PipeWire drops AUX channels in conversion; ggd
+// links them to the streaming device's front pair.
+var streamPorts = map[string]string{"RL": "FL", "RR": "FR"}
+
+// moduleConf is the filter-chain module for a channel; stream adds the
+// streaming mix.
+func (c channel) moduleConf(stream bool) string {
 	var nodes, links []string
 	stages := c.stages()
 	for i, st := range stages {
@@ -105,6 +113,20 @@ func (c channel) moduleConf() string {
 	if c.capture {
 		position, channels = "[ MONO ]", 1
 	}
+	devicePorts, ports := "", ""
+	if stream && !c.capture {
+		last := stages[len(stages)-1]
+		nodes = append(nodes,
+			`{ type = builtin name = mon label = linear control = { "Mult" = 0.0 } }`,
+			`{ type = builtin name = str label = linear control = { "Mult" = 0.0 } }`)
+		links = append(links,
+			fmt.Sprintf(`{ output = "%s:Out" input = "mon:In" }`, last),
+			fmt.Sprintf(`{ output = "%s:Out" input = "str:In" }`, last))
+		ports = fmt.Sprintf(`
+        inputs = [ "%s:In" ]
+        outputs = [ "mon:Out" "str:Out" ]`, stages[0])
+		devicePorts = " audio.channels = 4 audio.position = [ FL RL FR RR ]"
+	}
 	// The virtual device apps use, and the stream to or from the real
 	// device, which ggd links.
 	var virtual, device string
@@ -113,7 +135,7 @@ func (c channel) moduleConf() string {
 		device = fmt.Sprintf(`capture.props = { node.name = %q node.description = %q node.autoconnect = false audio.rate = %d }`, c.deviceStream(), c.desc, sampleRate)
 	} else {
 		virtual = fmt.Sprintf(`capture.props = { node.name = %q node.description = %q media.class = Audio/Sink audio.rate = %d }`, c.node, c.desc, sampleRate)
-		device = fmt.Sprintf(`playback.props = { node.name = %q node.description = %q node.autoconnect = false audio.rate = %d }`, c.deviceStream(), c.desc, sampleRate)
+		device = fmt.Sprintf(`playback.props = { node.name = %q node.description = %q node.autoconnect = false audio.rate = %d%s }`, c.deviceStream(), c.desc, sampleRate, devicePorts)
 	}
 	return fmt.Sprintf(`  { name = libpipewire-module-filter-chain
     args = {
@@ -127,16 +149,63 @@ func (c channel) moduleConf() string {
         ]
         links = [
           %s
-        ]
+        ]%s
       }
       %s
       %s
     }
   }
-`, c.desc, c.desc, channels, position, strings.Join(nodes, "\n          "), strings.Join(links, "\n          "), virtual, device)
+`, c.desc, c.desc, channels, position, strings.Join(nodes, "\n          "), strings.Join(links, "\n          "), ports, virtual, device)
 }
 
-func graphConf(chs []channel) string {
+// micCopyConf is streamer mode's copy of the processed microphone, to the
+// monitoring mix (to hear oneself) and the streaming mix, each with its own
+// gain (Sonar's MicCopy redirection).
+const micCopy = "sonar_mic_copy"
+
+func micCopyConf() string {
+	return fmt.Sprintf(`  { name = libpipewire-module-filter-chain
+    args = {
+      node.description = "SteelSeries Sonar - Microphone copy"
+      media.name = "SteelSeries Sonar - Microphone copy"
+      filter.graph = {
+        nodes = [
+          { type = builtin name = in label = copy }
+          { type = builtin name = mon label = linear control = { "Mult" = 0.0 } }
+          { type = builtin name = str label = linear control = { "Mult" = 0.0 } }
+        ]
+        links = [
+          { output = "in:Out" input = "mon:In" }
+          { output = "in:Out" input = "str:In" }
+        ]
+        inputs = [ "in:In" ]
+        outputs = [ "mon:Out" "str:Out" ]
+      }
+      capture.props = { node.name = %q node.autoconnect = false audio.rate = %d audio.channels = 1 audio.position = [ MONO ] }
+      playback.props = { node.name = %q node.autoconnect = false audio.rate = %d audio.channels = 2 audio.position = [ FL RL ] }
+    }
+  }
+`, micCopy, sampleRate, micCopy+".device", sampleRate)
+}
+
+// The Stream device, a virtual output for the streaming mix that streaming
+// software records (its monitor). It is a loopback's input side: objects
+// this process created itself would not reach the session's PipeWire.
+const streamDevice = "sonar_stream"
+
+func streamDeviceConf() string {
+	return fmt.Sprintf(`  { name = libpipewire-module-loopback
+    args = {
+      node.description = "SteelSeries Sonar - Stream"
+      audio.position = [ FL FR ]
+      capture.props = { node.name = %q media.class = Audio/Sink audio.rate = %d }
+      playback.props = { node.name = %q node.autoconnect = false node.passive = true audio.rate = %d }
+    }
+  }
+`, streamDevice, sampleRate, streamDevice+".out", sampleRate)
+}
+
+func graphConf(chs []channel, stream bool) string {
 	var b strings.Builder
 	b.WriteString(`# Generated by ggd for Sonar.
 context.properties = { log.level = 2 }
@@ -147,7 +216,11 @@ context.modules = [
   { name = libpipewire-module-adapter }
 `)
 	for _, c := range chs {
-		b.WriteString(c.moduleConf())
+		b.WriteString(c.moduleConf(stream))
+	}
+	if stream {
+		b.WriteString(micCopyConf())
+		b.WriteString(streamDeviceConf())
 	}
 	b.WriteString("]\n")
 	return b.String()
@@ -262,13 +335,16 @@ type audio struct {
 	active    map[string]bool   // channels running, by node
 	stopped   chan struct{}     // closed when the graph stops
 
-	micSample   string // a player feeding the microphone channel, by node.name
-	monitor     bool   // play the processed microphone on the chat device
-	monitorNode int    // the device the microphone is monitored on
+	stream    bool            // streamer mode's graph
+	micSample string          // a player feeding the microphone channel, by node.name
+	monitor   bool            // play the processed microphone on the chat device
+	extra     map[[2]int]bool // links ggd made between other nodes (see relinkExtras)
+	copyOn    bool            // the microphone copy is running
 
 	// onRunning is called when a channel starts running, to reapply its
-	// settings.
-	onRunning func(c channel)
+	// settings, and onCopyRunning when the microphone copy does.
+	onRunning     func(c channel)
+	onCopyRunning func()
 }
 
 // setMicSample feeds a player into the microphone channel, beside the
@@ -305,14 +381,15 @@ func nodeIDs() (map[string]int, error) {
 
 // start runs the graph for chs, linking each channel to its device from
 // targets (device node names by redirection).
-func (a *audio) start(chs []channel, targets map[string]string) error {
+func (a *audio) start(chs []channel, targets map[string]string, stream bool) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.stopLocked()
 	conf := filepath.Join(paths.State(), "sonar-pipewire.conf")
-	if err := os.WriteFile(conf, []byte(graphConf(chs)), 0o644); err != nil {
+	if err := os.WriteFile(conf, []byte(graphConf(chs, stream)), 0o644); err != nil {
 		return err
 	}
+	a.stream, a.extra, a.copyOn = stream, map[[2]int]bool{}, false
 	cmd := pwCommand("pipewire", "-c", conf)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGTERM}
 	if err := cmd.Start(); err != nil {
@@ -330,6 +407,11 @@ func (a *audio) start(chs []channel, targets map[string]string) error {
 		ready := true
 		for _, c := range chs {
 			if _, ok := ids[c.node]; !ok {
+				ready = false
+			}
+		}
+		for _, n := range []string{micCopy, streamDevice} {
+			if _, ok := ids[n]; stream && !ok {
 				ready = false
 			}
 		}
@@ -371,10 +453,25 @@ func (a *audio) isRunning(c channel) bool {
 	return false
 }
 
+// nodeID finds a node, reading the graph again for nodes that appeared
+// after the last read.
 func (a *audio) nodeID(name string) (int, bool) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	id, ok := a.ids[name]
+	a.mu.Unlock()
+	if ok {
+		return id, true
+	}
+	ids, err := nodeIDs()
+	if err != nil {
+		return 0, false
+	}
+	a.mu.Lock()
+	if a.ids != nil {
+		a.ids = ids
+	}
+	a.mu.Unlock()
+	id, ok = ids[name]
 	return id, ok
 }
 
@@ -408,6 +505,18 @@ func (a *audio) setVolume(c channel, gain float64, mute bool) {
 }
 
 // setTarget moves a redirection's channels to another device.
+// setTargets replaces every device the graph plays to or records from.
+func (a *audio) setTargets(targets map[string]string) {
+	a.mu.Lock()
+	if a.targets == nil {
+		a.mu.Unlock()
+		return
+	}
+	a.targets = targets
+	a.mu.Unlock()
+	a.relink()
+}
+
 func (a *audio) setTarget(redirect, target string) {
 	a.mu.Lock()
 	if a.targets == nil {

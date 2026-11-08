@@ -117,5 +117,26 @@ devices, as on Windows. Turning Sonar off restores the previous defaults.
      (state `finiteWheel`) and the slider is read-only, as on Windows.
    Tested on a private PipeWire with WirePlumber (TestRoutingOnPipeWire,
    TestPhase3OnPipeWire), in the mixer, and with the Arctis Nova 7.
-4. Streamer mode.
+4. Streamer mode. Done:
+   - Each playback channel's filter chain splits after its processing
+     into a monitoring and a streaming gain; its device stream has four
+     ports, the streaming pair named RL/RR because PipeWire drops AUX
+     channels in conversion, and ggd links them to the monitoring and
+     streaming devices.
+   - A second chain copies the processed microphone into either mix
+     (Sonar's MicCopy), and the microphone channel records from the
+     stream mode microphone.
+   - "SteelSeries Sonar - Stream" is a loopback's input side (objects the
+     helper process created itself would not reach the session's
+     PipeWire); streaming software records its monitor.
+   - Mix volumes are linear gains, as in Sonar; a mix's master scales its
+     roles and its mute is all roles muted. Stream monitoring links the
+     streaming device's monitor to the monitoring device.
+   - Entering streamer mode the first time takes the classic Game and Mic
+     devices for the monitoring and microphone devices, which Windows
+     leaves empty until chosen.
+   Tested on a private PipeWire with WirePlumber (TestStreamModeOnPipeWire
+   measures each mix) and in the mixer. The device percentages in the
+   mixer come from GG's native audio meter module, which has no Linux
+   counterpart yet.
 5. Mic effects, then surround and reverb equivalents.

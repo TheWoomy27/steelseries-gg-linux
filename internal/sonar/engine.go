@@ -68,10 +68,13 @@ func (s *Service) chatMixBalance() float64 {
 // mixFactor is a playback channel's share of the master volume and, for
 // Game and Chat, ChatMix: turning it toward one side lowers the other.
 func (s *Service) mixFactor(c channel, vols classicVolumes) float64 {
-	if vols.Master.Muted {
-		return 0
+	f := 1.0
+	if !s.streamMode() {
+		if vols.Master.Muted {
+			return 0
+		}
+		f = sliderGain(vols.Master.Volume)
 	}
-	f := sliderGain(vols.Master.Volume)
 	switch b := scaledBalance(s.chatMixBalance()); c.role {
 	case "Game":
 		f *= math.Max(0, math.Min(1, 1-b))
@@ -120,12 +123,19 @@ func (s *Service) syncAudio() {
 		s.stopAudio()
 		return
 	}
-	if err := s.audio.start(s.enabledChannels(), s.redirectionDevices()); err != nil {
+	targets := s.redirectionDevices()
+	if s.streamMode() {
+		targets = s.streamTargets()
+	}
+	if err := s.audio.start(s.enabledChannels(), targets, s.streamMode()); err != nil {
 		slog.Error("sonar: starting audio", "err", err)
 		return
 	}
 	for _, c := range s.enabledChannels() {
 		s.applyChannel(c)
+	}
+	if s.streamMode() {
+		s.applyMicCopy()
 	}
 	s.makeDefault()
 }
@@ -145,10 +155,23 @@ func (s *Service) applyChannel(c channel) {
 		return
 	}
 	vols := s.classicVolumes()
+	// In streamer mode a playback channel's volumes are its mixes' gains.
+	var mixes []any
+	stream := s.streamMode() && !c.capture
+	if stream {
+		sv := s.streamerVolumes()
+		mixes = []any{"mon:Mult", s.streamGain(sv, "Monitoring", c.role), "str:Mult", s.streamGain(sv, "Streaming", c.role)}
+	}
 	if cfgs, err := s.queryConfigs(`WHERE id IN (SELECT config_id FROM selected_config WHERE vad = ?)`, c.vad); err == nil && len(cfgs) > 0 {
 		if data, ok := cfgs[0].Data.(*object); ok {
-			s.audio.setControls(c, channelParams(c, data, s.mixFactor(c, vols)))
+			s.audio.setControls(c, append(channelParams(c, data, s.mixFactor(c, vols)), mixes...))
 		}
+	} else if stream {
+		s.audio.setControls(c, mixes)
+	}
+	if stream {
+		s.audio.setVolume(c, 1, false)
+		return
 	}
 	v := vols.Roles[c.role]
 	s.audio.setVolume(c, sliderGain(v.Volume), v.Muted)

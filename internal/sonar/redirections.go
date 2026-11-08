@@ -128,6 +128,9 @@ func (s *Service) streamRedirection(id string) streamRedirection {
 	r := streamRedirection{StreamRedirectionID: camel(id), Status: []streamStatus{}}
 	if d := s.setting(upperSnake(id)+"_STREAM_MODE_DEVICE_ID", ""); d != "" {
 		r.DeviceID = &d
+		if s.streamMode() {
+			_, r.IsRunning = s.audio.nodeID(d)
+		}
 	}
 	for _, role := range streamRoles {
 		r.Status = append(r.Status, streamStatus{camel(role), s.boolSetting(upperSnake(id) + "_STREAM_MODE_" + upperSnake(role) + "_IS_ENABLED")})
@@ -185,10 +188,12 @@ func (s *Service) redirectionRoutes() {
 			reply(w, nil, argErrorf("The value '%s' is not valid.", r.PathValue("id")))
 			return
 		}
+		locked := s.streamMonitoringLocked()
 		if err := s.setSetting(upperSnake(id)+"_STREAM_MODE_DEVICE_ID", deviceID); err != nil {
 			reply(w, nil, err)
 			return
 		}
+		s.streamRoutingChanged(locked)
 		httpx.JSON(w, s.streamRedirection(id))
 	}
 	sv.Handle("PUT /streamRedirections/{id}/deviceId/{deviceId}", func(w http.ResponseWriter, r *http.Request) {
@@ -207,6 +212,7 @@ func (s *Service) redirectionRoutes() {
 			reply(w, nil, err)
 			return
 		}
+		s.applyStreamRouting()
 		httpx.JSON(w, s.streamRedirection(id))
 	})
 

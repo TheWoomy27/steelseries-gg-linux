@@ -41,6 +41,7 @@ func New(token string) (*Service, error) {
 	}
 	s := &Service{srv: httpx.NewServer("sonar", token), ws: events.NewHub("sonar", ""), db: d}
 	s.audio.onRunning = s.applyChannel
+	s.audio.onCopyRunning = s.applyMicCopy
 	s.upgradeConfigs()
 	s.routes()
 	return s, nil
@@ -113,6 +114,7 @@ func (s *Service) routes() {
 	s.chatMixRoutes()
 	s.fallbackRoutes()
 	s.sampleRoutes()
+	s.streamerRoutes()
 
 	sv.Handle("GET /configs", func(w http.ResponseWriter, r *http.Request) {
 		vad := 0
@@ -192,7 +194,23 @@ func (s *Service) routes() {
 			reply(w, nil, argErrorf("The value '%s' is not valid.", id))
 			return
 		}
-		reply(w, camel(id), s.setSetting("MODE", id))
+		if id == s.setting("MODE", modeClassic) {
+			reply(w, camel(id), nil)
+			return
+		}
+		if err := s.setSetting("MODE", id); err != nil {
+			reply(w, nil, err)
+			return
+		}
+		if id == modeStream {
+			s.enterStreamMode()
+		}
+		s.stopSamples()
+		s.syncAudio()
+		// The client fetches the stream redirections again on this event;
+		// entering streamer mode may have set its devices.
+		s.ws.Broadcast("SONAR_EVENT_REDIRECTION_STATUS_UPDATE", nil)
+		reply(w, camel(id), nil)
 	})
 
 	// Features follow the connected SteelSeries devices (hardware ChatMix,

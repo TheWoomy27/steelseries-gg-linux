@@ -89,6 +89,9 @@ func devicesIn(objs []pwObject, sink, source string) []audioDevice {
 		if name == sink || name == source {
 			d.DefaultRole = "all"
 		}
+		if name == streamDevice {
+			d.Role, d.IsVad = "stream", true
+		}
 		for _, c := range channels {
 			if c.node != name {
 				continue

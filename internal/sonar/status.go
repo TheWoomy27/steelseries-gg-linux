@@ -33,18 +33,25 @@ func newRedirectionVolumes() redirectionVolumes {
 	}
 }
 
-// volumeInfo is Sonar's VolumeInfo; dictionary keys are camelCased. Stream
-// mode volumes are not implemented yet.
+// volumeInfo is Sonar's VolumeInfo, with the classic and the streamer
+// volumes; dictionary keys are camelCased.
 func (s *Service) volumeInfo() map[string]any {
 	vols := s.classicVolumes()
+	stream := s.streamerVolumes()
 	devices := map[string]redirectionVolumes{}
 	for _, r := range channelRoles {
 		v := newRedirectionVolumes()
 		v.Classic = vols.Roles[r]
+		for _, mix := range streamMixes {
+			v.Stream[camel(mix)] = stream.Roles[mix][r]
+		}
 		devices[camel(r)] = v
 	}
 	masters := newRedirectionVolumes()
 	masters.Classic = vols.Master
+	for _, mix := range streamMixes {
+		masters.Stream[camel(mix)] = volume{stream.Masters[mix], stream.masterMuted(mix)}
+	}
 	return map[string]any{"masters": masters, "devices": devices}
 }
 
@@ -215,9 +222,6 @@ func (s *Service) statusRoutes() {
 		w.WriteHeader(http.StatusOK)
 	})
 	sv.Handle("GET /volumeSettings/devices/volumes", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, []any{}) })
-
-	sv.Handle("GET /streamRedirections/isStreamMonitoringLocked", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, false) })
-	s.boolRoutes("/streamRedirections/isStreamMonitoringEnabled", "STREAM_MODE_IS_STREAM_MONITORING_ENABLED")
 
 	// GameDAC line and headphone outputs.
 	sv.Handle("GET /deviceOut", func(w http.ResponseWriter, r *http.Request) {
