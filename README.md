@@ -50,6 +50,8 @@ In progress / not done:
   lighting effects, PrismSync rendering, headset-specific Go logic
   (applying Arctis Gen2 EQ to the headset), and keyboard binding
   conversion are not implemented.
-- The main window has no minimize/maximize/close buttons on Linux yet.
+- With no tray icon yet, closing GG's last window quits the client (ggd
+  keeps running); start it again with `steelseries-gg`. Hyprland ignores
+  the minimize button, as it has no minimized state.
 - Firmware updates are deliberately disabled.
 - SteelSeries account sign-in is not supported (use "skip").
