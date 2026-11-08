@@ -30,6 +30,7 @@ var installerItems = []string{
 	"shared/assets/",
 	"resources/overlays/",
 	"apps/moments/sounds/",
+	"apps/sonar/db-migrations/",
 	"$_153_/",
 }
 

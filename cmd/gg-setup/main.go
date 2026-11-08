@@ -80,6 +80,7 @@ func run(installer string, withFirmware, keep bool) error {
 		{"shared/assets", filepath.Join(paths.Assets(), "shared")},
 		{"resources/overlays", filepath.Join(paths.Assets(), "overlays")},
 		{"apps/moments/sounds", filepath.Join(paths.Assets(), "moments", "sounds")},
+		{"apps/sonar/db-migrations", paths.SonarDBMig()},
 		// The NSIS "$_153_" bundle carries the loadout device images and
 		// Sonar audio samples.
 		{"$_153_/apps/engine/assets", filepath.Join(paths.EngineRoot(), "assets")},

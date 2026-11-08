@@ -36,6 +36,7 @@ func Assets() string       { return filepath.Join(Data(), "assets") }
 func Firmware() string     { return filepath.Join(EngineRoot(), "firmware") }
 func PrismDBMig() string   { return filepath.Join(EngineRoot(), "prism", "db", "migrations") }
 func TrayIcons() string    { return filepath.Join(Data(), "gg", "tray") }
+func SonarDBMig() string   { return filepath.Join(Data(), "sonar", "db-migrations") }
 
 // Runtime state.
 func State() string     { return filepath.Join(Data(), "state") }
@@ -45,6 +46,7 @@ func TLSDir() string    { return filepath.Join(State(), "tls") }
 func EngineDB() string  { return filepath.Join(State(), "engine.db") }
 func GGDB() string      { return filepath.Join(State(), "gg.db") }
 func PrismDB() string   { return filepath.Join(State(), "prism.db") }
+func SonarDB() string   { return filepath.Join(State(), "sonar.db") }
 
 // GameSenseCoreProps is where GameSense SDK clients look for the engine
 // address. On Windows this is %PROGRAMDATA%/SteelSeries/SteelSeries Engine 3;
