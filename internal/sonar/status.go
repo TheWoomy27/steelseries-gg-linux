@@ -43,12 +43,14 @@ func newRedirectionVolumes() redirectionVolumes {
 func volumeInfo() map[string]any {
 	devices := map[string]redirectionVolumes{}
 	for _, r := range channelRoles {
-		devices[lowerFirst(r)] = newRedirectionVolumes()
+		devices[camel(r)] = newRedirectionVolumes()
 	}
 	return map[string]any{"masters": newRedirectionVolumes(), "devices": devices}
 }
 
-func lowerFirst(s string) string {
+// camel writes an enum value or dictionary key the way Sonar's API does
+// (Newtonsoft with camelCase naming: ChatRender -> chatRender).
+func camel(s string) string {
 	if s == "" {
 		return s
 	}
@@ -90,13 +92,13 @@ func (s *Service) statusRoutes() {
 		httpx.JSON(w, map[string]any{
 			"isEnabled":              true,
 			"isOnboardingDone":       s.boolSetting("ONBOARDING_FINISHED"),
-			"mode":                   s.setting("MODE", modeClassic),
+			"mode":                   camel(s.setting("MODE", modeClassic)),
 			"areEndpointsConfigured": false,
 			"devices":                []any{},
 		})
 	})
 	sv.Handle("GET /v1/chatMix", func(w http.ResponseWriter, r *http.Request) {
-		httpx.JSON(w, map[string]any{"balance": 0.0, "state": "Enabled", "id": "00000000-0000-0000-0000-000000000000"})
+		httpx.JSON(w, map[string]any{"balance": 0.0, "state": "enabled", "id": "00000000-0000-0000-0000-000000000000"})
 	})
 
 	sv.Handle("GET /volumeSettings/classic", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, volumeInfo()) })
@@ -112,7 +114,7 @@ func (s *Service) statusRoutes() {
 	sv.Handle("GET /fallbackSettings/lists", func(w http.ResponseWriter, r *http.Request) {
 		lists := []map[string]any{}
 		for _, role := range channelRoles {
-			lists = append(lists, map[string]any{"key": role, "value": []any{}})
+			lists = append(lists, map[string]any{"key": camel(role), "value": []any{}})
 		}
 		httpx.JSON(w, lists)
 	})
@@ -145,6 +147,28 @@ func (s *Service) statusRoutes() {
 	sv.Handle("GET /audioSamples/isRecording", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, false) })
 	sv.Handle("PUT /audioSamples/stopRecord", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 
+	// Sonar forwards these to SteelSeries' analytics; gg-linux drops them.
+	sv.Handle("POST /analytics/track", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	// In-app toasts come from SteelSeries' online content service.
+	sv.Handle("GET /content/inAppToastMessage", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, nil) })
+	// Applications playing or recording on each device, for per-app routing.
+	sv.Handle("GET /AudioDeviceRouting", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, []any{}) })
+
+	sv.Handle("GET /steelseriesDevice/firstDevice", func(w http.ResponseWriter, r *http.Request) {
+		devs, err := steelSeriesDevices()
+		reply(w, firstSteelSeriesDevice(devs), err)
+	})
+	sv.Handle("GET /steelseriesDevice/preferredDevice/{deviceName}", func(w http.ResponseWriter, r *http.Request) {
+		devs, err := steelSeriesDevices()
+		var found *steelSeriesDevice
+		for _, d := range devs {
+			if d.Name == r.PathValue("deviceName") {
+				found = &d
+				break
+			}
+		}
+		reply(w, found, err)
+	})
 	sv.Handle("GET /audioDevices", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		devs, err := audioDevices()
@@ -155,7 +179,7 @@ func (s *Service) statusRoutes() {
 		flow := q.Get("deviceDataFlow")
 		out := []audioDevice{}
 		for _, d := range devs {
-			if flow != "" && flow != "All" && d.DataFlow != flow {
+			if flow != "" && !strings.EqualFold(flow, "all") && !strings.EqualFold(d.DataFlow, flow) {
 				continue
 			}
 			if q.Get("onlySteelSeriesVAD") == "true" && !d.IsVad || q.Get("removeSteelSeriesVAD") == "true" && d.IsVad {

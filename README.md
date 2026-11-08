@@ -59,8 +59,8 @@ Working:
 In progress / not done:
 - Config deploys/writes are implemented but untested on hardware.
   gg-linux does not write to a device until you change a setting in GG.
-- Sonar: its API and settings are in place (docs/sonar.md), audio on
-  PipeWire is next. The client opens Sonar only for a signed-in account.
+- Sonar: its setup, mixer and settings pages work (docs/sonar.md); audio
+  on PipeWire is next.
 - Moments (capture), macro recording, GameSense
   lighting effects, PrismSync rendering, headset-specific Go logic
   (applying Arctis Gen2 EQ to the headset), and keyboard binding
@@ -68,4 +68,5 @@ In progress / not done:
 - Tray notifications (update and battery toasts) are not shown yet.
 - Hyprland ignores the minimize button, as it has no minimized state.
 - Firmware updates are deliberately disabled.
-- SteelSeries account sign-in is not supported (use "skip").
+- GG runs with a local profile (your Linux user, signed in) so Sonar and
+  Moments open offline; SteelSeries account sign-in is not supported.

@@ -55,9 +55,9 @@ func audioDevices() ([]audioDevice, error) {
 		flow := ""
 		switch p["media.class"] {
 		case "Audio/Sink":
-			flow = "Render"
+			flow = "render"
 		case "Audio/Source":
-			flow = "Capture"
+			flow = "capture"
 		default:
 			continue
 		}
@@ -68,9 +68,84 @@ func audioDevices() ([]audioDevice, error) {
 		}
 		channels, _ := p["audio.channels"].(float64)
 		out = append(out, audioDevice{
-			FriendlyName: desc, ID: name, DataFlow: flow, Role: "None", Channels: int(channels),
-			DefaultRole: "Console", State: "Active",
+			FriendlyName: desc, ID: name, DataFlow: flow, Role: "none", Channels: int(channels),
+			DefaultRole: "console", State: "active",
 		})
 	}
 	return out, nil
+}
+
+// steelSeriesDevice is Sonar's SteelSeriesAudioDevice: a SteelSeries audio
+// device with its output and input, which onboarding preselects.
+type steelSeriesDevice struct {
+	Name              string  `json:"name"`
+	ImageURL          string  `json:"imageUrl"`
+	CaptureID         *string `json:"captureId"`
+	RenderID          *string `json:"renderId"`
+	HumanReadableName string  `json:"humanReadableName"`
+}
+
+// steelSeriesDevices lists the SteelSeries (USB vendor 1038) audio devices
+// with their sink and source nodes.
+func steelSeriesDevices() ([]steelSeriesDevice, error) {
+	objs, err := pwDump()
+	if err != nil {
+		return nil, err
+	}
+	byDevice := map[float64]*steelSeriesDevice{}
+	var order []float64
+	for _, o := range objs {
+		p := o.Info.Props
+		if o.Type == "PipeWire:Interface:Device" && p["media.class"] == "Audio/Device" && p["device.vendor.id"] == "0x1038" {
+			name, _ := p["device.product.name"].(string)
+			if desc, _ := p["device.description"].(string); name == "" {
+				name = desc
+			}
+			byDevice[float64(o.ID)] = &steelSeriesDevice{Name: name, HumanReadableName: name}
+			order = append(order, float64(o.ID))
+		}
+	}
+	for _, o := range objs {
+		p := o.Info.Props
+		dev, _ := p["device.id"].(float64)
+		d := byDevice[dev]
+		if o.Type != "PipeWire:Interface:Node" || d == nil {
+			continue
+		}
+		name, _ := p["node.name"].(string)
+		switch p["media.class"] {
+		case "Audio/Sink":
+			if d.RenderID == nil {
+				d.RenderID = &name
+			}
+		case "Audio/Source":
+			if d.CaptureID == nil {
+				d.CaptureID = &name
+			}
+		}
+	}
+	out := []steelSeriesDevice{}
+	for _, id := range order {
+		if d := byDevice[id]; d.RenderID != nil || d.CaptureID != nil {
+			out = append(out, *d)
+		}
+	}
+	return out, nil
+}
+
+// firstSteelSeriesDevice picks the device onboarding preselects: one with
+// both an output and an input, else an output, else an input.
+func firstSteelSeriesDevice(devs []steelSeriesDevice) *steelSeriesDevice {
+	for _, want := range []func(d steelSeriesDevice) bool{
+		func(d steelSeriesDevice) bool { return d.RenderID != nil && d.CaptureID != nil },
+		func(d steelSeriesDevice) bool { return d.RenderID != nil },
+		func(d steelSeriesDevice) bool { return d.CaptureID != nil },
+	} {
+		for _, d := range devs {
+			if want(d) {
+				return &d
+			}
+		}
+	}
+	return nil
 }

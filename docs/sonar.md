@@ -73,8 +73,10 @@ devices, as on Windows. Turning Sonar off restores the previous defaults.
 1. Service, database and REST API: the Sonar page loads and edits persist.
    No audio changes. Done: configs (with Sonar's schema upgrades, checked
    against Sonar's own code by tools/sonar-oracle), mode, onboarding,
-   classic routing and the settings the page reads. The client only opens
-   Sonar for a signed-in SteelSeries account.
+   classic and stream routing and the settings the setup and mixer pages
+   read. The client opens Sonar only for a signed-in account; the GG core
+   signs in a local profile. The API writes enum values in camelCase
+   (Newtonsoft with camelCase naming), as the client compares them.
 2. Classic mode audio: the four channels and the microphone with EQ,
    volumes, ChatMix, device selection and default devices.
 3. Per-app routing, samples and fallback devices.

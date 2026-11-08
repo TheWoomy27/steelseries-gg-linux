@@ -165,7 +165,7 @@ func (s *Service) routes() {
 	})
 	sv.Handle("GET /configs/options", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, s.configOptions()) })
 
-	sv.Handle("GET /mode", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, s.setting("MODE", modeClassic)) })
+	sv.Handle("GET /mode", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, camel(s.setting("MODE", modeClassic))) })
 	sv.Handle("PUT /mode/{id}", func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
 		switch strings.ToLower(id) {
@@ -177,7 +177,7 @@ func (s *Service) routes() {
 			reply(w, nil, argErrorf("The value '%s' is not valid.", id))
 			return
 		}
-		reply(w, id, s.setSetting("MODE", id))
+		reply(w, camel(id), s.setSetting("MODE", id))
 	})
 
 	// Features follow the connected SteelSeries devices (hardware ChatMix,
@@ -185,7 +185,13 @@ func (s *Service) routes() {
 	sv.Handle("GET /features", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, []any{}) })
 	sv.Handle("GET /features/development", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, []any{}) })
 	sv.Handle("GET /features/{feature}", func(w http.ResponseWriter, r *http.Request) {
-		httpx.JSON(w, map[string]any{"id": r.PathValue("feature"), "isEnabled": false, "data": nil})
+		// BuiltInEq's data lists the devices with their own EQ that Sonar
+		// plays to (the "double EQ" warning).
+		var data any
+		if strings.EqualFold(r.PathValue("feature"), "BuiltInEq") {
+			data = []any{}
+		}
+		httpx.JSON(w, map[string]any{"id": r.PathValue("feature"), "isEnabled": false, "data": data})
 	})
 	s.statusRoutes()
 	s.redirectionRoutes()

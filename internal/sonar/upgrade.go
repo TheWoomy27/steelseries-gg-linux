@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 // Virtual audio devices (Sonar's channels), as stored in configs.vad.
@@ -21,7 +22,7 @@ var vadNames = map[int]string{
 
 func vadByName(name string) (int, bool) {
 	for v, n := range vadNames {
-		if n == name {
+		if strings.EqualFold(n, name) {
 			return v, true
 		}
 	}

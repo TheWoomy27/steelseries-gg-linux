@@ -74,7 +74,7 @@ func (c *config) MarshalJSON() ([]byte, error) {
 	o.set("name", c.Name)
 	o.set("createdAt", c.CreatedAt.Format(jsonTime))
 	o.set("updatedAt", c.UpdatedAt.Format(jsonTime))
-	o.set("virtualAudioDevice", vadNames[c.VAD])
+	o.set("virtualAudioDevice", camel(vadNames[c.VAD]))
 	o.set("data", c.Data)
 	o.set("schemaVersion", c.SchemaVersion)
 	o.set("isPreset", c.IsPreset)
@@ -470,7 +470,7 @@ type configOption struct {
 func (s *Service) configOptions() []configOption {
 	out := []configOption{}
 	for _, vad := range []int{vadGame, vadChatRender, vadChatCapture, vadMedia, vadAux} {
-		out = append(out, configOption{vadNames[vad], s.favoriteLimitReached(vad)})
+		out = append(out, configOption{camel(vadNames[vad]), s.favoriteLimitReached(vad)})
 	}
 	return out
 }
