@@ -42,9 +42,21 @@ generated configuration) that hosts one filter-chain per channel:
   a virtual source "SteelSeries Sonar - Microphone";
 - Streamer mode adds the Streaming and Monitoring mixes.
 
-Settings that do not change the graph (EQ gains, volumes, ChatMix) are
-applied live through the filter nodes' parameters. Changing devices
-regenerates the configuration.
+EQ bands are `bq_raw` filters whose coefficients ggd computes (RBJ
+cookbook), so a band's type, frequency, gain and Q all change live; tone
+controls, gain, master volume and ChatMix are further stages of the same
+chain, and channel volumes are the virtual devices' own.
+
+ggd links each channel to its device itself (`node.autoconnect = false`)
+and keeps it linked as devices come and go. Leaving it to the session
+manager would make a missing device either tear the channel down (with
+`node.dont-fallback`) or fall back to the default device, which is Sonar's
+own Gaming sink.
+
+A filter-chain recreates its filters, at their configured coefficients,
+whenever it starts running, so channels are not passive (they keep their
+devices open while Sonar is on, as on Windows) and ggd reapplies a
+channel's settings when it starts running again.
 
 While Sonar is on, its Gaming sink and Microphone source are the default
 devices, as on Windows. Turning Sonar off restores the previous defaults.
@@ -78,7 +90,10 @@ devices, as on Windows. Turning Sonar off restores the previous defaults.
    signs in a local profile. The API writes enum values in camelCase
    (Newtonsoft with camelCase naming), as the client compares them.
 2. Classic mode audio: the four channels and the microphone with EQ,
-   volumes, ChatMix, device selection and default devices.
+   volumes, ChatMix, device selection and default devices. Done and
+   tested on a private PipeWire instance; Sonar's tone controls are
+   approximations (bass and treble shelves, a presence peak for voice
+   clarity).
 3. Per-app routing, samples and fallback devices.
 4. Streamer mode.
 5. Mic effects, then surround and reverb equivalents.

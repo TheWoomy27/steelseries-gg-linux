@@ -24,7 +24,11 @@ type pwObject struct {
 	ID   int    `json:"id"`
 	Type string `json:"type"`
 	Info struct {
-		Props map[string]any `json:"props"`
+		Props      map[string]any `json:"props"`
+		State      string         `json:"state"`          // nodes
+		Direction  string         `json:"direction"`      // ports
+		OutputPort int            `json:"output-port-id"` // links
+		InputPort  int            `json:"input-port-id"`
 	} `json:"info"`
 }
 
@@ -40,12 +44,15 @@ func pwDump() ([]pwObject, error) {
 	return objs, nil
 }
 
-// audioDevices lists the PipeWire sinks (Render) and sources (Capture).
+// audioDevices lists the PipeWire sinks (render) and sources (capture).
+// Sonar's own devices carry their channel's role, and default devices
+// their Windows default role (see defaultRole).
 func audioDevices() ([]audioDevice, error) {
 	objs, err := pwDump()
 	if err != nil {
 		return nil, err
 	}
+	sink, source, _ := defaultDevices()
 	out := []audioDevice{}
 	for _, o := range objs {
 		if o.Type != "PipeWire:Interface:Node" {
@@ -66,11 +73,25 @@ func audioDevices() ([]audioDevice, error) {
 		if desc == "" {
 			desc = name
 		}
-		channels, _ := p["audio.channels"].(float64)
-		out = append(out, audioDevice{
-			FriendlyName: desc, ID: name, DataFlow: flow, Role: "none", Channels: int(channels),
-			DefaultRole: "console", State: "active",
-		})
+		nch, _ := p["audio.channels"].(float64)
+		d := audioDevice{FriendlyName: desc, ID: name, DataFlow: flow, Role: "none", Channels: int(nch),
+			DefaultRole: "console", State: "active"}
+		if name == sink || name == source {
+			d.DefaultRole = "all"
+		}
+		for _, c := range channels {
+			if c.node != name {
+				continue
+			}
+			d.Role, d.IsVad, d.DefaultRole = camel(c.role), true, "console"
+			switch {
+			case c.role == "Game" && sink == name, c.capture && source == name:
+				d.DefaultRole = "multimedia"
+			case c.role == "ChatRender" && sink == channels[0].node:
+				d.DefaultRole = "communications"
+			}
+		}
+		out = append(out, d)
 	}
 	return out, nil
 }

@@ -72,6 +72,11 @@ func (s *Service) classicRedirection(id string) classicRedirection {
 	r := classicRedirection{ID: camel(id)}
 	if d, ok := s.redirectionDevices()[id]; ok {
 		r.DeviceID = &d
+		for _, c := range channels {
+			if c.redirect == id && s.audio.isLinked(c) {
+				r.IsRunning = true
+			}
+		}
 	}
 	return r
 }
@@ -150,6 +155,7 @@ func (s *Service) redirectionRoutes() {
 				s.setRedirectionDevice(id, dev)
 			}
 		}
+		s.syncAudio()
 		w.WriteHeader(http.StatusOK)
 	})
 	sv.Handle("PUT /onboarding/configure", func(w http.ResponseWriter, r *http.Request) {
@@ -217,6 +223,7 @@ func (s *Service) redirectionRoutes() {
 			reply(w, nil, err)
 			return
 		}
+		s.retarget(id)
 		httpx.JSON(w, s.classicRedirection(id))
 	}
 	sv.Handle("PUT /classicRedirections/{id}/deviceId/{deviceId}", func(w http.ResponseWriter, r *http.Request) {
@@ -229,6 +236,7 @@ func (s *Service) redirectionRoutes() {
 				reply(w, nil, err)
 				return
 			}
+			s.retarget(id)
 		}
 		httpx.JSON(w, s.classicRedirections(renderRedirectionIDs))
 	})

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"ggl/internal/db"
@@ -19,9 +20,13 @@ import (
 )
 
 type Service struct {
-	srv *httpx.Server
-	ws  *events.Hub // ws://<sonar>/sock
-	db  *sql.DB
+	srv   *httpx.Server
+	ws    *events.Hub // ws://<sonar>/sock
+	db    *sql.DB
+	audio audio
+
+	mu     sync.Mutex
+	active bool // Sonar is enabled in GG
 }
 
 func New(token string) (*Service, error) {
@@ -30,6 +35,7 @@ func New(token string) (*Service, error) {
 		return nil, err
 	}
 	s := &Service{srv: httpx.NewServer("sonar", token), ws: events.NewHub("sonar", ""), db: d}
+	s.audio.onRunning = s.applyChannel
 	s.upgradeConfigs()
 	s.routes()
 	return s, nil

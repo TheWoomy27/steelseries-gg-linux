@@ -59,8 +59,10 @@ Working:
 In progress / not done:
 - Config deploys/writes are implemented but untested on hardware.
   gg-linux does not write to a device until you change a setting in GG.
-- Sonar: its setup, mixer and settings pages work (docs/sonar.md); audio
-  on PipeWire is next.
+- Sonar: setup, mixer and settings pages, and classic mode audio on
+  PipeWire (channels, EQ, volumes, ChatMix, device routing, default
+  devices); see docs/sonar.md. Streamer mode, per-app routing and the mic
+  effects are next.
 - Moments (capture), macro recording, GameSense
   lighting effects, PrismSync rendering, headset-specific Go logic
   (applying Arctis Gen2 EQ to the headset), and keyboard binding

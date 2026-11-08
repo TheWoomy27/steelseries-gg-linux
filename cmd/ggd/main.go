@@ -121,8 +121,10 @@ func run(verbose bool) error {
 		if on {
 			core.RegisterSubApp("sonar", sonarMD)
 		}
+		snr.SetActive(on)
 	})
 	core.RegisterSubApp("sonar", sonarMD)
+	go snr.SetActive(core.SubAppEnabled("sonar"))
 
 	if err := writeCoreProps(ggAddr, engAddr, gsAddr, token); err != nil {
 		return err
@@ -136,6 +138,7 @@ func run(verbose bool) error {
 	}
 	<-ctx.Done()
 	slog.Info("ggd shutting down")
+	snr.Stop()
 	eng.Shutdown()
 	os.Remove(paths.CoreProps())
 	return nil

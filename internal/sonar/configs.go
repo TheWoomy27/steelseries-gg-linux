@@ -337,6 +337,9 @@ func (s *Service) updateConfig(c *config) (*config, error) {
 	if err := s.writeConfig(c, false); err != nil {
 		return nil, err
 	}
+	if c.IsSelected {
+		s.applyVAD(c.VAD)
+	}
 	return s.configByID(c.ID)
 }
 
@@ -360,6 +363,7 @@ func (s *Service) selectConfig(id string) (*config, error) {
 		return nil, err
 	}
 	c.IsSelected = true
+	s.applyVAD(c.VAD)
 	return c, nil
 }
 

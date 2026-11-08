@@ -1,6 +1,7 @@
 package sonar
 
 import (
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -8,19 +9,12 @@ import (
 	"ggl/internal/httpx"
 )
 
-// Endpoints the Sonar pages read on load. Settings Sonar keeps in its
-// key_value table are served from there; audio state (volumes, ChatMix,
-// device status) is neutral until the PipeWire side drives it.
+// Sonar's status, volume, ChatMix and settings endpoints. Settings Sonar
+// keeps in its key_value table are served from there; the rest comes from
+// the audio engine.
 
 // Roles that have their own volume, fallback list and stream routing.
 var channelRoles = []string{"Game", "ChatRender", "ChatCapture", "Media", "Aux"}
-
-// fallbackKeys are the key_value entries holding each role's fallback
-// devices.
-var fallbackKeys = map[string]string{
-	"Game": "GAME_FALLBACK_DEVICES", "ChatRender": "CHAT_RENDER_FALLBACK_DEVICES",
-	"ChatCapture": "CHAT_CAPTURE_FALLBACK_DEVICES", "Media": "MEDIA_FALLBACK_DEVICES", "Aux": "AUX_FALLBACK_DEVICES",
-}
 
 type volume struct {
 	Volume float64 `json:"volume"`
@@ -39,13 +33,89 @@ func newRedirectionVolumes() redirectionVolumes {
 	}
 }
 
-// volumeInfo is Sonar's VolumeInfo; dictionary keys are camelCased.
-func volumeInfo() map[string]any {
+// volumeInfo is Sonar's VolumeInfo; dictionary keys are camelCased. Stream
+// mode volumes are not implemented yet.
+func (s *Service) volumeInfo() map[string]any {
+	vols := s.classicVolumes()
 	devices := map[string]redirectionVolumes{}
 	for _, r := range channelRoles {
-		devices[camel(r)] = newRedirectionVolumes()
+		v := newRedirectionVolumes()
+		v.Classic = vols.Roles[r]
+		devices[camel(r)] = v
 	}
-	return map[string]any{"masters": newRedirectionVolumes(), "devices": devices}
+	masters := newRedirectionVolumes()
+	masters.Classic = vols.Master
+	return map[string]any{"masters": masters, "devices": devices}
+}
+
+// setClassicVolume changes a role's volume or mute ("Master" for the master
+// volume) and applies it.
+func (s *Service) setClassicVolume(role string, set func(*volume)) error {
+	vols := s.classicVolumes()
+	if role == "Master" {
+		set(&vols.Master)
+	} else {
+		v := vols.Roles[role]
+		set(&v)
+		vols.Roles[role] = v
+	}
+	if err := s.saveClassicVolumes(vols); err != nil {
+		return err
+	}
+	if c, ok := channelByRole(role); ok {
+		s.applyChannel(c)
+	} else {
+		s.applyAll()
+	}
+	return nil
+}
+
+// chatMix is Sonar's ChatMix: balance -1 (all game) .. 1 (all chat).
+func (s *Service) chatMix(id string) map[string]any {
+	if id == "" {
+		id = "00000000-0000-0000-0000-000000000000"
+	}
+	return map[string]any{"balance": s.chatMixBalance(), "state": "enabled", "id": id}
+}
+
+// vadStatuses are Sonar's VadStatus entries for the running channels.
+func (s *Service) vadStatuses() []map[string]any {
+	out := []map[string]any{}
+	for _, c := range s.enabledChannels() {
+		if !s.audio.isRunning(c) {
+			continue
+		}
+		flow := "render"
+		if c.capture {
+			flow = "capture"
+		}
+		var cfg any
+		if cfgs, err := s.queryConfigs(`WHERE id IN (SELECT config_id FROM selected_config WHERE vad = ?)`, c.vad); err == nil && len(cfgs) > 0 {
+			cfg = map[string]string{"id": cfgs[0].ID, "name": cfgs[0].Name}
+		}
+		out = append(out, map[string]any{
+			"id": c.node, "dataFlow": flow, "virtualAudioDevice": camel(c.role), "defaultRole": s.defaultRole(c),
+			"isChannelEnabled": true, "streamRedirectionDevice": nil, "streamRedirectionDeviceName": nil, "config": cfg,
+		})
+	}
+	return out
+}
+
+// defaultRole reports a Sonar device's Windows default role, as the device
+// list does: Gaming is the default output and Microphone the default input.
+// PipeWire has no separate communications default, so Chat holds that role
+// whenever Sonar's defaults are in place.
+func (s *Service) defaultRole(c channel) string {
+	devs, err := audioDevices()
+	if err != nil {
+		return "console"
+	}
+	for _, d := range devs {
+		if d.ID == c.node {
+			return d.DefaultRole
+		}
+	}
+	return "console"
 }
 
 // camel writes an enum value or dictionary key the way Sonar's API does
@@ -90,19 +160,82 @@ func (s *Service) statusRoutes() {
 	})
 	sv.Handle("GET /v1/status", func(w http.ResponseWriter, r *http.Request) {
 		httpx.JSON(w, map[string]any{
-			"isEnabled":              true,
+			"isEnabled":              s.isActive(),
 			"isOnboardingDone":       s.boolSetting("ONBOARDING_FINISHED"),
 			"mode":                   camel(s.setting("MODE", modeClassic)),
-			"areEndpointsConfigured": false,
-			"devices":                []any{},
+			"areEndpointsConfigured": s.audio.isRunning(channels[0]),
+			"devices":                s.vadStatuses(),
 		})
 	})
-	sv.Handle("GET /v1/chatMix", func(w http.ResponseWriter, r *http.Request) {
-		httpx.JSON(w, map[string]any{"balance": 0.0, "state": "enabled", "id": "00000000-0000-0000-0000-000000000000"})
+	sv.Handle("GET /v1/chatMix", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, s.chatMix("")) })
+	sv.Handle("PUT /v1/chatMix", func(w http.ResponseWriter, r *http.Request) {
+		b, err := strconv.ParseFloat(r.URL.Query().Get("balance"), 64)
+		if err != nil {
+			reply(w, nil, argErrorf("The balance field is required."))
+			return
+		}
+		if err := s.setSetting(chatMixKey, strconv.FormatFloat(math.Max(-1, math.Min(1, b)), 'f', -1, 64)); err != nil {
+			reply(w, nil, err)
+			return
+		}
+		s.applyAll()
+		httpx.JSON(w, s.chatMix(r.URL.Query().Get("correlationId")))
 	})
 
-	sv.Handle("GET /volumeSettings/classic", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, volumeInfo()) })
-	sv.Handle("GET /volumeSettings/streamer", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, volumeInfo()) })
+	sv.Handle("GET /volumeSettings/classic", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, s.volumeInfo()) })
+	sv.Handle("GET /volumeSettings/streamer", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, s.volumeInfo()) })
+	volumeRoute := func(path string, set func(v *volume, value string) error) {
+		sv.Handle("PUT /volumeSettings/classic/"+path, func(w http.ResponseWriter, r *http.Request) {
+			role := "Master"
+			if p := r.PathValue("role"); p != "" {
+				name, ok := enumName(p, roleNames)
+				if !ok {
+					reply(w, nil, argErrorf("The value '%s' is not valid.", p))
+					return
+				}
+				role = name
+			}
+			var setErr error
+			err := s.setClassicVolume(role, func(v *volume) { setErr = set(v, r.PathValue("value")) })
+			if setErr != nil {
+				err = setErr
+			}
+			reply(w, s.volumeInfo(), err)
+		})
+	}
+	setLevel := func(v *volume, value string) error {
+		f, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			return argErrorf("The value '%s' is not valid.", value)
+		}
+		v.Volume = math.Max(0, math.Min(1, f))
+		return nil
+	}
+	setMute := func(v *volume, value string) error {
+		m, err := parseBool(value)
+		v.Muted = m
+		return err
+	}
+	volumeRoute("Master/Volume/{value}", setLevel)
+	volumeRoute("Master/Mute/{value}", setMute)
+	volumeRoute("{role}/Volume/{value}", setLevel)
+	volumeRoute("{role}/Mute/{value}", setMute)
+
+	// Media and Aux are optional channels.
+	sv.Handle("PUT /audioInitialization/{role}/isEnabled/{isEnabled}", func(w http.ResponseWriter, r *http.Request) {
+		role, ok := enumName(r.PathValue("role"), roleNames)
+		on, err := parseBool(r.PathValue("isEnabled"))
+		if !ok || err != nil || role != "Media" && role != "Aux" {
+			reply(w, nil, argErrorf("Invalid role or value"))
+			return
+		}
+		if err := s.setBoolSetting(channelEnabledKey+role, on); err != nil {
+			reply(w, nil, err)
+			return
+		}
+		s.syncAudio()
+		w.WriteHeader(http.StatusOK)
+	})
 	sv.Handle("GET /volumeSettings/devices/volumes", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, []any{}) })
 
 	sv.Handle("GET /streamRedirections/isStreamMonitoringLocked", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, false) })
