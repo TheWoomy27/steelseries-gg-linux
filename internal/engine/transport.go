@@ -29,10 +29,13 @@ func (t hidTransport) Connected(tg devicert.Target) bool {
 	return t.m.Find(tg.ProductID, tg.UsagePage, tg.Usage, tg.Interface) != nil
 }
 
-func (t hidTransport) Chunk(tg devicert.Target, kind, size int, data []byte, timeout time.Duration) ([]byte, error) {
+func (t hidTransport) Chunk(tg devicert.Target, kind, size int, data []byte, read bool, timeout time.Duration) ([]byte, error) {
 	d, err := t.find(tg)
 	if err != nil {
 		return nil, err
+	}
+	if !read {
+		return nil, send(d, kind, size, data)
 	}
 	reportID := uint8(0)
 	if len(data) > 0 {
@@ -66,4 +69,19 @@ func (t hidTransport) Chunk(tg devicert.Target, kind, size int, data []byte, tim
 		return d.GetFeature(reportID, size)
 	}
 	return nil, fmt.Errorf("HID chunk type %d is not supported", kind)
+}
+
+// send performs only the outgoing half of a chunk, as DeviceLib does for
+// chunks that don't read: many devices never answer a write, and a
+// read-only chunk then does nothing.
+func send(d *hid.Device, kind, size int, data []byte) error {
+	switch kind {
+	case devicert.HIDIO, devicert.HIDIONoFail, devicert.HIDNow, devicert.HIDOutputFeatureIn:
+		return d.Write(data, size)
+	case devicert.HIDFeature, devicert.HIDFeatureOutFeatIn, devicert.HIDFeatureOutInputIn:
+		return d.SetFeature(data, size)
+	case devicert.HIDReadOnly, devicert.HIDFeatureReadOnly:
+		return nil
+	}
+	return fmt.Errorf("HID chunk type %d is not supported", kind)
 }

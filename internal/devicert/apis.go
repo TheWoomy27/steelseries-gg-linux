@@ -299,8 +299,9 @@ type chunkResult struct {
 	isRead bool
 }
 
-// runCommand executes all chunk groups of one api-read/api-write.
-func (d *Decl) runCommand(cmd *ApiCommand, env *golisp.SymbolTableFrame, st *ioState, payload []byte) ([]chunkResult, error) {
+// runCommand executes all chunk groups of one api-read/api-write; reads
+// says which chunks read the device's reply.
+func (d *Decl) runCommand(cmd *ApiCommand, env *golisp.SymbolTableFrame, st *ioState, payload []byte, reads func(*Chunk) bool) ([]chunkResult, error) {
 	var results []chunkResult
 	for _, g := range cmd.Groups {
 		count := int64(1)
@@ -324,7 +325,7 @@ func (d *Decl) runCommand(cmd *ApiCommand, env *golisp.SymbolTableFrame, st *ioS
 					}
 					data = bytesOf(v)
 				}
-				resp, isRead, err := d.execChunk(cmd.Protocol, c, data, payload, st)
+				resp, isRead, err := d.execChunk(cmd.Protocol, c, data, payload, reads(c), st)
 				if err != nil {
 					return results, err
 				}
@@ -335,7 +336,11 @@ func (d *Decl) runCommand(cmd *ApiCommand, env *golisp.SymbolTableFrame, st *ioS
 	return results, nil
 }
 
-func (d *Decl) execChunk(proto int64, c *Chunk, data, payload []byte, st *ioState) ([]byte, bool, error) {
+// execChunk runs one chunk. read says whether a HID chunk reads the
+// device's reply: Engine's DeviceLib reads replies for api-read, and for
+// the read-chunks of an api that mixes reads and writes; every other chunk
+// of an api-write only sends its report.
+func (d *Decl) execChunk(proto int64, c *Chunk, data, payload []byte, read bool, st *ioState) ([]byte, bool, error) {
 	switch proto {
 	case ProtoReadConst:
 		return payload, true, nil
@@ -358,12 +363,12 @@ func (d *Decl) execChunk(proto int64, c *Chunk, data, payload []byte, st *ioStat
 		if wait := st.timeBetween - time.Since(st.lastWrite); wait > 0 {
 			time.Sleep(wait)
 		}
-		resp, err := d.rt.transport.Chunk(d.target(), int(c.Type), int(c.Size), data, st.timeout)
+		resp, err := d.rt.transport.Chunk(d.target(), int(c.Type), int(c.Size), data, read, st.timeout)
 		st.lastWrite = time.Now()
 		if err != nil && c.Type == HIDIONoFail {
 			err = nil
 		}
-		isRead := c.Type != HIDNow && !c.WriteOnly
+		isRead := read && c.Type != HIDNow && !c.WriteOnly
 		return resp, isRead, err
 	case ProtoSSE:
 		// SSE commands target the SteelSeries Windows driver (OS-level
@@ -440,7 +445,7 @@ func (d *Decl) WriteApi(name string, values any) error {
 	var last []byte
 	var runErr error
 	for _, cmd := range api.Write {
-		res, err := d.runCommand(cmd, env, st, payload)
+		res, err := d.runCommand(cmd, env, st, payload, func(c *Chunk) bool { return api.MixesReadsWrites && c.SetReadBit })
 		for _, r := range res {
 			if r.data != nil {
 				last = r.data
@@ -509,7 +514,7 @@ func (d *Decl) ReadApi(name string, args map[string]any) (map[string]any, error)
 		return nil, err
 	}
 	io := d.newIOState()
-	res, runErr := d.runCommand(api.Read, env, io, payload)
+	res, runErr := d.runCommand(api.Read, env, io, payload, func(*Chunk) bool { return true })
 	var data []byte
 	if runErr == nil {
 		data, runErr = d.assembleRead(api, env, res)

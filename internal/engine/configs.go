@@ -318,8 +318,12 @@ func (e *Engine) writeSetting(d *devicert.Decl, key string, value any, force boo
 	if api, seq := d.SequenceForSetting(key); api != "" {
 		return e.sequencer.Play(d, api, seq, value)
 	}
-	if d.Api(key) == nil {
+	api := d.Api(key)
+	if api == nil {
 		return nil // keys handled elsewhere (bindings, UI-only state)
+	}
+	if len(api.Write) == 0 {
+		return nil // values read from the device (guid, name) that configs keep
 	}
 	m, _ := value.(map[string]any)
 	if !force && m != nil && sameValues(d.CachedValues(key), m) {

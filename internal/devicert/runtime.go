@@ -27,8 +27,9 @@ import (
 type Transport interface {
 	// Chunk executes a HID chunk (HIDIO, HIDFEATURE, ...) of the given
 	// report size on the interface identified by (product id, usage page,
-	// usage). It returns the response report, if the chunk type reads one.
-	Chunk(target Target, chunkType int, size int, data []byte, timeout time.Duration) ([]byte, error)
+	// usage). With read set it returns the response report, if the chunk
+	// type reads one; without it only the outgoing report is sent.
+	Chunk(target Target, chunkType int, size int, data []byte, read bool, timeout time.Duration) ([]byte, error)
 	// Connected reports whether a matching interface is present.
 	Connected(target Target) bool
 }

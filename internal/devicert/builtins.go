@@ -212,7 +212,7 @@ func registerServiceBuiltins() {
 				return nil, fmt.Errorf("raw device command too short")
 			}
 			c := &Chunk{Type: int64(binary.LittleEndian.Uint32(buf)), Size: int64(binary.LittleEndian.Uint32(buf[4:]))}
-			resp, _, err := d.execChunk(proto, c, buf[8:], nil, d.newIOState())
+			resp, _, err := d.execChunk(proto, c, buf[8:], nil, read, d.newIOState())
 			if err != nil {
 				if read {
 					return nil, err
@@ -732,7 +732,24 @@ func registerMiscBuiltins() {
 		layouts[golisp.String(a[0])] = a[1]
 		return nil, nil
 	})
-	pf("convert-onboard-macro-bindings", "6", func(a []*golisp.Data, _ *golisp.SymbolTableFrame) (*golisp.Data, error) { return a[0], nil })
+	// (convert-onboard-macro-bindings pid config mappings triggers size fn)
+	// gives (mappings macro-data): Engine points the keys bound to macros at
+	// onboard macro function fn and packs those macros into size bytes.
+	// gg-linux has no macro bindings yet, so every key keeps its mapping and
+	// the macro area stays empty (zeros, like the unused part of Engine's).
+	pf("convert-onboard-macro-bindings", "6", func(a []*golisp.Data, _ *golisp.SymbolTableFrame) (*golisp.Data, error) {
+		mappings, triggers := a[2], a[3]
+		if !golisp.ListP(mappings) || !golisp.ListP(triggers) {
+			return nil, fmt.Errorf("convert-onboard-macro-bindings expects lists of mappings and triggers")
+		}
+		if golisp.Length(mappings) != golisp.Length(triggers) {
+			return nil, fmt.Errorf("convert-onboard-macro-bindings: %d mappings for %d triggers", golisp.Length(mappings), golisp.Length(triggers))
+		}
+		if !golisp.NumberP(a[4]) || golisp.IntegerValue(a[4]) < 0 {
+			return nil, fmt.Errorf("convert-onboard-macro-bindings expects a macro data size, got %s", golisp.String(a[4]))
+		}
+		return golisp.InternalMakeList(mappings, bytesObj(make([]byte, golisp.IntegerValue(a[4])))), nil
+	})
 	pf("if-deploying", "1", func(a []*golisp.Data, _ *golisp.SymbolTableFrame) (*golisp.Data, error) { return a[0], nil })
 
 	// Windows registry and external-software checks: nothing to find on

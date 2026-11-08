@@ -57,8 +57,11 @@ Working:
   and the client.
 
 In progress / not done:
-- Config deploys/writes are implemented but untested on hardware.
+- Config deploys run on the Apex 7 (settings, key mappings and the meta
+  layer re-applied on connect); other devices' writes are untested.
   gg-linux does not write to a device until you change a setting in GG.
+  Onboard macros are not converted yet: keys keep their mappings and the
+  macro area is written empty.
 - Sonar: setup, mixer and settings pages, and classic mode audio on
   PipeWire (channels, EQ, volumes, ChatMix, device routing, default
   devices); see docs/sonar.md. Streamer mode, per-app routing and the mic
