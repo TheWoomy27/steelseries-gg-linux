@@ -48,6 +48,9 @@ Working:
   (create, edit, save, revert, rename, remove).
 - On tiling compositors (Hyprland, sway) device configuration and other
   secondary windows float at GG's size; the main window tiles.
+- GPU rendering on machines with two kinds of GPU (an Intel iGPU and an
+  NVIDIA card): the launcher points Chromium at the GPU driving the
+  displays, which Electron 37 does not do by itself.
 - Tray icon (from ggd, with GG's own icons): "Open SteelSeries GG", an
   "Engine configs" menu to switch each connected device's configuration
   (with battery levels), menus sub-apps add, and "Exit", which stops ggd

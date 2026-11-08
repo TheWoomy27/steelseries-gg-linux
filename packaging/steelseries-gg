@@ -24,4 +24,48 @@ if [ -z "$electron" ]; then
     exit 1
 fi
 
-exec "$electron" "$app" "$@"
+# Machines with GPUs from more than one driver (an Intel iGPU beside an
+# NVIDIA card, say): Electron 37's Chromium allocates window buffers on the
+# first render node and draws through whichever EGL driver libglvnd tries
+# first. When those are not the GPU driving the monitors, its GPU process
+# crashes and GG falls back to software rendering, so point both at the GPU
+# the displays are on (newer Chromium does this itself). The EGL driver has
+# to be chosen in the environment, before Electron starts.
+
+# display_gpu prints the sysfs device of the GPU with connected displays,
+# if there is exactly one.
+display_gpu() {
+    gpu=""
+    for status in /sys/class/drm/card*-*/status; do
+        [ "$(cat "$status" 2>/dev/null)" = connected ] || continue
+        card=${status%/status}
+        card=${card##*/}
+        dev=$(readlink -f "/sys/class/drm/${card%%-*}/device") || continue
+        if [ -n "$gpu" ] && [ "$gpu" != "$dev" ]; then
+            return 1
+        fi
+        gpu=$dev
+    done
+    [ -n "$gpu" ] && echo "$gpu"
+}
+
+gpu_args=""
+drivers=$(for n in /sys/class/drm/renderD*; do readlink -f "$n/device/driver"; done 2>/dev/null | sort -u | wc -l)
+if [ "$drivers" -gt 1 ] && [ -z "${__EGL_VENDOR_LIBRARY_FILENAMES:-}" ] && gpu=$(display_gpu); then
+    node=$(ls "$gpu/drm" 2>/dev/null | grep '^renderD' | head -n1)
+    case $(basename "$(readlink -f "$gpu/driver")") in
+        nvidia) egl=libEGL_nvidia ;;
+        *) egl=libEGL_mesa ;;
+    esac
+    for f in /etc/glvnd/egl_vendor.d/*.json /usr/share/glvnd/egl_vendor.d/*.json; do
+        if [ -f "$f" ] && grep -q "$egl" "$f"; then
+            export __EGL_VENDOR_LIBRARY_FILENAMES="$f"
+            break
+        fi
+    done
+    [ -n "$node" ] && gpu_args="--render-node-override=/dev/dri/$node"
+fi
+
+# $gpu_args is unquoted so that it vanishes when empty.
+# shellcheck disable=SC2086
+exec "$electron" "$app" $gpu_args "$@"
