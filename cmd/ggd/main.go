@@ -110,6 +110,11 @@ func run(verbose bool) error {
 	if err != nil {
 		return fmt.Errorf("sonar: %w", err)
 	}
+	// Sonar learns about headsets (ChatMix dials, wireless links) from
+	// Engine, as the Windows Sonar does over GG's websocket.
+	snr.SetHeadsets(headsets{eng})
+	eng.OnChatMix(snr.HeadsetChatMix)
+	eng.OnHeadsetLink(snr.HeadsetLinkChanged)
 	// Plain HTTP, like the Windows Sonar, which registers its server URL
 	// (scheme included) as webServerAddress.
 	sonarAddr, err := serve(ctx, snr.Handler(), nil)
@@ -185,6 +190,16 @@ func writeCoreProps(ggAddr, engAddr, gsAddr, token string) error {
 	gs, _ := json.Marshal(map[string]any{"address": gsAddr, "encryptedAddress": engAddr})
 	return atomicWrite(paths.GameSenseCoreProps(), gs, 0o644)
 }
+
+// headsets gives Sonar Engine's view of the headsets.
+type headsets struct{ eng *engine.Engine }
+
+func (h headsets) Headset(usb uint32) (sonar.Headset, bool) {
+	e, ok := h.eng.Headset(usb)
+	return sonar.Headset{ChatMixDial: e.ChatMixDial, Wireless: e.Wireless, Connected: e.Connected}, ok
+}
+
+func (h headsets) ChatMixLevels(usb uint32) (int, int, bool) { return h.eng.ChatMixLevels(usb) }
 
 func atomicWrite(path string, b []byte, mode os.FileMode) error {
 	tmp := path + ".tmp"

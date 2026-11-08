@@ -66,17 +66,17 @@ func (s *Service) chatMixBalance() float64 {
 }
 
 // mixFactor is a playback channel's share of the master volume and, for
-// Game and Chat, ChatMix: turning the dial toward one side lowers the other.
+// Game and Chat, ChatMix: turning it toward one side lowers the other.
 func (s *Service) mixFactor(c channel, vols classicVolumes) float64 {
 	if vols.Master.Muted {
 		return 0
 	}
 	f := sliderGain(vols.Master.Volume)
-	switch b := s.chatMixBalance(); c.role {
+	switch b := scaledBalance(s.chatMixBalance()); c.role {
 	case "Game":
-		f *= math.Min(1, 1-b)
+		f *= math.Max(0, math.Min(1, 1-b))
 	case "ChatRender":
-		f *= math.Min(1, 1+b)
+		f *= math.Max(0, math.Min(1, 1+b))
 	}
 	return f
 }
@@ -86,15 +86,26 @@ func (s *Service) SetActive(on bool) {
 	s.mu.Lock()
 	s.active = on
 	switch {
-	case on && s.watch == nil:
-		s.watch = make(chan struct{})
-		go s.watchSessions(s.watch)
-	case !on && s.watch != nil:
-		close(s.watch)
-		s.watch = nil
+	case on && s.stopWatch == nil:
+		s.stopWatch = make(chan struct{})
+		go s.watch(s.stopWatch)
+	case !on && s.stopWatch != nil:
+		close(s.stopWatch)
+		s.stopWatch = nil
 	}
 	s.mu.Unlock()
 	s.syncAudio()
+	if on {
+		s.refreshChatMix()
+	}
+}
+
+// HeadsetLinkChanged is called when a headset connects to or disconnects
+// from its dongle: its ChatMix dial may have moved meanwhile.
+func (s *Service) HeadsetLinkChanged() {
+	if s.isActive() {
+		s.refreshChatMix()
+	}
 }
 
 func (s *Service) isActive() bool {
@@ -123,6 +134,7 @@ func (s *Service) syncAudio() {
 func (s *Service) Stop() { s.stopAudio() }
 
 func (s *Service) stopAudio() {
+	s.stopSamples()
 	s.restoreDefaults()
 	s.audio.stop()
 }

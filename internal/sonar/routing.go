@@ -266,41 +266,25 @@ func (s *Service) routeApp(pid int, flow, device string) error {
 	return nil
 }
 
-// watchSessions tells the client when apps start and stop playing or
-// recording, as Sonar's session notifications do, until stop is closed.
-func (s *Service) watchSessions(stop chan struct{}) {
-	type key struct{ device, id string }
-	var last map[key]deviceAudioSessions
+type sessionKey struct{ device, id string }
+
+// watch follows apps and devices while Sonar is on, until stop is closed:
+// it tells the client when apps start and stop playing or recording, as
+// Sonar's session notifications do, and moves channels between fallback
+// devices.
+func (s *Service) watch(stop chan struct{}) {
+	var sessions map[sessionKey]deviceAudioSessions
+	var devices map[string]presentDevice
 	t := time.NewTicker(time.Second)
 	defer t.Stop()
 	for {
-		devs, streams, err := currentSessions()
-		if err == nil {
-			roles := map[string]audioDevice{}
-			for _, d := range devs {
-				roles[d.ID] = d
-			}
-			cur := map[key]deviceAudioSessions{}
-			for _, st := range streams {
-				d, ok := roles[st.device]
-				if ok && st.session.State == "active" && !st.session.IsSystemSound {
-					cur[key{st.device, st.session.ID}] = deviceAudioSessions{d.ID, d.Role, d.DataFlow, []audioSession{st.session}}
-				}
-			}
-			if last != nil {
-				for k, old := range last {
-					if _, ok := cur[k]; !ok {
-						old.AudioSessions[0].State = "expired"
-						s.ws.Broadcast("SONAR_EVENT_AUDIO_SESSION_CLOSED_DATA", old)
-					}
-				}
-				for k, now := range cur {
-					if _, ok := last[k]; !ok {
-						s.ws.Broadcast("SONAR_EVENT_AUDIO_SESSION_OPENED_DATA", now)
-					}
-				}
-			}
-			last = cur
+		if objs, err := pwDump(); err == nil {
+			sessions = s.sessionTick(objs, sessions)
+			present := s.presentDevices(objs)
+			s.fallbackMu.Lock()
+			s.fallbackTick(present, devices)
+			s.fallbackMu.Unlock()
+			devices = present
 		}
 		select {
 		case <-stop:
@@ -308,4 +292,34 @@ func (s *Service) watchSessions(stop chan struct{}) {
 		case <-t.C:
 		}
 	}
+}
+
+// sessionTick sends the session opened and closed events since the last
+// tick (nil on the first) and returns the active sessions.
+func (s *Service) sessionTick(objs []pwObject, last map[sessionKey]deviceAudioSessions) map[sessionKey]deviceAudioSessions {
+	devs := map[string]audioDevice{}
+	for _, d := range devicesIn(objs, "", "") {
+		devs[d.ID] = d
+	}
+	cur := map[sessionKey]deviceAudioSessions{}
+	for _, st := range appStreams(objs) {
+		d, ok := devs[st.device]
+		if ok && st.session.State == "active" && !st.session.IsSystemSound {
+			cur[sessionKey{st.device, st.session.ID}] = deviceAudioSessions{d.ID, d.Role, d.DataFlow, []audioSession{st.session}}
+		}
+	}
+	if last != nil {
+		for k, old := range last {
+			if _, ok := cur[k]; !ok {
+				old.AudioSessions[0].State = "expired"
+				s.ws.Broadcast("SONAR_EVENT_AUDIO_SESSION_CLOSED_DATA", old)
+			}
+		}
+		for k, now := range cur {
+			if _, ok := last[k]; !ok {
+				s.ws.Broadcast("SONAR_EVENT_AUDIO_SESSION_OPENED_DATA", now)
+			}
+		}
+	}
+	return cur
 }

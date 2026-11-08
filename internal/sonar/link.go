@@ -3,6 +3,7 @@ package sonar
 import (
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 )
@@ -73,8 +74,8 @@ func sourcePorts(ports []pwPort, node int) []pwPort {
 
 // pairPorts matches output ports to input ports by channel position. A
 // single input port (a mono device, or the microphone channel) takes every
-// output; inputs without a matching channel (a surround device's rear
-// speakers) stay unlinked.
+// output, and a single output feeds every input; inputs without a matching
+// channel (a surround device's rear speakers) stay unlinked.
 func pairPorts(from, to []pwPort) [][2]int {
 	byChannel := map[string]int{}
 	for _, f := range from {
@@ -89,6 +90,8 @@ func pairPorts(from, to []pwPort) [][2]int {
 			for _, f := range from {
 				out = append(out, [2]int{f.id, t.id})
 			}
+		case len(from) == 1:
+			out = append(out, [2]int{from[0].id, t.id})
 		}
 	}
 	return out
@@ -97,12 +100,15 @@ func pairPorts(from, to []pwPort) [][2]int {
 // relink makes each running channel's links match its device, and
 // reapplies the settings of channels that started running.
 func (a *audio) relink() {
+	a.relinking.Lock()
+	defer a.relinking.Unlock()
 	a.mu.Lock()
 	running := a.running
 	targets := map[string]string{}
 	for k, v := range a.targets {
 		targets[k] = v
 	}
+	micSample, monitor, monitorNode := a.micSample, a.monitor, a.monitorNode
 	a.mu.Unlock()
 	if running == nil {
 		return
@@ -134,6 +140,11 @@ func (a *audio) relink() {
 				want[p] = true
 			}
 		}
+		if sample, ok := nodes[micSample]; ok && c.capture && micSample != "" {
+			for _, p := range pairPorts(portsOf(ports, sample, true), own) {
+				want[p] = true
+			}
+		}
 		have := 0
 		for _, l := range links {
 			if !ownIDs[l.out] && !ownIDs[l.in] {
@@ -154,7 +165,9 @@ func (a *audio) relink() {
 		linked[c.node] = have > 0
 		active[c.node] = states[c.deviceStream()] == "running"
 	}
+	monitorNode = relinkMonitor(nodes, ports, links, targets["Chat"], monitor, monitorNode)
 	a.mu.Lock()
+	a.monitorNode = monitorNode
 	var started []channel
 	if a.running != nil {
 		for _, c := range running {
@@ -171,6 +184,48 @@ func (a *audio) relink() {
 			onRunning(c)
 		}
 	}
+}
+
+// relinkMonitor links the processed microphone to the chat device while it
+// is monitored, removing the links to a device it was monitored on before.
+// It returns the device it is monitored on now.
+func relinkMonitor(nodes map[string]int, ports []pwPort, links []pwLink, chat string, on bool, before int) int {
+	mic, ok := nodes["sonar_mic"]
+	if !ok {
+		return 0
+	}
+	micPorts := sourcePorts(ports, mic)
+	dev, ok := nodes[chat]
+	if !on || !ok || chat == "" {
+		dev = 0
+	}
+	want := map[[2]int]bool{}
+	if dev != 0 {
+		for _, p := range pairPorts(micPorts, portsOf(ports, dev, false)) {
+			want[p] = true
+		}
+	}
+	portNode := map[int]int{}
+	for _, p := range ports {
+		portNode[p.id] = p.node
+	}
+	for _, l := range links {
+		if !slices.ContainsFunc(micPorts, func(p pwPort) bool { return p.id == l.out }) {
+			continue
+		}
+		if n := portNode[l.in]; n == 0 || (n != before && n != dev) {
+			continue
+		}
+		if want[[2]int{l.out, l.in}] {
+			delete(want, [2]int{l.out, l.in})
+		} else {
+			pwLinkCmd("-d", fmt.Sprint(l.id))
+		}
+	}
+	for p := range want {
+		pwLinkCmd(fmt.Sprint(p[0]), fmt.Sprint(p[1]))
+	}
+	return dev
 }
 
 func pwLinkCmd(args ...string) bool {

@@ -75,10 +75,10 @@ devices, as on Windows. Turning Sonar off restores the previous defaults.
 | Noise gate, automatic noise gate | LSP gate |
 | Volume stabilizer | WebRTC AGC or LSP compressor |
 | Virtual surround 7.1, reverb | HRIR convolver (needs an HRIR set), later |
-| ChatMix | Game and Chat sink volumes |
+| ChatMix | Game and Chat channel gains, on Sonar's curve; a headset's dial (Arctis Nova 7) sets it through Engine |
 | Per-app routing | `target.object` metadata on the app's stream, remembered by WirePlumber |
-| Samples, recording | pw-play, pw-record |
-| Fallback devices | follow PipeWire device changes |
+| Samples, recording | pw-play, looping; pw-record of the raw microphone, played back through the microphone channel |
+| Fallback devices | a one-second watch of PipeWire's devices; Engine's headset link for the wireless trigger |
 
 ## Phases
 
@@ -94,12 +94,28 @@ devices, as on Windows. Turning Sonar off restores the previous defaults.
    tested on a private PipeWire instance; Sonar's tone controls are
    approximations (bass and treble shelves, a presence peak for voice
    clarity).
-3. Per-app routing, samples and fallback devices. Per-app routing is done:
-   apps' PipeWire streams are Sonar's audio sessions (the process comes
-   from the stream or its client), dragging an app sets its stream's
-   `target.object` to the device's `object.serial`, which WirePlumber
-   follows and remembers for the app, and a one-second watch sends the
-   session opened and closed events. Tested on a private PipeWire with
-   WirePlumber and in the mixer.
+3. Per-app routing, samples, fallback devices and the ChatMix dial. Done:
+   - Apps' PipeWire streams are Sonar's audio sessions (the process comes
+     from the stream or its client). Dragging an app sets its stream's
+     `target.object` to the device's `object.serial`, which WirePlumber
+     follows and remembers for the app, and a one-second watch sends the
+     session opened and closed events.
+   - Samples loop with pw-play on the channel's device (pausing starts a
+     sample over). The microphone sample is a recording of the raw
+     microphone, linked into the microphone channel beside the
+     microphone while the processed microphone is linked to the chat
+     device.
+   - Fallback lists live in Sonar's own settings keys. The same watch
+     moves channels when devices come and go, puts a device seen for the
+     first time at the top, and with the wireless trigger follows
+     Engine's link state for SteelSeries wireless headsets. With fallback
+     off, a channel keeps its device and plays to it again when it
+     returns.
+   - Engine records the audio devices headset specs register
+     (`register-mm-device-info`) and forwards `chatMixEvent`s. With Game
+     and Chat on a headset with a ChatMix dial, the dial sets ChatMix
+     (state `finiteWheel`) and the slider is read-only, as on Windows.
+   Tested on a private PipeWire with WirePlumber (TestRoutingOnPipeWire,
+   TestPhase3OnPipeWire), in the mixer, and with the Arctis Nova 7.
 4. Streamer mode.
 5. Mic effects, then surround and reverb equivalents.

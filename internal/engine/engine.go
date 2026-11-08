@@ -43,6 +43,10 @@ type Engine struct {
 	sequencer    *sequencer
 	subApps      func() any
 	trayChanged  func()
+
+	mmDevices     map[uint32]mmDevice // headsets, by USB audio device
+	onChatMix     func(audio uint32, game, chat int)
+	onHeadsetLink func()
 }
 
 // SetSubAppSource lets the Engine's /subApps mirror the GG core's list;

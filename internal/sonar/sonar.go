@@ -25,9 +25,13 @@ type Service struct {
 	db    *sql.DB
 	audio audio
 
-	mu     sync.Mutex
-	active bool          // Sonar is enabled in GG
-	watch  chan struct{} // stops watchSessions
+	mu        sync.Mutex
+	active    bool          // Sonar is enabled in GG
+	stopWatch chan struct{} // stops watch
+	headsets  Headsets
+
+	fallbackMu sync.Mutex // fallback list changes
+	samples    samples
 }
 
 func New(token string) (*Service, error) {
@@ -106,6 +110,9 @@ func (s *Service) routes() {
 	sv := s.srv
 	sv.Handle("GET /sock", s.ws.ServeHTTP)
 	s.routingRoutes()
+	s.chatMixRoutes()
+	s.fallbackRoutes()
+	s.sampleRoutes()
 
 	sv.Handle("GET /configs", func(w http.ResponseWriter, r *http.Request) {
 		vad := 0

@@ -23,6 +23,10 @@ type deviceEvent struct {
 // DeviceEvent implements devicert.Hooks: device code reports status
 // (battery, wireless link...) with (device-event PID KIND json).
 func (e *Engine) DeviceEvent(pid uint32, kind string, data map[string]any) {
+	if kind == "mmDeviceInfo" {
+		e.registerMMDevice(pid, data)
+		return
+	}
 	k, err := strconv.Atoi(kind)
 	if err != nil {
 		return
@@ -50,6 +54,7 @@ func (e *Engine) handleDeviceEvent(ev deviceEvent) {
 		return
 	}
 	l.mu.Lock()
+	linkKnown, linkUp := l.linkKnown, l.linkUp
 	if ev.kind&evGenericStatus != 0 {
 		if l.status == nil {
 			l.status = map[string]any{}
@@ -59,7 +64,17 @@ func (e *Engine) handleDeviceEvent(ev deviceEvent) {
 		}
 	}
 	l.trackStatus(ev.data)
+	linkChanged := l.linkKnown != linkKnown || l.linkUp != linkUp
 	l.mu.Unlock()
+	e.headsetEvent(ev.productID, ev.data)
+	if linkChanged {
+		e.mu.Lock()
+		fn := e.onHeadsetLink
+		e.mu.Unlock()
+		if fn != nil {
+			fn()
+		}
+	}
 	if w, ok := ev.data["wirelessDevConnStatusEvent"].(map[string]any); ok {
 		e.emit("EVENT_WIRELESS_DEVICE_CONNECTION_STATUS", map[string]any{"deviceId": l.dbID, "isConnected": w["isConnected"], "physicalId": w["physicalId"]})
 	}

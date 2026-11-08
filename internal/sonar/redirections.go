@@ -149,13 +149,19 @@ func (s *Service) redirectionRoutes() {
 			reply(w, nil, err)
 			return
 		}
+		chosen := map[string]string{}
 		for role, dev := range p.Devices {
 			name, ok := enumName(role, roleNames)
 			if id := roleRedirections[name]; ok && id != "" && dev != "" {
 				s.setRedirectionDevice(id, dev)
+				chosen[id] = dev
 			}
 		}
+		s.fallbackMu.Lock()
+		s.onboarded(chosen)
+		s.fallbackMu.Unlock()
 		s.syncAudio()
+		s.refreshChatMix()
 		w.WriteHeader(http.StatusOK)
 	})
 	sv.Handle("PUT /onboarding/configure", func(w http.ResponseWriter, r *http.Request) {
@@ -224,6 +230,7 @@ func (s *Service) redirectionRoutes() {
 			return
 		}
 		s.retarget(id)
+		s.redirectionChanged(id)
 		httpx.JSON(w, s.classicRedirection(id))
 	}
 	sv.Handle("PUT /classicRedirections/{id}/deviceId/{deviceId}", func(w http.ResponseWriter, r *http.Request) {
@@ -238,6 +245,7 @@ func (s *Service) redirectionRoutes() {
 			}
 			s.retarget(id)
 		}
+		s.redirectionChanged(renderRedirectionIDs...)
 		httpx.JSON(w, s.classicRedirections(renderRedirectionIDs))
 	})
 }

@@ -72,7 +72,9 @@ func TestRoutingOnPipeWire(t *testing.T) {
 
 	tone := filepath.Join(tmp, "tone.wav")
 	writeTone(t, tone, 8*time.Second)
-	player := pwCommand("pw-cat", "-p", "-P", "{ application.name = \"Routing Test\" }", tone)
+	// A new app name each run: WirePlumber remembers where apps were moved.
+	app := fmt.Sprintf("Routing Test %d", time.Now().UnixNano())
+	player := pwCommand("pw-cat", "-p", "-P", fmt.Sprintf("{ application.name = %q }", app), tone)
 	if err := player.Start(); err != nil {
 		t.Fatal(err)
 	}

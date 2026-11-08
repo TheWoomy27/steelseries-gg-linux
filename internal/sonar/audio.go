@@ -252,18 +252,32 @@ func sliderGain(v float64) float64 {
 // The engine.
 
 type audio struct {
-	mu      sync.Mutex
-	cmd     *exec.Cmd
-	running []channel
-	ids     map[string]int    // node ids by node.name
-	targets map[string]string // device node.name by redirection
-	linked  map[string]bool   // channels linked to their device, by node
-	active  map[string]bool   // channels running, by node
-	stopped chan struct{}     // closed when the graph stops
+	relinking sync.Mutex // one relink at a time
+	mu        sync.Mutex
+	cmd       *exec.Cmd
+	running   []channel
+	ids       map[string]int    // node ids by node.name
+	targets   map[string]string // device node.name by redirection
+	linked    map[string]bool   // channels linked to their device, by node
+	active    map[string]bool   // channels running, by node
+	stopped   chan struct{}     // closed when the graph stops
+
+	micSample   string // a player feeding the microphone channel, by node.name
+	monitor     bool   // play the processed microphone on the chat device
+	monitorNode int    // the device the microphone is monitored on
 
 	// onRunning is called when a channel starts running, to reapply its
 	// settings.
 	onRunning func(c channel)
+}
+
+// setMicSample feeds a player into the microphone channel, beside the
+// microphone, and monitors the channel on the chat device; "" stops both.
+func (a *audio) setMicSample(node string) {
+	a.mu.Lock()
+	a.micSample, a.monitor = node, node != ""
+	a.mu.Unlock()
+	go a.relink()
 }
 
 func pwCommand(name string, args ...string) *exec.Cmd {

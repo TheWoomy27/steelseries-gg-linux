@@ -399,8 +399,12 @@ func registerServiceBuiltins() {
 	for _, name := range []string{"register-mm-device-info", "register-mm-device-info-and-send"} {
 		n := name
 		pf(n, "3", func(a []*golisp.Data, _ *golisp.SymbolTableFrame) (*golisp.Data, error) {
+			var features int64
+			for _, f := range golisp.ToArray(a[2]) {
+				features |= golisp.IntegerValue(f)
+			}
 			instance.hooks.DeviceEvent(uint32(golisp.IntegerValue(a[0])), "mmDeviceInfo", map[string]any{
-				"audioDevice": golisp.IntegerValue(a[1]),
+				"audioDevice": golisp.IntegerValue(a[1]), "features": features,
 			})
 			return nil, nil
 		})

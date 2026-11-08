@@ -70,14 +70,6 @@ func (s *Service) setClassicVolume(role string, set func(*volume)) error {
 	return nil
 }
 
-// chatMix is Sonar's ChatMix: balance -1 (all game) .. 1 (all chat).
-func (s *Service) chatMix(id string) map[string]any {
-	if id == "" {
-		id = "00000000-0000-0000-0000-000000000000"
-	}
-	return map[string]any{"balance": s.chatMixBalance(), "state": "enabled", "id": id}
-}
-
 // vadStatuses are Sonar's VadStatus entries for the running channels.
 func (s *Service) vadStatuses() []map[string]any {
 	out := []map[string]any{}
@@ -167,20 +159,6 @@ func (s *Service) statusRoutes() {
 			"devices":                s.vadStatuses(),
 		})
 	})
-	sv.Handle("GET /v1/chatMix", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, s.chatMix("")) })
-	sv.Handle("PUT /v1/chatMix", func(w http.ResponseWriter, r *http.Request) {
-		b, err := strconv.ParseFloat(r.URL.Query().Get("balance"), 64)
-		if err != nil {
-			reply(w, nil, argErrorf("The balance field is required."))
-			return
-		}
-		if err := s.setSetting(chatMixKey, strconv.FormatFloat(math.Max(-1, math.Min(1, b)), 'f', -1, 64)); err != nil {
-			reply(w, nil, err)
-			return
-		}
-		s.applyAll()
-		httpx.JSON(w, s.chatMix(r.URL.Query().Get("correlationId")))
-	})
 
 	sv.Handle("GET /volumeSettings/classic", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, s.volumeInfo()) })
 	sv.Handle("GET /volumeSettings/streamer", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, s.volumeInfo()) })
@@ -241,17 +219,6 @@ func (s *Service) statusRoutes() {
 	sv.Handle("GET /streamRedirections/isStreamMonitoringLocked", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, false) })
 	s.boolRoutes("/streamRedirections/isStreamMonitoringEnabled", "STREAM_MODE_IS_STREAM_MONITORING_ENABLED")
 
-	s.boolRoutes("/fallbackSettings/isEnabled", "IS_FALLBACK_ENABLED")
-	s.boolRoutes("/fallbackSettings/isWirelessTriggerEnabled", "IS_STEELSERIES_WIRELESS_TRIGGER_ENABLED")
-	s.boolRoutes("/fallbackSettings/isFallbackOnRebootEnabled", "IS_FALLBACK_ON_REBOOT_ENABLED")
-	sv.Handle("GET /fallbackSettings/lists", func(w http.ResponseWriter, r *http.Request) {
-		lists := []map[string]any{}
-		for _, role := range channelRoles {
-			lists = append(lists, map[string]any{"key": camel(role), "value": []any{}})
-		}
-		httpx.JSON(w, lists)
-	})
-
 	// GameDAC line and headphone outputs.
 	sv.Handle("GET /deviceOut", func(w http.ResponseWriter, r *http.Request) {
 		out := func(feature, prefix string) map[string]any {
@@ -276,9 +243,6 @@ func (s *Service) statusRoutes() {
 		httpx.JSON(w, map[string]any{"settings": []any{}, "subAppOverlaysEnabled": false})
 	})
 	sv.Handle("GET /overlays/isHardwareTriggeredEnabled", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, false) })
-
-	sv.Handle("GET /audioSamples/isRecording", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, false) })
-	sv.Handle("PUT /audioSamples/stopRecord", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 
 	// Sonar forwards these to SteelSeries' analytics; gg-linux drops them.
 	sv.Handle("POST /analytics/track", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
