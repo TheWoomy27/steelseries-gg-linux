@@ -16,6 +16,7 @@ const { app } = require('electron');
 const env = require('./env');
 const core = require('./core');
 const patches = require('./patches');
+const windows = require('./windows');
 
 app.setName('SteelSeries GG');
 // Keep Chromium state separate from any other Electron app.
@@ -65,6 +66,7 @@ function loadClientMain() {
   const m = new Module(mainPath, module);
   m.filename = mainPath;
   m.paths = Module._nodeModulePaths(path.dirname(mainPath));
+  m.require = (id) => (id === 'electron' ? windows.clientElectron : Module.prototype.require.call(m, id));
   require.cache[mainPath] = m;
   m._compile(src, mainPath);
 }
