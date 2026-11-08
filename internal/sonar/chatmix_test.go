@@ -2,6 +2,9 @@ package sonar
 
 import (
 	"math"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -25,5 +28,21 @@ func TestChatMixCurves(t *testing.T) {
 		if ok != c.ok || math.Abs(b-c.balance) > 1e-9 {
 			t.Errorf("dialBalance(%d, %d) = %g, %v; want %g, %v", c.game, c.chat, b, ok, c.balance, c.ok)
 		}
+	}
+}
+
+func TestVorbisChannels(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.ogg")
+	// The start of an Ogg page carrying a Vorbis identification header:
+	// version 0, 8 channels, 48 kHz.
+	header := append([]byte("OggS\x00\x02"+strings.Repeat("\x00", 20)+"\x01\x1e\x01vorbis\x00\x00\x00\x00\x08"), 0x80, 0xbb, 0, 0)
+	if err := os.WriteFile(path, header, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if n := vorbisChannels(path); n != 8 || vorbisChannelMaps[n] != "FL,FC,FR,SL,SR,RL,RR,LFE" {
+		t.Errorf("vorbisChannels = %d", n)
+	}
+	if n := vorbisChannels(filepath.Join(t.TempDir(), "missing.ogg")); n != 0 {
+		t.Errorf("missing file: %d channels", n)
 	}
 }

@@ -1,7 +1,9 @@
 package sonar
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -45,6 +47,35 @@ func samplePath(f sampleFile) string {
 		return recordingPath()
 	}
 	return filepath.Join(paths.Assets(), "sonar", "audio_samples", f.file)
+}
+
+// vorbisChannelMaps are the channel orders the Vorbis spec sets. pw-play
+// reads files in WAV order, which would put Sonar's 7.1 sample's center on
+// the front right and its subwoofer on the side right.
+var vorbisChannelMaps = map[int]string{
+	3: "FL,FC,FR",
+	4: "FL,FR,RL,RR",
+	5: "FL,FC,FR,RL,RR",
+	6: "FL,FC,FR,RL,RR,LFE",
+	7: "FL,FC,FR,SL,SR,RC,LFE",
+	8: "FL,FC,FR,SL,SR,RL,RR,LFE",
+}
+
+// vorbisChannels reads the channel count from an Ogg Vorbis file's
+// identification header, or returns 0.
+func vorbisChannels(path string) int {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+	b := make([]byte, 128)
+	n, _ := io.ReadFull(f, b)
+	i := bytes.Index(b[:n], []byte("\x01vorbis"))
+	if i < 0 || i+11 >= n {
+		return 0
+	}
+	return int(b[i+11])
 }
 
 type audioSample struct {
@@ -117,6 +148,9 @@ func (s *Service) startPlayer(role string, f sampleFile) error {
 		s.audio.setMicSample(player)
 	} else {
 		args = append(args, "--target", c.node)
+	}
+	if m, ok := vorbisChannelMaps[vorbisChannels(samplePath(f))]; ok {
+		args = append(args, "--channel-map", m)
 	}
 	p := &samplePlayer{sample: f.id, stop: make(chan struct{}), done: make(chan struct{})}
 	s.samples.mu.Lock()
