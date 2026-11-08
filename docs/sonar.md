@@ -17,6 +17,9 @@ The audio side is Windows-only:
 - Sonar makes its devices the Windows defaults and forwards each one to the
   real headset, speakers or microphone the user picks.
 
+The client shows Sonar only where `window.api.os.platform()` is Windows or
+macOS; the Linux bootstrap reports Windows to the pages.
+
 Sonar keeps its state in its own SQLite database, built from
 `apps/sonar/db-migrations` (402 presets ship with GG 123). API conventions:
 Newtonsoft JSON, camelCase properties, enums as strings, camelCased route
@@ -68,7 +71,10 @@ devices, as on Windows. Turning Sonar off restores the previous defaults.
 ## Phases
 
 1. Service, database and REST API: the Sonar page loads and edits persist.
-   No audio changes.
+   No audio changes. Done: configs (with Sonar's schema upgrades, checked
+   against Sonar's own code by tools/sonar-oracle), mode, onboarding,
+   classic routing and the settings the page reads. The client only opens
+   Sonar for a signed-in SteelSeries account.
 2. Classic mode audio: the four channels and the microphone with EQ,
    volumes, ChatMix, device selection and default devices.
 3. Per-app routing, samples and fallback devices.

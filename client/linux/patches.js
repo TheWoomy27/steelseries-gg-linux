@@ -1,5 +1,8 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
+
 // Source patches for the client's webpack bundles, applied in memory at load
 // time. Each patch is optional: if the pattern is not found (for example
 // after a GG update) we log and keep going with the unpatched code.
@@ -19,6 +22,15 @@ const PATCHES = [
     find: /`\$\{process\.env\.PROGRAMDATA\}\\\\SteelSeries\\\\GG\\\\([A-Za-z0-9_.-]+)`/g,
     replace: '(process.env.GG_LINUX_DATA_DIR+"/$1")',
   },
+  {
+    file: 'main/preload.js',
+    name: 'platform',
+    // The pages check window.api.os.platform() for "win32" or "darwin" and
+    // hide what neither supports, Sonar included. gg-linux stands in for the
+    // Windows services, so the pages see Windows.
+    find: /platform:\(\)=>process\.platform/,
+    replace: 'platform:()=>"linux"===process.platform?"win32":process.platform',
+  },
 ];
 
 function apply(src, file) {
@@ -33,4 +45,18 @@ function apply(src, file) {
   return src;
 }
 
-module.exports = { apply, PATCHES };
+// patchedFile writes a patched copy of a client file the client loads by
+// path (the preload) into dir and returns the copy's path.
+const written = new Map();
+function patchedFile(appDir, file, dir) {
+  if (!written.has(file)) {
+    const src = apply(fs.readFileSync(path.join(appDir, file), 'utf8'), file);
+    const out = path.join(dir, 'patched-' + path.basename(file));
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(out, src);
+    written.set(file, out);
+  }
+  return written.get(file);
+}
+
+module.exports = { apply, patchedFile, PATCHES };

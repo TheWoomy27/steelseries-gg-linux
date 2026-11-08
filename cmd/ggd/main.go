@@ -24,6 +24,7 @@ import (
 	"ggl/internal/httpx"
 	"ggl/internal/paths"
 	"ggl/internal/prism"
+	"ggl/internal/sonar"
 	"ggl/internal/tlsutil"
 )
 
@@ -104,6 +105,24 @@ func run(verbose bool) error {
 		return err
 	}
 	core.RegisterSubApp("prismSyncV2", ggcore.SubAppMetadata{EncryptedWebServerAddress: prismAddr})
+
+	snr, err := sonar.New(token)
+	if err != nil {
+		return fmt.Errorf("sonar: %w", err)
+	}
+	// Plain HTTP, like the Windows Sonar, which registers its server URL
+	// (scheme included) as webServerAddress.
+	sonarAddr, err := serve(ctx, snr.Handler(), nil)
+	if err != nil {
+		return err
+	}
+	sonarMD := ggcore.SubAppMetadata{WebServerAddress: "http://" + sonarAddr}
+	core.OnSubAppToggle("sonar", func(on bool) {
+		if on {
+			core.RegisterSubApp("sonar", sonarMD)
+		}
+	})
+	core.RegisterSubApp("sonar", sonarMD)
 
 	if err := writeCoreProps(ggAddr, engAddr, gsAddr, token); err != nil {
 		return err

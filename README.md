@@ -59,7 +59,9 @@ Working:
 In progress / not done:
 - Config deploys/writes are implemented but untested on hardware.
   gg-linux does not write to a device until you change a setting in GG.
-- Sonar (PipeWire), Moments (capture), macro recording, GameSense
+- Sonar: its API and settings are in place (docs/sonar.md), audio on
+  PipeWire is next. The client opens Sonar only for a signed-in account.
+- Moments (capture), macro recording, GameSense
   lighting effects, PrismSync rendering, headset-specific Go logic
   (applying Arctis Gen2 EQ to the headset), and keyboard binding
   conversion are not implemented.

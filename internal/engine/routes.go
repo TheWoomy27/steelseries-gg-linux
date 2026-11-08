@@ -261,7 +261,7 @@ func (e *Engine) routes() {
 		httpx.JSON(w, map[string]any{"mmDevicesMetadata": []any{}})
 	})
 	s.Handle("GET /v1/wirelessDeviceConnectionStatus", func(w http.ResponseWriter, r *http.Request) {
-		httpx.JSON(w, map[string]any{"statuses": e.wirelessStatuses()})
+		httpx.JSON(w, map[string]any{"devices": e.wirelessStatuses()})
 	})
 	s.Handle("POST /v1/refreshWirelessDeviceConnectionStatus", func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })
 	s.Handle("GET /avneradevices", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, map[string]any{"devices": []any{}}) })
@@ -360,14 +360,18 @@ func (e *Engine) queryRows(q string, args ...any) []map[string]any {
 	return out
 }
 
+// wirelessStatuses reports the wireless link of devices that have one
+// (wireless_device_connection.WirelessDevConnStatus). mmDevices are Windows
+// audio endpoint ids.
 func (e *Engine) wirelessStatuses() []map[string]any {
 	out := []map[string]any{}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	for _, l := range e.live {
 		l.mu.Lock()
-		if st, ok := l.status["connection_status"]; ok {
-			out = append(out, map[string]any{"deviceId": l.dbID, "status": st})
+		if l.linkKnown {
+			out = append(out, map[string]any{"deviceId": l.dbID, "productId": l.cat.ProductID, "deviceName": l.cat.Name,
+				"mmDevices": []string{}, "isConnected": l.linkUp})
 		}
 		l.mu.Unlock()
 	}

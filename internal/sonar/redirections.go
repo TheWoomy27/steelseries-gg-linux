@@ -1,0 +1,145 @@
+package sonar
+
+import (
+	"encoding/json"
+	"net/http"
+	"strconv"
+	"strings"
+
+	"ggl/internal/httpx"
+)
+
+// Classic mode routing: the output device each playback channel plays to and
+// the microphone the Mic channel captures from. Windows keeps these in its
+// virtual audio driver; here they are a key_value entry that the PipeWire
+// graph follows.
+
+const redirectionsKey = "LINUX_CLASSIC_REDIRECTIONS"
+
+// Sonar's RedirectionId values, by enum number.
+var redirectionNames = map[int]string{1: "Game", 2: "Chat", 3: "Mic", 4: "MicPlayer", 5: "MicCopy", 6: "Media", 7: "Aux"}
+
+var (
+	classicRedirectionIDs = []string{"Game", "Chat", "Mic", "Media", "Aux"}
+	renderRedirectionIDs  = []string{"Game", "Chat", "Media", "Aux"}
+)
+
+// roleRedirections maps device roles to the redirection that serves them.
+var roleRedirections = map[string]string{
+	"Game": "Game", "ChatRender": "Chat", "ChatCapture": "Mic", "Media": "Media", "Aux": "Aux",
+}
+
+// enumName resolves an enum route or JSON value the way ASP.NET binds it:
+// a name in any case, or its number.
+func enumName(v string, names map[int]string) (string, bool) {
+	if n, err := strconv.Atoi(v); err == nil {
+		name, ok := names[n]
+		return name, ok
+	}
+	for _, name := range names {
+		if strings.EqualFold(name, v) {
+			return name, true
+		}
+	}
+	return "", false
+}
+
+var roleNames = map[int]string{0: "None", 1: "ChatRender", 2: "Game", 3: "ChatCapture", 4: "Stream", 5: "Media", 6: "Aux"}
+
+func (s *Service) redirectionDevices() map[string]string {
+	devs := map[string]string{}
+	json.Unmarshal([]byte(s.setting(redirectionsKey, "{}")), &devs)
+	return devs
+}
+
+func (s *Service) setRedirectionDevice(id, deviceID string) error {
+	devs := s.redirectionDevices()
+	if deviceID == "" {
+		delete(devs, id)
+	} else {
+		devs[id] = deviceID
+	}
+	return s.setSetting(redirectionsKey, jsonText(devs))
+}
+
+type classicRedirection struct {
+	ID        string  `json:"id"`
+	DeviceID  *string `json:"deviceId"`
+	IsRunning bool    `json:"isRunning"`
+}
+
+func (s *Service) classicRedirection(id string) classicRedirection {
+	r := classicRedirection{ID: id}
+	if d, ok := s.redirectionDevices()[id]; ok {
+		r.DeviceID = &d
+	}
+	return r
+}
+
+func (s *Service) classicRedirections(ids []string) []classicRedirection {
+	out := []classicRedirection{}
+	for _, id := range ids {
+		out = append(out, s.classicRedirection(id))
+	}
+	return out
+}
+
+func (s *Service) redirectionRoutes() {
+	sv := s.srv
+	sv.Handle("POST /onboarding", func(w http.ResponseWriter, r *http.Request) {
+		var p struct {
+			Devices map[string]string `json:"devices"`
+		}
+		if err := decodeBody(r, &p); err != nil {
+			reply(w, nil, err)
+			return
+		}
+		if err := s.setBoolSetting("ONBOARDING_FINISHED", true); err != nil {
+			reply(w, nil, err)
+			return
+		}
+		for role, dev := range p.Devices {
+			name, ok := enumName(role, roleNames)
+			if id := roleRedirections[name]; ok && id != "" && dev != "" {
+				s.setRedirectionDevice(id, dev)
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	sv.Handle("PUT /onboarding/configure", func(w http.ResponseWriter, r *http.Request) {
+		if !s.boolSetting("ONBOARDING_FINISHED") {
+			httpx.JSONStatus(w, 500, map[string]string{"error": "Cannot configure redirection while onboarding is not finished"})
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	sv.Handle("GET /classicRedirections", func(w http.ResponseWriter, r *http.Request) {
+		httpx.JSON(w, s.classicRedirections(classicRedirectionIDs))
+	})
+	setDevice := func(w http.ResponseWriter, r *http.Request, deviceID string) {
+		id, ok := enumName(r.PathValue("id"), redirectionNames)
+		if !ok {
+			reply(w, nil, argErrorf("The value '%s' is not valid.", r.PathValue("id")))
+			return
+		}
+		if err := s.setRedirectionDevice(id, deviceID); err != nil {
+			reply(w, nil, err)
+			return
+		}
+		httpx.JSON(w, s.classicRedirection(id))
+	}
+	sv.Handle("PUT /classicRedirections/{id}/deviceId/{deviceId}", func(w http.ResponseWriter, r *http.Request) {
+		setDevice(w, r, r.PathValue("deviceId"))
+	})
+	sv.Handle("DELETE /classicRedirections/{id}/deviceId", func(w http.ResponseWriter, r *http.Request) { setDevice(w, r, "") })
+	sv.Handle("PUT /classicRedirections/render/deviceId/{deviceId}", func(w http.ResponseWriter, r *http.Request) {
+		for _, id := range renderRedirectionIDs {
+			if err := s.setRedirectionDevice(id, r.PathValue("deviceId")); err != nil {
+				reply(w, nil, err)
+				return
+			}
+		}
+		httpx.JSON(w, s.classicRedirections(renderRedirectionIDs))
+	})
+}

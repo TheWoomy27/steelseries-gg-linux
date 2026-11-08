@@ -8,12 +8,29 @@
 // secondary windows map non-resizable (on Linux, Electron pins the minimum
 // and maximum size for that) and become resizable once the compositor has
 // placed them. Stacking window managers just place them as usual.
+//
+// The same classes give the client's windows and views the patched copy of
+// its preload (see patches.js).
 
+const path = require('path');
 const electron = require('electron');
+const patches = require('./patches');
 
 // The compositor decides floating when the window first maps (its first
 // frame), shortly after show().
 const LOCK_MS = 1500;
+
+// withPatchedPreload points a window or view at the patched copy of the
+// client's preload (see patches.js).
+function withPatchedPreload(options) {
+  const preload = options.webPreferences?.preload;
+  if (!preload) return options;
+  const appDir = electron.app.getAppPath();
+  const rel = path.relative(appDir, preload);
+  if (rel.startsWith('..')) return options;
+  const dir = path.join(electron.app.getPath('userData'), 'gg-linux');
+  return { ...options, webPreferences: { ...options.webPreferences, preload: patches.patchedFile(appDir, rel, dir) } };
+}
 
 // Named BrowserWindow: BrowserWindow.getAllWindows() and getFocusedWindow()
 // only return windows whose constructor has that name.
@@ -21,7 +38,7 @@ class BrowserWindow extends electron.BrowserWindow {
   #unlock = null;
 
   constructor(options = {}) {
-    super(options);
+    super(withPatchedPreload(options));
     // The client marks its main window through the preload arguments.
     const args = options.webPreferences?.additionalArguments || [];
     if (!args.includes('isMainWindow=true') && this.isResizable()) this.#lockUntilMapped();
@@ -48,11 +65,18 @@ class BrowserWindow extends electron.BrowserWindow {
   }
 }
 
-// The electron module as the client sees it: the same API with BrowserWindow
-// replaced (electron's own export cannot be redefined).
+class WebContentsView extends electron.WebContentsView {
+  constructor(options = {}) {
+    super(withPatchedPreload(options));
+  }
+}
+
+// The electron module as the client sees it: the same API with these classes
+// replaced (electron's own exports cannot be redefined).
+const replaced = { BrowserWindow, WebContentsView };
 const clientElectron = new Proxy(electron, {
   get(target, key, receiver) {
-    return key === 'BrowserWindow' ? BrowserWindow : Reflect.get(target, key, receiver);
+    return Object.hasOwn(replaced, key) ? replaced[key] : Reflect.get(target, key, receiver);
   },
 });
 

@@ -6,6 +6,8 @@
 
 # Build output
 /bin/
+/tools/sonar-oracle/bin/
+/tools/sonar-oracle/obj/
 /dist/
 *.test
 
