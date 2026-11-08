@@ -273,6 +273,7 @@ func (e *Engine) routes() {
 
 	e.macroRoutes()
 	e.miscRoutes()
+	e.eqPresetRoutes()
 }
 
 func appVersion() string { return "123.0.0" }

@@ -214,14 +214,6 @@ func (e *Engine) miscRoutes() {
 	})
 	s.Handle("DELETE /device/{id}/globalDeviceSettings/liveDeploy", func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })
 
-	// Parametric EQ presets (headsets).
-	s.Handle("GET /parametricEQ/deviceGameEQPreset", func(w http.ResponseWriter, r *http.Request) {
-		httpx.JSON(w, map[string]any{"presets": e.queryRows(`SELECT * FROM device_game_eq_presets`)})
-	})
-	for _, p := range []string{"/parametricEQ/{id}/deviceCustomEQPreset", "/parametricEQ/addOrEditCustomEQPreset", "/parametricEQ/{id}/saveAllCustomPEQ",
-		"/parametricEQ/{id}/revertCustomPEQ", "/parametricEQ/renameCustomEQPreset", "/parametricEQ/{id}/removeCustomEQPreset"} {
-		s.Handle("POST "+p, func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, map[string]any{"presets": []any{}}) })
-	}
 	s.Handle("POST /v1/device/{name}/flattenEQ", func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })
 	s.Handle("GET /v1/device/{name}/shouldFlattenEQ", func(w http.ResponseWriter, r *http.Request) {
 		httpx.JSON(w, map[string]any{"shouldFlattenEQ": false})

@@ -34,16 +34,22 @@ Working:
 - Installer import, spec decryption, Engine/PrismSync DB migrations (device catalog).
 - Device runtime: all specs load; reads verified on real hardware
   (Aerox 5 Wireless, Apex 7, Arctis Nova 7: firmware, battery, chat mix).
-- Client boots on Linux Electron through GG's full startup sequence.
+- Client boots on Linux Electron through GG's full startup sequence; the
+  home page, Engine gear page and device configuration pages render with
+  the original UI (checked for Aerox 5 Wireless, Apex 7, Alias and Arctis
+  Nova 7 Gen 2), including the Engine's configuration migrations.
+- Parametric EQ presets: the game preset list and custom presets
+  (create, edit, save, revert, rename, remove).
+- On tiling compositors (Hyprland, sway) device configuration and other
+  secondary windows float at GG's size; the main window tiles.
 
 In progress / not done:
-- The home page still hits a client-side error on a remaining API shape
-  mismatch (`index.js` reads an undefined field after startup); more
-  endpoints need their exact response shapes.
 - Config deploys/writes are implemented but untested on hardware.
   gg-linux does not write to a device until you change a setting in GG.
 - Sonar (PipeWire), Moments (capture), tray, macro recording, GameSense
   lighting effects, PrismSync rendering, headset-specific Go logic
-  (Arctis Gen2 EQ), and keyboard binding conversion are not implemented.
+  (applying Arctis Gen2 EQ to the headset), and keyboard binding
+  conversion are not implemented.
+- The main window has no minimize/maximize/close buttons on Linux yet.
 - Firmware updates are deliberately disabled.
 - SteelSeries account sign-in is not supported (use "skip").
