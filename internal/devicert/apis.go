@@ -363,7 +363,7 @@ func (d *Decl) execChunk(proto int64, c *Chunk, data, payload []byte, read bool,
 		if wait := st.timeBetween - time.Since(st.lastWrite); wait > 0 {
 			time.Sleep(wait)
 		}
-		resp, err := d.rt.transport.Chunk(d.target(), int(c.Type), int(c.Size), data, read, st.timeout)
+		resp, err := d.rt.transport.Chunk(d.target(), int(c.Type), int(c.Size), data, read, st.timeBetween, st.timeout)
 		st.lastWrite = time.Now()
 		if err != nil && c.Type == HIDIONoFail {
 			err = nil

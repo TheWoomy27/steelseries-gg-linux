@@ -29,7 +29,7 @@ func (t hidTransport) Connected(tg devicert.Target) bool {
 	return t.m.Find(tg.ProductID, tg.UsagePage, tg.Usage, tg.Interface) != nil
 }
 
-func (t hidTransport) Chunk(tg devicert.Target, kind, size int, data []byte, read bool, timeout time.Duration) ([]byte, error) {
+func (t hidTransport) Chunk(tg devicert.Target, kind, size int, data []byte, read bool, gap, timeout time.Duration) ([]byte, error) {
 	d, err := t.find(tg)
 	if err != nil {
 		return nil, err
@@ -37,34 +37,30 @@ func (t hidTransport) Chunk(tg devicert.Target, kind, size int, data []byte, rea
 	if !read {
 		return nil, send(d, kind, size, data)
 	}
+	if kind == devicert.HIDIO || kind == devicert.HIDIONoFail {
+		return d.Exchange(data, size, timeout)
+	}
+	// Like DeviceLib's read: send the chunk's outgoing report, then fetch
+	// the reply the way its chunk type says. DeviceLib waits the time
+	// between commands before the fetch, which devices such as the legacy
+	// Apex keyboards need to prepare a reply; a report the device pushes
+	// is awaited at once instead, as nothing would catch it during a wait.
+	if err := send(d, kind, size, data); err != nil {
+		return nil, err
+	}
 	reportID := uint8(0)
 	if len(data) > 0 {
 		reportID = data[0]
 	}
 	switch kind {
-	case devicert.HIDIO, devicert.HIDIONoFail:
-		return d.Exchange(data, size, timeout)
+	case devicert.HIDReadOnly, devicert.HIDFeatureOutInputIn:
+		return d.ReadInput(timeout)
 	case devicert.HIDNow:
-		return nil, d.Write(data, size)
-	case devicert.HIDFeature:
-		return nil, d.SetFeature(data, size)
-	case devicert.HIDReadOnly:
-		return d.ReadInput(timeout)
-	case devicert.HIDFeatureReadOnly:
-		return d.GetFeature(reportID, size)
-	case devicert.HIDFeatureOutFeatIn:
-		if err := d.SetFeature(data, size); err != nil {
-			return nil, err
-		}
-		return d.GetFeature(reportID, size)
-	case devicert.HIDFeatureOutInputIn:
-		if err := d.SetFeature(data, size); err != nil {
-			return nil, err
-		}
-		return d.ReadInput(timeout)
-	case devicert.HIDOutputFeatureIn:
-		if err := d.Write(data, size); err != nil {
-			return nil, err
+		time.Sleep(gap)
+		return d.GetInputReport(reportID, size)
+	case devicert.HIDFeature, devicert.HIDFeatureReadOnly, devicert.HIDFeatureOutFeatIn, devicert.HIDOutputFeatureIn:
+		if kind != devicert.HIDFeatureReadOnly {
+			time.Sleep(gap)
 		}
 		return d.GetFeature(reportID, size)
 	}

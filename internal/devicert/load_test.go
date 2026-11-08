@@ -11,7 +11,7 @@ import (
 
 type nullTransport struct{}
 
-func (nullTransport) Chunk(Target, int, int, []byte, bool, time.Duration) ([]byte, error) {
+func (nullTransport) Chunk(Target, int, int, []byte, bool, time.Duration, time.Duration) ([]byte, error) {
 	return nil, nil
 }
 func (nullTransport) Connected(Target) bool { return false }

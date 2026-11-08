@@ -344,9 +344,23 @@ func (d *Device) GetFeature(id uint8, size int) ([]byte, error) {
 	if n < 2 {
 		n = max(size, 2)
 	}
+	return d.getReport(0x07, id, n)
+}
+
+// GetInputReport asks for an input report over the control pipe, as
+// HidD_GetInputReport does, instead of waiting for the device to send one.
+func (d *Device) GetInputReport(id uint8, size int) ([]byte, error) {
+	n := size
+	if l, ok := d.Desc.Input[id]; ok && l > 0 {
+		n = l + 1
+	}
+	return d.getReport(0x0A, id, max(n, 2))
+}
+
+func (d *Device) getReport(nr uintptr, id uint8, n int) ([]byte, error) {
 	b := make([]byte, n)
 	b[0] = id
-	got, err := d.ioctl(iocRW(0x07, uintptr(len(b))), b)
+	got, err := d.ioctl(iocRW(nr, uintptr(len(b))), b)
 	if err != nil {
 		return nil, err
 	}

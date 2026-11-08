@@ -16,7 +16,7 @@ type sentChunk struct {
 
 type recordingTransport struct{ sent []sentChunk }
 
-func (r *recordingTransport) Chunk(_ Target, _, _ int, data []byte, read bool, _ time.Duration) ([]byte, error) {
+func (r *recordingTransport) Chunk(_ Target, _, _ int, data []byte, read bool, _, _ time.Duration) ([]byte, error) {
 	r.sent = append(r.sent, sentChunk{append([]byte{}, data...), read})
 	if read {
 		return []byte{0, 0x2b, 0x40}, nil
