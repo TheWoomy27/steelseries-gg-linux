@@ -35,6 +35,7 @@ func Localization() string { return filepath.Join(Data(), "gg", "localization") 
 func Assets() string       { return filepath.Join(Data(), "assets") }
 func Firmware() string     { return filepath.Join(EngineRoot(), "firmware") }
 func PrismDBMig() string   { return filepath.Join(EngineRoot(), "prism", "db", "migrations") }
+func TrayIcons() string    { return filepath.Join(Data(), "gg", "tray") }
 
 // Runtime state.
 func State() string     { return filepath.Join(Data(), "state") }

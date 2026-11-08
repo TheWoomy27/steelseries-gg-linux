@@ -40,7 +40,7 @@ type liveDevice struct {
 }
 
 type batteryState struct {
-	percent  int
+	percent  int // -1 until the device reports a level
 	charging bool
 }
 

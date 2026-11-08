@@ -2,7 +2,6 @@ package ggcore
 
 import (
 	"net/http"
-	"sync"
 
 	"ggl/internal/httpx"
 )
@@ -15,26 +14,6 @@ type appKey struct {
 	App   string `json:"app"`
 	Key   string `json:"key"`
 	Value any    `json:"value"`
-}
-
-// TrayMenu is the taskbar menu the client describes via /taskbar/setMenu.
-type TrayMenu struct {
-	mu    sync.Mutex
-	items []any
-	onSet func(items []any)
-}
-
-func (t *TrayMenu) Items() []any {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.items
-}
-
-// OnChange registers the tray implementation.
-func (t *TrayMenu) OnChange(fn func(items []any)) {
-	t.mu.Lock()
-	t.onSet = fn
-	t.mu.Unlock()
 }
 
 // pinnableTab is one entry of the side navigation (pinned apps show in the
@@ -122,38 +101,6 @@ func (c *Core) ggezRoutes() {
 		c.Broadcast("EVENT_APPS_TRAY_ENABLE_CHANGED", map[string]any{"enabled": p.Enabled})
 		httpx.OK(w)
 	})
-
-	s.Handle("POST /taskbar/setMenu", func(w http.ResponseWriter, r *http.Request) {
-		p, _ := decode[struct {
-			Items []any `json:"items"`
-			Menu  []any `json:"menu"`
-		}](r)
-		items := p.Items
-		if items == nil {
-			items = p.Menu
-		}
-		c.tray.mu.Lock()
-		c.tray.items = items
-		fn := c.tray.onSet
-		c.tray.mu.Unlock()
-		if fn != nil {
-			fn(items)
-		}
-		httpx.OK(w)
-	})
-	s.Handle("POST /taskbar/clearMenu", func(w http.ResponseWriter, r *http.Request) {
-		c.tray.mu.Lock()
-		c.tray.items = nil
-		fn := c.tray.onSet
-		c.tray.mu.Unlock()
-		if fn != nil {
-			fn(nil)
-		}
-		httpx.OK(w)
-	})
-	for _, p := range []string{"/taskbar/icon", "/taskbar/notification"} {
-		s.Handle("POST "+p, func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })
-	}
 
 	s.Handle("GET /universalTriggers", func(w http.ResponseWriter, r *http.Request) {
 		var t []any

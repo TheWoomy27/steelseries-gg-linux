@@ -64,4 +64,16 @@ async function ensureRunning() {
   throw new Error(`ggd did not come up (looked for ${env.corePropsPath}). Is it installed and on PATH?`);
 }
 
-module.exports = { ensureRunning, isRunningSync, readProps };
+// The Windows core closes the client when it exits (tray "Exit"); follow
+// ggd the same way.
+function onExit(pid, fn) {
+  const timer = setInterval(() => {
+    if (!pidAlive(pid)) {
+      clearInterval(timer);
+      fn();
+    }
+  }, 2000);
+  timer.unref();
+}
+
+module.exports = { ensureRunning, isRunningSync, readProps, onExit };

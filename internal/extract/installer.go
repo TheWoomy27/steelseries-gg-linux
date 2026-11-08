@@ -13,6 +13,7 @@ import (
 // to the installer root. Entries ending in "/" are directories.
 var installerItems = []string{
 	"resources/app.asar",
+	"SteelSeriesGG.exe",
 	"apps/engine/SteelSeriesEngine.exe",
 	"apps/engine/deviceSpecifications/",
 	"apps/engine/configurationMigrations/",

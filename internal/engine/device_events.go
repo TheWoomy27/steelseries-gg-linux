@@ -91,7 +91,7 @@ func (l *liveDevice) trackStatus(d map[string]any) {
 	}
 	battery := func() *batteryState {
 		if l.battery == nil {
-			l.battery = &batteryState{}
+			l.battery = &batteryState{percent: -1}
 		}
 		return l.battery
 	}
@@ -144,8 +144,8 @@ func (e *Engine) genericStatuses(deviceName string) map[string]any {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.battery != nil {
-		out["batteryLevels"] = map[string]any{"type": "single_battery", "statusKnown": true,
-			"percent": l.battery.percent, "charging": l.battery.charging}
+		out["batteryLevels"] = map[string]any{"type": "single_battery", "statusKnown": l.battery.percent >= 0,
+			"percent": max(l.battery.percent, 0), "charging": l.battery.charging}
 	}
 	if l.linkKnown {
 		st := "not_connected"

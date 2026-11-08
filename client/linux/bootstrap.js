@@ -81,6 +81,7 @@ async function main() {
 
   require('./ipc').install();
   loadClientMain();
+  core.onExit(props.pid, () => app.quit());
 }
 
 main().catch((err) => {

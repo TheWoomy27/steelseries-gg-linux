@@ -25,6 +25,12 @@ provide, and recovers the device-spec key from your copy of
     sudo cp packaging/70-steelseries-gg.rules /etc/udev/rules.d/   # device access
     GG_LINUX_GGD=$PWD/bin/ggd packaging/steelseries-gg              # needs electron37+
 
+`ggd` puts GG's tray icon in your notification area (StatusNotifierItem:
+KDE, waybar and most Wayland bars, GNOME with the AppIndicator extension).
+To keep it there after you close GG, start `ggd` at login (for example
+`exec-once = ggd` in Hyprland); its "Open SteelSeries GG" runs
+`steelseries-gg` from your PATH, or `$GG_LINUX_CLIENT`.
+
 `ggctl` talks to devices directly: `ggctl devices`, `ggctl apis 1852`,
 `ggctl read 1852 read_battery_status`, `ggctl call 22a1 get_headset_status`.
 
@@ -42,16 +48,19 @@ Working:
   (create, edit, save, revert, rename, remove).
 - On tiling compositors (Hyprland, sway) device configuration and other
   secondary windows float at GG's size; the main window tiles.
+- Tray icon (from ggd, with GG's own icons): "Open SteelSeries GG", an
+  "Engine configs" menu to switch each connected device's configuration
+  (with battery levels), menus sub-apps add, and "Exit", which stops ggd
+  and the client.
 
 In progress / not done:
 - Config deploys/writes are implemented but untested on hardware.
   gg-linux does not write to a device until you change a setting in GG.
-- Sonar (PipeWire), Moments (capture), tray, macro recording, GameSense
+- Sonar (PipeWire), Moments (capture), macro recording, GameSense
   lighting effects, PrismSync rendering, headset-specific Go logic
   (applying Arctis Gen2 EQ to the headset), and keyboard binding
   conversion are not implemented.
-- With no tray icon yet, closing GG's last window quits the client (ggd
-  keeps running); start it again with `steelseries-gg`. Hyprland ignores
-  the minimize button, as it has no minimized state.
+- Tray notifications (update and battery toasts) are not shown yet.
+- Hyprland ignores the minimize button, as it has no minimized state.
 - Firmware updates are deliberately disabled.
 - SteelSeries account sign-in is not supported (use "skip").

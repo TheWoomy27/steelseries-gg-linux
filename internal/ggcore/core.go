@@ -30,11 +30,8 @@ type Core struct {
 	subApps     map[string]*SubApp
 	subAppHooks map[string]func(enabled bool)
 	games       gameLibrary
-	tray        TrayMenu
+	taskbar     taskbar
 }
-
-// Tray exposes the menu the client publishes for the system tray.
-func (c *Core) Tray() *TrayMenu { return &c.tray }
 
 // OnSubAppToggle registers the in-process service behind a sub-app so it
 // can start or stop when the user toggles it in GG settings.
@@ -114,6 +111,7 @@ func (c *Core) routes() {
 	c.loadoutRoutes()
 	c.gameRoutes()
 	c.ggezRoutes()
+	c.taskbarRoutes()
 	c.miscRoutes()
 }
 

@@ -112,6 +112,9 @@ func run(verbose bool) error {
 
 	go core.Run(ctx)
 	go eng.Run(ctx)
+	if os.Getenv("GG_LINUX_NO_TRAY") == "" {
+		go core.StartTray(ctx, cancel)
+	}
 	<-ctx.Done()
 	slog.Info("ggd shutting down")
 	eng.Shutdown()

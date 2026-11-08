@@ -42,6 +42,7 @@ type Engine struct {
 	deviceEvents chan deviceEvent
 	sequencer    *sequencer
 	subApps      func() any
+	trayChanged  func()
 }
 
 // SetSubAppSource lets the Engine's /subApps mirror the GG core's list;
@@ -107,10 +108,13 @@ func (e *Engine) SetBroadcaster(fn func(event string, data any)) {
 func (e *Engine) emit(event string, data any) {
 	e.hub.Broadcast(event, data)
 	e.mu.Lock()
-	b := e.broadcast
+	b, tray := e.broadcast, e.trayChanged
 	e.mu.Unlock()
 	if len(event) > 6 && event[:6] == "EVENT_" {
 		b(event, data)
+	}
+	if tray != nil && trayEvents[event] {
+		tray()
 	}
 }
 

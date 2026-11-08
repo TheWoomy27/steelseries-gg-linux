@@ -105,6 +105,13 @@ func run(installer string, withFirmware, keep bool) error {
 		}
 	}
 
+	step("Extracting tray icons from SteelSeriesGG.exe")
+	if n, err := extract.TrayIcons(filepath.Join(tmp, "SteelSeriesGG.exe"), paths.TrayIcons()); err != nil {
+		fmt.Printf("  skipping tray icons: %v\n", err)
+	} else {
+		fmt.Printf("  %d icons\n", n)
+	}
+
 	step("Unpacking client")
 	if err := installClient(); err != nil {
 		return err
