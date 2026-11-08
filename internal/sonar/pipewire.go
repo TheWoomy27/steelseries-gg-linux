@@ -18,6 +18,8 @@ type audioDevice struct {
 	FWUpdateRequired bool   `json:"fwUpdateRequired"`
 	State            string `json:"state"`
 	IsVad            bool   `json:"isVad"`
+
+	serial string // object.serial, how WirePlumber's stream targets name nodes
 }
 
 type pwObject struct {
@@ -29,6 +31,8 @@ type pwObject struct {
 		Direction  string         `json:"direction"`      // ports
 		OutputPort int            `json:"output-port-id"` // links
 		InputPort  int            `json:"input-port-id"`
+		OutputNode int            `json:"output-node-id"`
+		InputNode  int            `json:"input-node-id"`
 	} `json:"info"`
 }
 
@@ -53,6 +57,12 @@ func audioDevices() ([]audioDevice, error) {
 		return nil, err
 	}
 	sink, source, _ := defaultDevices()
+	return devicesIn(objs, sink, source), nil
+}
+
+// devicesIn lists the sinks and sources in a pw-dump, given the default
+// sink and source names.
+func devicesIn(objs []pwObject, sink, source string) []audioDevice {
 	out := []audioDevice{}
 	for _, o := range objs {
 		if o.Type != "PipeWire:Interface:Node" {
@@ -75,7 +85,7 @@ func audioDevices() ([]audioDevice, error) {
 		}
 		nch, _ := p["audio.channels"].(float64)
 		d := audioDevice{FriendlyName: desc, ID: name, DataFlow: flow, Role: "none", Channels: int(nch),
-			DefaultRole: "console", State: "active"}
+			DefaultRole: "console", State: "active", serial: propString(p, "object.serial")}
 		if name == sink || name == source {
 			d.DefaultRole = "all"
 		}
@@ -93,7 +103,7 @@ func audioDevices() ([]audioDevice, error) {
 		}
 		out = append(out, d)
 	}
-	return out, nil
+	return out
 }
 
 // steelSeriesDevice is Sonar's SteelSeriesAudioDevice: a SteelSeries audio

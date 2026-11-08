@@ -285,7 +285,6 @@ func (s *Service) statusRoutes() {
 	// In-app toasts come from SteelSeries' online content service.
 	sv.Handle("GET /content/inAppToastMessage", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, nil) })
 	// Applications playing or recording on each device, for per-app routing.
-	sv.Handle("GET /AudioDeviceRouting", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, []any{}) })
 
 	sv.Handle("GET /steelseriesDevice/firstDevice", func(w http.ResponseWriter, r *http.Request) {
 		devs, err := steelSeriesDevices()

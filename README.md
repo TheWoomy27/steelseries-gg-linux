@@ -64,8 +64,8 @@ In progress / not done:
   macro area is written empty.
 - Sonar: setup, mixer and settings pages, and classic mode audio on
   PipeWire (channels, EQ, volumes, ChatMix, device routing, default
-  devices); see docs/sonar.md. Streamer mode, per-app routing and the mic
-  effects are next.
+  devices) and per-app routing; see docs/sonar.md. Samples, fallback
+  devices, streamer mode and the mic effects are next.
 - Moments (capture), macro recording, GameSense
   lighting effects, PrismSync rendering, headset-specific Go logic
   (applying Arctis Gen2 EQ to the headset), and keyboard binding

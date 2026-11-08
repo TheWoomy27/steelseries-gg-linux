@@ -85,6 +85,14 @@ func (s *Service) mixFactor(c channel, vols classicVolumes) float64 {
 func (s *Service) SetActive(on bool) {
 	s.mu.Lock()
 	s.active = on
+	switch {
+	case on && s.watch == nil:
+		s.watch = make(chan struct{})
+		go s.watchSessions(s.watch)
+	case !on && s.watch != nil:
+		close(s.watch)
+		s.watch = nil
+	}
 	s.mu.Unlock()
 	s.syncAudio()
 }

@@ -26,7 +26,8 @@ type Service struct {
 	audio audio
 
 	mu     sync.Mutex
-	active bool // Sonar is enabled in GG
+	active bool          // Sonar is enabled in GG
+	watch  chan struct{} // stops watchSessions
 }
 
 func New(token string) (*Service, error) {
@@ -104,6 +105,7 @@ const (
 func (s *Service) routes() {
 	sv := s.srv
 	sv.Handle("GET /sock", s.ws.ServeHTTP)
+	s.routingRoutes()
 
 	sv.Handle("GET /configs", func(w http.ResponseWriter, r *http.Request) {
 		vad := 0

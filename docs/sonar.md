@@ -76,7 +76,7 @@ devices, as on Windows. Turning Sonar off restores the previous defaults.
 | Volume stabilizer | WebRTC AGC or LSP compressor |
 | Virtual surround 7.1, reverb | HRIR convolver (needs an HRIR set), later |
 | ChatMix | Game and Chat sink volumes |
-| Per-app routing | stream targets in PipeWire metadata |
+| Per-app routing | `target.object` metadata on the app's stream, remembered by WirePlumber |
 | Samples, recording | pw-play, pw-record |
 | Fallback devices | follow PipeWire device changes |
 
@@ -94,6 +94,12 @@ devices, as on Windows. Turning Sonar off restores the previous defaults.
    tested on a private PipeWire instance; Sonar's tone controls are
    approximations (bass and treble shelves, a presence peak for voice
    clarity).
-3. Per-app routing, samples and fallback devices.
+3. Per-app routing, samples and fallback devices. Per-app routing is done:
+   apps' PipeWire streams are Sonar's audio sessions (the process comes
+   from the stream or its client), dragging an app sets its stream's
+   `target.object` to the device's `object.serial`, which WirePlumber
+   follows and remembers for the app, and a one-second watch sends the
+   session opened and closed events. Tested on a private PipeWire with
+   WirePlumber and in the mixer.
 4. Streamer mode.
 5. Mic effects, then surround and reverb equivalents.
