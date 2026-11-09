@@ -785,7 +785,10 @@ func registerMiscBuiltins() {
 		return bytesObj(nil), nil
 	})
 	// PrismSync lighting hooks (driven by the Linux PrismSync service).
-	for _, n := range []string{"prism-sync-zone", "prism-sync-zone-bitmap-hid-code", "prism-sync-zone-linear", "prism-sync-actuation_level", "pause-prism-sync", "resume-prism-sync"} {
+	// prism-sync-make-device-rewrite re-applies PrismSync's lighting to a
+	// device that reconnects (an Aerox mouse waking up); without PrismSync
+	// there is nothing to re-apply.
+	for _, n := range []string{"prism-sync-zone", "prism-sync-zone-bitmap-hid-code", "prism-sync-zone-linear", "prism-sync-actuation_level", "pause-prism-sync", "resume-prism-sync", "prism-sync-make-device-rewrite"} {
 		pf(n, "*", func([]*golisp.Data, *golisp.SymbolTableFrame) (*golisp.Data, error) { return nil, nil })
 	}
 	sf("pause-prism-sync-for-block", "*", func(a []*golisp.Data, env *golisp.SymbolTableFrame) (*golisp.Data, error) {
