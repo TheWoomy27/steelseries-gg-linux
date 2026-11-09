@@ -136,7 +136,11 @@ func momentsCommand(args []string) error {
 		if err := c.do("POST", "https://"+addr+"/moments/toggle/"+what, nil, &r); err != nil {
 			return err
 		}
-		fmt.Println(what, map[bool]string{true: "on", false: "off"}[r.On])
+		if what == "mic" {
+			fmt.Println(map[bool]string{true: "mic muted", false: "mic unmuted"}[r.On])
+		} else {
+			fmt.Println(what, map[bool]string{true: "on", false: "off"}[r.On])
+		}
 	case "status":
 		var r struct {
 			Status struct {

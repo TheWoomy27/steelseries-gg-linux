@@ -38,6 +38,7 @@ func monitors(ctx context.Context) []monitor {
 				Y           int     `json:"y"`
 				Focused     bool    `json:"focused"`
 				Scale       float64 `json:"scale"`
+				Transform   int     `json:"transform"`
 				Disabled    bool    `json:"disabled"`
 			}
 			if json.Unmarshal(out, &ms) == nil {
@@ -46,7 +47,11 @@ func monitors(ctx context.Context) []monitor {
 					if m.Disabled {
 						continue
 					}
-					out = append(out, monitor{Name: m.Name, Description: m.Description, X: m.X, Y: m.Y, Width: m.Width, Height: m.Height, Primary: m.X == 0 && m.Y == 0})
+					w, h := m.Width, m.Height
+					if m.Transform%2 == 1 { // turned a quarter
+						w, h = h, w
+					}
+					out = append(out, monitor{Name: m.Name, Description: m.Description, X: m.X, Y: m.Y, Width: w, Height: h, Primary: m.X == 0 && m.Y == 0})
 				}
 				return out
 			}

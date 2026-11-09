@@ -53,12 +53,12 @@ func startMoments(ctx context.Context, core *ggcore.Core, token string, tlsCfg *
 	return mom, nil
 }
 
-// The Moments shortcuts and what ggctl does for each.
-var momentsShortcuts = map[int]string{
-	ggcore.ShortcutMomentsClip:    "moments clip",
-	ggcore.ShortcutMomentsMicMute: "moments mic",
-	ggcore.ShortcutMomentsDesktop: "moments desktop",
-	ggcore.ShortcutMomentsEnable:  "moments toggle",
+// The Moments shortcuts: what ggctl does for each, and its description.
+var momentsShortcuts = map[int][2]string{
+	ggcore.ShortcutMomentsClip:    {"moments clip", "Moments: save a clip"},
+	ggcore.ShortcutMomentsMicMute: {"moments mic", "Moments: mute the microphone"},
+	ggcore.ShortcutMomentsDesktop: {"moments desktop", "Moments: desktop capture"},
+	ggcore.ShortcutMomentsEnable:  {"moments toggle", "Moments: capture on or off"},
 }
 
 // bindMomentsShortcuts makes the Moments shortcuts work across the
@@ -72,15 +72,15 @@ func bindMomentsShortcuts(ctx context.Context, core *ggcore.Core, mom *moments.S
 	ggctl := ggctlPath()
 	hk := hotkeys.NewHyprland(ctx)
 	apply := func() {
-		binds := map[string]string{}
+		binds := map[string]hotkeys.Bind{}
 		if mom.Capturing() {
-			for id, args := range momentsShortcuts {
+			for id, sc := range momentsShortcuts {
 				t, ok := core.ShortcutTrigger(id)
 				if !ok {
 					continue
 				}
 				if spec, ok := hotkeys.Spec(t.Modifiers, t.HIDCode); ok {
-					binds[spec] = ggctl + " " + args
+					binds[spec] = hotkeys.Bind{Command: ggctl + " " + sc[0], Description: sc[1]}
 				}
 			}
 		}

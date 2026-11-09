@@ -1,7 +1,8 @@
 // Package hotkeys makes GG's keyboard shortcuts global. Wayland gives
 // applications no way to grab keys, so on Hyprland ggd asks the compositor
 // to bind them, through hyprctl, to a command that tells ggd; the binds
-// come back after Hyprland reloads its configuration.
+// come back after Hyprland reloads its configuration. Hyprland 0.57 and
+// later take binds as Lua (hl.bind); older versions as keywords.
 package hotkeys
 
 import (
@@ -15,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -77,17 +79,33 @@ func hidKey(code int) (string, bool) {
 // Available reports whether this session can have global shortcuts.
 func Available() bool { return os.Getenv("HYPRLAND_INSTANCE_SIGNATURE") != "" }
 
+// Bind is what a key does: a command, and the description Hyprland lists
+// it with.
+type Bind struct {
+	Command, Description string
+}
+
+// descPrefix marks ggd's binds, so they are told apart from the user's.
+const descPrefix = "SteelSeries GG"
+
 // Hyprland keeps a set of key binds in Hyprland.
 type Hyprland struct {
 	mu    sync.Mutex
-	want  map[string]string // key spec → command
-	bound map[string]string
+	lua   bool
+	want  map[string]Bind // key spec → bind
+	bound map[string]Bind
 }
 
 // NewHyprland starts following Hyprland's configuration reloads, which
 // drop binds made at run time.
 func NewHyprland(ctx context.Context) *Hyprland {
-	h := &Hyprland{want: map[string]string{}, bound: map[string]string{}}
+	h := &Hyprland{want: map[string]Bind{}, bound: map[string]Bind{}}
+	h.lua = exec.Command("hyprctl", "eval", "return 1").Run() == nil
+	// Binds an earlier ggd left behind (it stopped without cleaning up)
+	// are dropped, so they don't block their keys.
+	for spec := range ownBinds() {
+		h.unbind(spec)
+	}
 	go h.watch(ctx)
 	go func() {
 		<-ctx.Done()
@@ -97,10 +115,10 @@ func NewHyprland(ctx context.Context) *Hyprland {
 }
 
 // Set makes exactly binds bound (by ggd; the user's own are left alone).
-func (h *Hyprland) Set(binds map[string]string) {
+func (h *Hyprland) Set(binds map[string]Bind) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.want = map[string]string{}
+	h.want = map[string]Bind{}
 	for k, v := range binds {
 		h.want[k] = v
 	}
@@ -108,9 +126,9 @@ func (h *Hyprland) Set(binds map[string]string) {
 }
 
 func (h *Hyprland) applyLocked() {
-	for spec := range h.bound {
-		if cmd, ok := h.want[spec]; !ok || cmd != h.bound[spec] {
-			if err := hyprctl("keyword", "unbind", spec); err != nil {
+	for spec, b := range h.bound {
+		if w, ok := h.want[spec]; !ok || w != b {
+			if err := h.unbind(spec); err != nil {
 				slog.Warn("hotkeys: unbind", "key", spec, "err", err)
 			}
 			delete(h.bound, spec)
@@ -126,21 +144,44 @@ func (h *Hyprland) applyLocked() {
 	}
 	sort.Strings(specs)
 	for _, spec := range specs {
-		cmd := h.want[spec]
-		if h.bound[spec] == cmd {
+		b := h.want[spec]
+		if h.bound[spec] == b {
 			continue
 		}
 		if taken[normalize(spec)] {
 			slog.Warn("hotkeys: key already bound in Hyprland's configuration; leaving it", "key", spec)
 			continue
 		}
-		if err := hyprctl("keyword", "bind", spec+",exec,"+cmd); err != nil {
+		if err := h.bind(spec, b); err != nil {
 			slog.Warn("hotkeys: bind", "key", spec, "err", err)
 			continue
 		}
-		h.bound[spec] = cmd
-		slog.Info("hotkeys: bound", "key", spec, "command", cmd)
+		h.bound[spec] = b
+		slog.Info("hotkeys: bound", "key", spec, "command", b.Command)
 	}
+}
+
+// luaKeys writes a key spec ("SHIFT ALT,M") the Lua way ("SHIFT + ALT + M").
+func luaKeys(spec string) string {
+	mods, key, _ := strings.Cut(spec, ",")
+	return strings.Join(append(strings.Fields(mods), key), " + ")
+}
+
+func (h *Hyprland) bind(spec string, b Bind) error {
+	desc := descPrefix + ": " + b.Description
+	if h.lua {
+		return hyprctl("eval", fmt.Sprintf("hl.bind(%s, hl.dsp.exec_cmd(%s), { description = %s })",
+			strconv.Quote(luaKeys(spec)), strconv.Quote(b.Command), strconv.Quote(desc)))
+	}
+	mods, key, _ := strings.Cut(spec, ",")
+	return hyprctl("keyword", "bindd", mods+","+key+","+strings.ReplaceAll(desc, ",", " ")+",exec,"+b.Command)
+}
+
+func (h *Hyprland) unbind(spec string) error {
+	if h.lua {
+		return hyprctl("eval", fmt.Sprintf("hl.unbind(%s)", strconv.Quote(luaKeys(spec))))
+	}
+	return hyprctl("keyword", "unbind", spec)
 }
 
 func hyprctl(args ...string) error {
@@ -166,29 +207,55 @@ func normalize(spec string) string {
 	return fmt.Sprintf("%d,%s", mask, strings.ToLower(key))
 }
 
-// userBinds lists the keys Hyprland has bound, other than to ggd.
-func userBinds() map[string]bool {
+type hyprBind struct {
+	Modmask     int    `json:"modmask"`
+	Key         string `json:"key"`
+	Dispatcher  string `json:"dispatcher"`
+	Arg         string `json:"arg"`
+	Description string `json:"description"`
+}
+
+func (b hyprBind) ours() bool {
+	return strings.HasPrefix(b.Description, descPrefix) || strings.Contains(b.Arg, "ggctl moments")
+}
+
+func listBinds() []hyprBind {
 	out, err := exec.Command("hyprctl", "-j", "binds").Output()
 	if err != nil {
 		return nil
 	}
-	var binds []struct {
-		Modmask    int    `json:"modmask"`
-		Key        string `json:"key"`
-		Dispatcher string `json:"dispatcher"`
-		Arg        string `json:"arg"`
-	}
-	if json.Unmarshal(out, &binds) != nil {
-		return nil
-	}
+	var binds []hyprBind
+	json.Unmarshal(out, &binds)
+	return binds
+}
+
+// userBinds lists the keys Hyprland has bound, other than for ggd.
+func userBinds() map[string]bool {
 	taken := map[string]bool{}
-	for _, b := range binds {
-		if b.Dispatcher == "exec" && strings.Contains(b.Arg, "ggctl") {
-			continue
+	for _, b := range listBinds() {
+		if !b.ours() {
+			taken[fmt.Sprintf("%d,%s", b.Modmask, strings.ToLower(b.Key))] = true
 		}
-		taken[fmt.Sprintf("%d,%s", b.Modmask, strings.ToLower(b.Key))] = true
 	}
 	return taken
+}
+
+// ownBinds lists the key specs bound for ggd.
+func ownBinds() map[string]bool {
+	own := map[string]bool{}
+	for _, b := range listBinds() {
+		if !b.ours() {
+			continue
+		}
+		var mods []string
+		for _, m := range []string{"CTRL", "SHIFT", "ALT", "SUPER"} {
+			if b.Modmask&hyprMods[m] != 0 {
+				mods = append(mods, m)
+			}
+		}
+		own[strings.Join(mods, " ")+","+b.Key] = true
+	}
+	return own
 }
 
 // watch re-binds after Hyprland reloads its configuration.
@@ -211,7 +278,7 @@ func (h *Hyprland) watch(ctx context.Context) {
 		for sc.Scan() {
 			if strings.HasPrefix(sc.Text(), "configreloaded>>") {
 				h.mu.Lock()
-				h.bound = map[string]string{}
+				h.bound = map[string]Bind{}
 				h.applyLocked()
 				h.mu.Unlock()
 			}

@@ -20,6 +20,12 @@ func TestSpec(t *testing.T) {
 	if _, ok := Spec(4, 0); ok {
 		t.Error("named a key for HID usage 0")
 	}
+	if got := luaKeys("SHIFT ALT,M"); got != "SHIFT + ALT + M" {
+		t.Errorf("luaKeys = %q", got)
+	}
+	if got := luaKeys(",F10"); got != "F10" {
+		t.Errorf("luaKeys = %q", got)
+	}
 	if normalize("SHIFT ALT,M") != "9,m" {
 		t.Errorf("normalize = %q", normalize("SHIFT ALT,M"))
 	}

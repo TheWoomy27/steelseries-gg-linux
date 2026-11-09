@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -81,13 +83,14 @@ func startRecorder(cfg recConfig) (recorder, error) {
 	return startRing(cfg)
 }
 
-// gsrRecorder runs gpu-screen-recorder in replay mode.
+// gsrRecorder runs gpu-screen-recorder in replay mode. It keeps the
+// buffer in RAM and saves the last seconds asked for over its IPC socket.
 type gsrRecorder struct {
-	cmd   *exec.Cmd
-	dir   string
-	saved chan string
-	mu    sync.Mutex
-	exit  chan struct{}
+	cmd  *exec.Cmd
+	dir  string
+	sock string
+	mu   sync.Mutex
+	exit chan struct{}
 }
 
 func startGSR(bin string, cfg recConfig) (recorder, error) {
@@ -104,10 +107,11 @@ func startGSR(bin string, cfg recConfig) (recorder, error) {
 	if cfg.Cursor {
 		cursor = "yes"
 	}
+	sock := filepath.Join(dir, "gsr.sock")
 	args := []string{"-w", target, "-f", strconv.Itoa(cfg.FPS), "-r", strconv.Itoa(cfg.Seconds),
 		"-c", "mp4", "-k", "h264", "-q", gsrQuality(cfg.CRF), "-cursor", cursor,
-		"-ac", "aac", "-ab", strconv.Itoa(cfg.AudioBitrate), "-o", dir}
-	if cfg.Monitor.Height > cfg.Height && cfg.Height > 0 {
+		"-ac", "aac", "-ab", strconv.Itoa(cfg.AudioBitrate), "-ipc", sock, "-v", "no", "-o", dir}
+	if cfg.Height > 0 && cfg.Monitor.Height > cfg.Height {
 		w := cfg.Monitor.Width * cfg.Height / cfg.Monitor.Height
 		args = append(args, "-s", fmt.Sprintf("%dx%d", w&^1, cfg.Height))
 	}
@@ -127,28 +131,13 @@ func startGSR(bin string, cfg recConfig) (recorder, error) {
 	}
 	cmd := exec.Command(bin, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGTERM}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
+	cmd.Stdout = &logWriter{prefix: "gpu-screen-recorder"}
 	cmd.Stderr = &logWriter{prefix: "gpu-screen-recorder"}
 	slog.Info("moments: starting gpu-screen-recorder", "args", strings.Join(args, " "))
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	r := &gsrRecorder{cmd: cmd, dir: dir, saved: make(chan string, 4), exit: make(chan struct{})}
-	go func() {
-		sc := bufio.NewScanner(stdout)
-		for sc.Scan() {
-			line := strings.TrimSpace(sc.Text())
-			if strings.HasSuffix(line, ".mp4") {
-				select {
-				case r.saved <- line:
-				default:
-				}
-			}
-		}
-	}()
+	r := &gsrRecorder{cmd: cmd, dir: dir, sock: sock, exit: make(chan struct{})}
 	go func() { cmd.Wait(); close(r.exit) }()
 	return r, nil
 }
@@ -179,37 +168,62 @@ func gsrDevice(d string) string {
 func (r *gsrRecorder) name() string          { return "gpu-screen-recorder" }
 func (r *gsrRecorder) done() <-chan struct{} { return r.exit }
 
+// request sends one IPC request and returns the reply's data.
+func (r *gsrRecorder) request(ctx context.Context, name string, data any) (string, error) {
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, "unix", r.sock)
+	if err != nil {
+		return "", err
+	}
+	defer conn.Close()
+	if dl, ok := ctx.Deadline(); ok {
+		conn.SetDeadline(dl)
+	}
+	req, _ := json.Marshal(map[string]any{"id": 1, "name": name, "data": data})
+	if _, err := conn.Write(append(req, '\n')); err != nil {
+		return "", err
+	}
+	line, err := bufio.NewReader(conn).ReadBytes('\n')
+	if err != nil {
+		return "", err
+	}
+	var reply struct {
+		Result string `json:"result"`
+		Data   any    `json:"data"`
+	}
+	if err := json.Unmarshal(line, &reply); err != nil {
+		return "", err
+	}
+	if reply.Result != "ok" {
+		return "", fmt.Errorf("gpu-screen-recorder: %v", reply.Data)
+	}
+	s, _ := reply.Data.(string)
+	return s, nil
+}
+
 func (r *gsrRecorder) save(ctx context.Context, seconds float64, out string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	for len(r.saved) > 0 {
-		<-r.saved
-	}
-	if err := r.cmd.Process.Signal(syscall.SIGUSR1); err != nil {
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	path, err := r.request(ctx, "save-replay", map[string]any{"seconds": int(seconds + 0.5)})
+	if err != nil {
+		select {
+		case <-r.exit:
+			return errors.New("gpu-screen-recorder exited")
+		default:
+		}
 		return err
 	}
-	var path string
-	select {
-	case path = <-r.saved:
-	case <-r.exit:
-		return errors.New("gpu-screen-recorder exited")
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-time.After(30 * time.Second):
-		return errors.New("gpu-screen-recorder did not save the replay")
+	if path == "" {
+		return errors.New("gpu-screen-recorder saved nothing")
 	}
 	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
 		return err
 	}
-	info, err := probe(ctx, path)
-	if err == nil && info.Duration > seconds+0.5 {
-		// The buffer is longer than the clip asked for: keep its end.
-		err = ffmpeg(ctx, "-sseof", ftoa(-seconds), "-i", path, "-map", "0", "-c", "copy", "-movflags", "+faststart", out)
-		os.Remove(path)
-		return err
-	}
 	if err := os.Rename(path, out); err != nil {
-		err = ffmpeg(ctx, "-i", path, "-map", "0", "-c", "copy", out)
+		// Another file system: copy, without re-encoding.
+		err = ffmpeg(ctx, "-i", path, "-map", "0", "-c", "copy", "-movflags", "+faststart", out)
 		os.Remove(path)
 		return err
 	}
@@ -230,11 +244,13 @@ func (r *gsrRecorder) stop() {
 // ringRecorder records one-second segments into a ring and joins the
 // newest ones into clips.
 type ringRecorder struct {
-	dir   string
-	procs []*exec.Cmd
-	exit  chan struct{}
-	mu    sync.Mutex
-	label string
+	dir     string
+	procs   []*exec.Cmd
+	exit    chan struct{}
+	mu      sync.Mutex
+	label   string
+	audio   int    // sound sources, each a track
+	bitrate string // of the sound
 }
 
 const segmentSeconds = 1
@@ -282,7 +298,11 @@ func startRing(cfg recConfig) (recorder, error) {
 		video = exec.Command(wf, wargs...)
 		video.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGTERM}
 		video.Stderr = &logWriter{prefix: "wf-recorder"}
-		args = append(args, "-use_wallclock_as_timestamps", "1", "-thread_queue_size", "1024", "-f", "mpegts", "-i", "pipe:0")
+		// Read the picture as it comes (ffmpeg would otherwise study five
+		// seconds of it before opening the sound inputs), stamped with the
+		// time it arrives, which the sound is lined up with.
+		args = append(args, "-use_wallclock_as_timestamps", "1", "-fflags", "+nobuffer", "-probesize", "262144", "-analyzeduration", "0",
+			"-thread_queue_size", "1024", "-f", "mpegts", "-i", "pipe:0")
 		label = "wf-recorder + ffmpeg"
 	default:
 		display := os.Getenv("DISPLAY")
@@ -324,20 +344,12 @@ func startRing(cfg recConfig) (recorder, error) {
 		args = append(args, videoArgs(cfg.CRF, 0, gop)...)
 		args = append(args, "-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", segmentSeconds))
 	}
-	if n := len(cfg.Audio); n > 0 {
-		ab := strconv.Itoa(cfg.AudioBitrate) + "k"
-		if n == 1 {
-			args = append(args, "-map", "1:a")
-		} else {
-			// The mix first, then each source.
-			var in string
-			for i := range cfg.Audio {
-				in += fmt.Sprintf("[%d:a]", i+1)
-			}
-			args = append(args, "-filter_complex", fmt.Sprintf("%samix=inputs=%d:normalize=0:dropout_transition=0[mix]", in, n), "-map", "[mix]")
-			for i := range cfg.Audio {
-				args = append(args, "-map", fmt.Sprintf("%d:a", i+1))
-			}
+	// Each source is recorded on its own; clips get the mix when saved,
+	// as mixing here holds up reading the picture.
+	ab := strconv.Itoa(cfg.AudioBitrate) + "k"
+	if len(cfg.Audio) > 0 {
+		for i := range cfg.Audio {
+			args = append(args, "-map", fmt.Sprintf("%d:a", i+1))
 		}
 		args = append(args, "-c:a", "aac", "-b:a", ab, "-ar", strconv.Itoa(cfg.SampleRate))
 	}
@@ -347,7 +359,7 @@ func startRing(cfg recConfig) (recorder, error) {
 	ff := exec.Command("ffmpeg", append([]string{"-hide_banner", "-loglevel", "warning", "-nostdin"}, args...)...)
 	ff.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGTERM}
 	ff.Stderr = &logWriter{prefix: "ffmpeg"}
-	r := &ringRecorder{dir: dir, exit: make(chan struct{}), label: label}
+	r := &ringRecorder{dir: dir, exit: make(chan struct{}), label: label, audio: len(cfg.Audio), bitrate: ab}
 	slog.Info("moments: starting recorder", "backend", label, "args", strings.Join(ff.Args[1:], " "))
 	if video != nil {
 		pr, pw, err := os.Pipe()
@@ -473,7 +485,19 @@ func (r *ringRecorder) save(ctx context.Context, seconds float64, out string) er
 	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
 		return err
 	}
-	return ffmpeg(ctx, "-f", "concat", "-safe", "0", "-i", lp, "-map", "0", "-c", "copy", "-movflags", "+faststart", out)
+	args := []string{"-f", "concat", "-safe", "0", "-i", lp}
+	if r.audio > 1 {
+		// The mix first (what players play), then each source.
+		var in string
+		for i := 0; i < r.audio; i++ {
+			in += fmt.Sprintf("[0:a:%d]", i)
+		}
+		args = append(args, "-filter_complex", fmt.Sprintf("%samix=inputs=%d:normalize=0:dropout_transition=0[mix]", in, r.audio),
+			"-map", "0:v", "-map", "[mix]", "-map", "0:a", "-c", "copy", "-c:a:0", "aac", "-b:a:0", r.bitrate)
+	} else {
+		args = append(args, "-map", "0", "-c", "copy")
+	}
+	return ffmpeg(ctx, append(args, "-movflags", "+faststart", out)...)
 }
 
 func copyFile(src, dst string) error {
