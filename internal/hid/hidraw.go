@@ -98,7 +98,8 @@ func readInfo(sys string) (Info, error) {
 type Device struct {
 	Info
 	f       *os.File
-	reqMu   sync.Mutex // one request/response exchange at a time
+	reqMu   sync.Mutex // one write or request/response exchange at a time
+	sent    time.Time  // when the last write that did not wait for its reply went out (under reqMu)
 	mu      sync.Mutex
 	waiting chan []byte
 	events  func([]byte)
@@ -205,8 +206,23 @@ func pad(data []byte, n int) []byte {
 	return b
 }
 
-// Write sends an output report (buf[0] = report ID).
+// replySettle is how long a request waits after a write that did not wait
+// for its reply. A dongle tunnels one command at a time to its wireless
+// device; a request sent while the previous write is still on its way is
+// dropped, so its reply never comes. A lighting animation writes a frame
+// every 15 ms, and a round trip to an Aerox mouse takes about 7.
+const replySettle = 20 * time.Millisecond
+
+// Write sends an output report (buf[0] = report ID). It waits for an
+// exchange in progress, so its reply is not lost.
 func (d *Device) Write(data []byte, size int) error {
+	d.reqMu.Lock()
+	defer d.reqMu.Unlock()
+	d.sent = time.Now()
+	return d.write(data, size)
+}
+
+func (d *Device) write(data []byte, size int) error {
 	b := pad(data, size)
 	b = b[:min(len(b), d.outputLen(b[0], len(b)))]
 	if traceReports {
@@ -232,6 +248,9 @@ func (d *Device) Exchange(data []byte, size int, timeout time.Duration) ([]byte,
 	if wait := 150*time.Millisecond - time.Since(d.opened); wait > 0 {
 		time.Sleep(wait)
 	}
+	if wait := replySettle - time.Since(d.sent); wait > 0 {
+		time.Sleep(wait)
+	}
 	ch := make(chan []byte, 64)
 	d.mu.Lock()
 	d.waiting = ch
@@ -247,7 +266,7 @@ func (d *Device) Exchange(data []byte, size int, timeout time.Duration) ([]byte,
 		}
 		d.mu.Unlock()
 	}()
-	if err := d.Write(data, size); err != nil {
+	if err := d.write(data, size); err != nil {
 		return nil, err
 	}
 	if timeout <= 0 {

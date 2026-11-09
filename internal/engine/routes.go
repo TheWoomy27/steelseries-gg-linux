@@ -425,7 +425,7 @@ func (e *Engine) handleDeviceWrite(w http.ResponseWriter, r *http.Request) {
 			m, _ := vals.(map[string]any)
 			_, err = d.ReadApi(name, m)
 		default:
-			err = e.writeSetting(d, name, vals, true)
+			_, err = e.writeSetting(d, name, vals, true)
 		}
 		if err != nil {
 			ok = false

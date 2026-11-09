@@ -299,9 +299,13 @@ func (e *Engine) deploy(l *liveDevice, settings map[string]any, force, saveToFla
 	}
 	sort.Strings(keys)
 	var errs []string
+	written := 0
 	for _, k := range keys {
-		if err := e.writeSetting(d, k, settings[k], force || d.AlwaysWriteAllSettings); err != nil {
+		wrote, err := e.writeSetting(d, k, settings[k], force || d.AlwaysWriteAllSettings)
+		if err != nil {
 			errs = append(errs, k+": "+err.Error())
+		} else if wrote {
+			written++
 		}
 	}
 	if err := d.PostDeploy(saveToFlash); err != nil {
@@ -311,29 +315,34 @@ func (e *Engine) deploy(l *liveDevice, settings map[string]any, force, saveToFla
 		slog.Warn("deploy finished with errors", "device", l.cat.Name, "errors", strings.Join(errs, "; "))
 		return fmt.Errorf("%d settings failed: %s", len(errs), strings.Join(errs, "; "))
 	}
+	if written > 0 {
+		slog.Info("deployed", "device", l.cat.Name, "settings", written)
+	}
 	return nil
 }
 
-func (e *Engine) writeSetting(d *devicert.Decl, key string, value any, force bool) error {
+// writeSetting writes one setting and reports whether it went to the
+// device.
+func (e *Engine) writeSetting(d *devicert.Decl, key string, value any, force bool) (bool, error) {
 	if api, seq := d.SequenceForSetting(key); api != "" {
-		return e.sequencer.Play(d, api, seq, value)
+		return true, e.sequencer.Play(d, api, seq, value)
 	}
 	api := d.Api(key)
 	if api == nil {
-		return nil // keys handled elsewhere (bindings, UI-only state)
+		return false, nil // keys handled elsewhere (bindings, UI-only state)
 	}
 	if len(api.Write) == 0 {
-		return nil // values read from the device (guid, name) that configs keep
+		return false, nil // values read from the device (guid, name) that configs keep
 	}
 	m, _ := value.(map[string]any)
 	if !force && m != nil && sameValues(d.CachedValues(key), m) {
-		return nil
+		return false, nil
 	}
 	err := d.WriteApi(key, value)
 	if err == devicert.ErrFirmwareDisabled {
-		return nil
+		return false, nil
 	}
-	return err
+	return err == nil, err
 }
 
 func sameValues(cached, want map[string]any) bool {
