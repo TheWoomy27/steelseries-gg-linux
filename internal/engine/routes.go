@@ -450,6 +450,7 @@ func (e *Engine) handleCreateConfig(w http.ResponseWriter, r *http.Request, depl
 	}
 	if deploy {
 		e.deployConfig(c, false)
+		e.configSelected(c)
 	}
 	e.emit("reloadConfigs", map[string]any{"id": c.DeviceID})
 	httpx.JSON(w, map[string]any{"configuration": c})
@@ -501,6 +502,7 @@ func (e *Engine) handleDeploy(w http.ResponseWriter, r *http.Request, force bool
 		httpx.Error(w, 500, err.Error())
 		return
 	}
+	e.configSelected(c)
 	slog.Info("configuration deployed", "config", c.Name, "ms", time.Since(start).Milliseconds())
 	httpx.OK(w)
 }

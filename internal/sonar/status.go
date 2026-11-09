@@ -238,9 +238,6 @@ func (s *Service) statusRoutes() {
 
 	// QuickSet profiles and in-game overlays come from GG features that
 	// are not available on Linux.
-	sv.Handle("GET /quickset/isEnabled", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, false) })
-	sv.Handle("GET /quickset/selected", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, nil) })
-	sv.Handle("GET /quickset/profiles", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, []any{}) })
 	sv.Handle("GET /overlays", func(w http.ResponseWriter, r *http.Request) {
 		httpx.JSON(w, map[string]any{"settings": []any{}, "subAppOverlaysEnabled": false})
 	})

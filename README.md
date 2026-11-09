@@ -87,6 +87,13 @@ In progress / not done:
   docs/sonar.md. The effects need DeepFilterNet's LADSPA plugin and LSP
   plugins, and spatial audio PipeWire's SOFA plugin and libmysofa's HRTF
   set; without them they are left out. Echo canceling is not done.
+- QuickSet (GG's game profiles) has a sidebar entry. A profile bound to a
+  game is deployed while the game runs (Steam games by their app id,
+  others by install folder; a running game counts as in front, since
+  Wayland has no portable foreground window), and Default comes back when
+  it exits. Device configurations and the Sonar Game preset follow the
+  profile; a game with a Sonar preset (Fortnite, Overwatch...) gets a
+  profile made from it. Profiles are off until turned on in QuickSet.
 - Headset EQ: the Arctis Nova 7 Gen 2's on-device EQ deploys with its
   configuration, and with Sonar on GG's Auto-Flatten EQ banner reports
   a headset EQ that is not flat and flattens it on request (not on its

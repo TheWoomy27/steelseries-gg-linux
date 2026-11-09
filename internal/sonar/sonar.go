@@ -30,6 +30,7 @@ type Service struct {
 	active    bool          // Sonar is enabled in GG
 	stopWatch chan struct{} // stops watch
 	headsets  Headsets
+	quickset  QuicksetHost // GG's game profiles (quickset.go)
 
 	fallbackMu sync.Mutex // fallback list changes
 	// otherProfiles are the device nodes hidden as other-profile copies
@@ -123,6 +124,7 @@ func (s *Service) routes() {
 	s.streamerRoutes()
 	s.deviceVolumeRoutes()
 	s.linkAllRoutes()
+	s.quicksetRoutes()
 
 	sv.Handle("GET /configs", func(w http.ResponseWriter, r *http.Request) {
 		vad := 0
@@ -159,7 +161,11 @@ func (s *Service) routes() {
 		reply(w, out, err)
 	})
 	sv.Handle("DELETE /configs/{id}", func(w http.ResponseWriter, r *http.Request) {
+		c, _ := s.configByID(r.PathValue("id"))
 		out, err := s.deleteConfig(r.PathValue("id"))
+		if err == nil && c != nil {
+			s.quicksetDeleted(c)
+		}
 		reply(w, out, err)
 	})
 	sv.Handle("GET /configs/selected", func(w http.ResponseWriter, r *http.Request) {
@@ -168,6 +174,9 @@ func (s *Service) routes() {
 	})
 	sv.Handle("PUT /configs/{id}/select", func(w http.ResponseWriter, r *http.Request) {
 		out, err := s.selectConfig(r.PathValue("id"))
+		if err == nil {
+			s.quicksetSelected(out)
+		}
 		reply(w, out, err)
 	})
 	sv.Handle("POST /configs/{id}/isFavorite/{isFavorite}", func(w http.ResponseWriter, r *http.Request) {

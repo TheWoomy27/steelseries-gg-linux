@@ -18,6 +18,13 @@ if [ -z "${GG_LINUX_GGD:-}" ]; then
     [ -x "$here/ggd" ] && export GG_LINUX_GGD="$here/ggd"
 fi
 
+# With the user service installed, ggd runs under it (it may have been
+# stopped from the tray): start it rather than let the client start a ggd
+# of its own, which would stand in the service's way.
+if ! pgrep -x ggd >/dev/null && systemctl --user cat steelseries-ggd.service >/dev/null 2>&1; then
+    systemctl --user start steelseries-ggd.service || true
+fi
+
 electron="${GG_LINUX_ELECTRON:-}"
 if [ -z "$electron" ]; then
     # The Windows client ships Electron 31; newer releases keep the

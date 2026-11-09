@@ -50,6 +50,9 @@ func (c *Core) settings() map[string]any {
 	if installed, enabled := autostartInstalled(); installed {
 		out["shouldAutoStart"] = enabled
 	}
+	// QuickSet is open to every user; its profiles switch lives with them.
+	out["loadoutsEligible"] = true
+	out["quicksetProfilesEnabled"] = c.loadLoadouts().ProfilesEnabled
 	return out
 }
 
@@ -67,6 +70,9 @@ func (c *Core) setSetting(key string, value any) {
 	}
 	if on, ok := value.(bool); ok && key == "shouldAutoStart" {
 		setAutostart(on)
+	}
+	if on, ok := value.(bool); ok && key == "quicksetProfilesEnabled" {
+		c.setProfilesEnabled(on)
 	}
 }
 

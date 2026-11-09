@@ -2,15 +2,14 @@ package ggcore
 
 import (
 	"bytes"
-	"context"
 	"database/sql"
 	"encoding/json"
-	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -57,6 +56,11 @@ func home() string { h, _ := os.UserHomeDir(); return h }
 var vdfPath = regexp.MustCompile(`"path"\s+"([^"]+)"`)
 var acfField = regexp.MustCompile(`"(appid|name|installdir)"\s+"([^"]*)"`)
 
+// gameUID is a game's unique identifier as GG on Windows writes it, its
+// storefront's scanner id and the storefront's own id ("1_1172470" for
+// Apex Legends on Steam); apps' game presets list games this way.
+func gameUID(scanner int, id string) string { return strconv.Itoa(scanner) + "_" + id }
+
 // Steam tools that show up as apps but are not games.
 var steamTools = regexp.MustCompile(`(?i)^(proton|steam linux runtime|steamworks common|steamvr)`)
 
@@ -102,7 +106,7 @@ func scanSteam() []ScannedGame {
 				img = ""
 			}
 			out = append(out, ScannedGame{
-				ID: "steam-" + f["appid"], Name: f["name"], Directory: dir, UniqueIdentifier: "steam_" + f["appid"],
+				ID: "steam-" + f["appid"], Name: f["name"], Directory: dir, UniqueIdentifier: gameUID(scannerSteam, f["appid"]),
 				ImagePath: img, ScannerID: scannerSteam, steamAppID: f["appid"],
 			})
 		}
@@ -124,7 +128,7 @@ func scanHeroic() []ScannedGame {
 		if json.Unmarshal(b, &m) == nil {
 			for _, g := range m {
 				out = append(out, ScannedGame{ID: "epic-" + g.AppName, Name: g.Title, Directory: g.InstallPath,
-					ExePath: filepath.Join(g.InstallPath, g.Executable), UniqueIdentifier: "epic_" + g.AppName, ScannerID: scannerEpic})
+					ExePath: filepath.Join(g.InstallPath, g.Executable), UniqueIdentifier: gameUID(scannerEpic, g.AppName), ScannerID: scannerEpic})
 			}
 		}
 	}
@@ -138,7 +142,7 @@ func scanHeroic() []ScannedGame {
 		if json.Unmarshal(b, &m) == nil {
 			for _, g := range m.Installed {
 				out = append(out, ScannedGame{ID: "gog-" + g.AppName, Name: filepath.Base(g.InstallPath), Directory: g.InstallPath,
-					UniqueIdentifier: "gog_" + g.AppName, ScannerID: scannerGOG})
+					UniqueIdentifier: gameUID(scannerGOG, g.AppName), ScannerID: scannerGOG})
 			}
 		}
 	}
@@ -271,64 +275,6 @@ func (c *Core) gameRoutes() {
 		c.scanGames()
 		httpx.JSON(w, map[string]any{"id": id})
 	})
-}
-
-// watchGames polls running processes and deploys the loadout bound to a
-// game while it runs, returning to the previous loadout when it exits.
-// Wayland gives no portable "foreground window" API, so a running bound
-// game counts as active.
-func (c *Core) watchGames(ctx context.Context) {
-	t := time.NewTicker(3 * time.Second)
-	defer t.Stop()
-	current := ""
-	prevLoadout := ""
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-		}
-		st := c.loadLoadouts()
-		if !st.ProfilesEnabled || c.Setting("autoDeployLoadouts") == false {
-			continue
-		}
-		bound := map[string]string{} // game id -> loadout id
-		for _, l := range st.Loadouts {
-			for _, b := range l.Bindings {
-				if b.Type == "game" {
-					bound[b.Value] = l.ID
-				}
-			}
-		}
-		if len(bound) == 0 {
-			continue
-		}
-		running := runningGames(c.cachedGames())
-		next := ""
-		for _, g := range running {
-			if id, ok := bound[g.ID]; ok {
-				next = id
-				break
-			}
-			if id, ok := bound[g.UniqueIdentifier]; ok {
-				next = id
-				break
-			}
-		}
-		if next == current {
-			continue
-		}
-		if next != "" {
-			if current == "" {
-				prevLoadout = st.ActiveID
-			}
-			slog.Info("game detected, deploying loadout", "loadout", next)
-			c.DeployLoadout(next, false)
-		} else if prevLoadout != "" {
-			c.DeployLoadout(prevLoadout, false)
-		}
-		current = next
-	}
 }
 
 // runningGames matches /proc entries against the library: Steam games by

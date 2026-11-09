@@ -31,6 +31,7 @@ type Core struct {
 	subAppHooks map[string]func(enabled bool)
 	games       gameLibrary
 	taskbar     taskbar
+	quickset    quicksetHooks
 }
 
 // OnSubAppToggle registers the in-process service behind a sub-app so it
@@ -92,6 +93,7 @@ func (c *Core) Broadcast(event string, data any) {
 }
 
 func (c *Core) Run(ctx context.Context) {
+	c.eng.OnConfigSelected(c.selectedOutsideQuickset)
 	go c.watchGames(ctx)
 	<-ctx.Done()
 }
@@ -109,6 +111,8 @@ func (c *Core) routes() {
 	c.settingsRoutes()
 	c.contentRoutes()
 	c.loadoutRoutes()
+	c.quicksetRoutes()
+	c.alertRoutes()
 	c.gameRoutes()
 	c.ggezRoutes()
 	c.taskbarRoutes()

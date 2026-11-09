@@ -100,6 +100,7 @@ func (s *Service) SetActive(on bool) {
 	s.syncAudio()
 	if on {
 		s.refreshChatMix()
+		s.registerQuickset()
 	}
 }
 

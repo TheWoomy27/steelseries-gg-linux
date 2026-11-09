@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -33,10 +34,17 @@ func main() {
 	verbose := flag.Bool("v", false, "verbose logging")
 	flag.Parse()
 	if err := run(*verbose); err != nil {
+		if errors.Is(err, errRunning) {
+			// Not a failure: the user service must not keep retrying.
+			slog.Info("ggd is already running")
+			return
+		}
 		slog.Error("ggd exiting", "err", err)
 		os.Exit(1)
 	}
 }
+
+var errRunning = errors.New("ggd is already running")
 
 func run(verbose bool) error {
 	if err := paths.EnsureRuntimeDirs(); err != nil {
@@ -145,6 +153,7 @@ func run(verbose bool) error {
 		snr.SetActive(on)
 	})
 	core.RegisterSubApp("sonar", sonarMD)
+	connectQuickset(core, snr)
 	go snr.SetActive(core.SubAppEnabled("sonar"))
 
 	if err := writeCoreProps(ggAddr, engAddr, gsAddr, token); err != nil {
@@ -232,7 +241,7 @@ func singleInstance(lockPath string) (func(), error) {
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		f.Close()
-		return nil, fmt.Errorf("ggd is already running")
+		return nil, errRunning
 	}
 	return func() { f.Close() }, nil
 }
