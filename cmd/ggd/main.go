@@ -116,6 +116,10 @@ func run(verbose bool) error {
 	snr.SetHeadsets(headsets{eng})
 	eng.OnChatMix(snr.HeadsetChatMix)
 	eng.OnHeadsetLink(snr.HeadsetLinkChanged)
+	eng.SetAutoFlatten(func() bool {
+		on, _ := core.Setting("autoFlattenEQEnabled").(bool)
+		return on && core.SubAppEnabled("sonar")
+	})
 	// Windows GG shows an overlay for a low battery; Linux shows a desktop
 	// notification.
 	eng.OnBatteryLow(func(device string, percent int) {

@@ -214,10 +214,7 @@ func (e *Engine) miscRoutes() {
 	})
 	s.Handle("DELETE /device/{id}/globalDeviceSettings/liveDeploy", func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })
 
-	s.Handle("POST /v1/device/{name}/flattenEQ", func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })
-	s.Handle("GET /v1/device/{name}/shouldFlattenEQ", func(w http.ResponseWriter, r *http.Request) {
-		httpx.JSON(w, map[string]any{"shouldFlattenEQ": false})
-	})
+	e.flattenRoutes()
 
 	// Sub-app actions (bind device buttons to Sonar/Moments actions).
 	s.Handle("POST /v2/subAppActions", func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })

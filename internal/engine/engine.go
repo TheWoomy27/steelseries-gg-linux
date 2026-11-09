@@ -49,6 +49,7 @@ type Engine struct {
 	onHeadsetLink func()
 	onBatteryLow  func(device string, percent int)
 	deploying     map[uint32]int // deploys in progress, by physical device
+	autoFlatten   func() bool    // Sonar handles EQ (see flatten.go)
 }
 
 // SetSubAppSource lets the Engine's /subApps mirror the GG core's list;
