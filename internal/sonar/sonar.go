@@ -51,6 +51,7 @@ func New(token string) (*Service, error) {
 	s.floor.changed = func() { s.applyVAD(vadChatCapture) }
 	s.upgradeConfigs()
 	s.routes()
+	startGraphMonitor()
 	return s, nil
 }
 

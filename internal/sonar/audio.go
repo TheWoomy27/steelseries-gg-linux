@@ -483,6 +483,9 @@ func (a *audio) setMicSample(node string) {
 }
 
 func pwCommand(name string, args ...string) *exec.Cmd {
+	if !(name == "pw-dump" && len(args) > 0 && args[0] == "--monitor") {
+		graph.touch()
+	}
 	cmd := exec.Command(name, args...)
 	cmd.Env = os.Environ()
 	return cmd

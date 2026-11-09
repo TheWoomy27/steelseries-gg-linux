@@ -48,6 +48,9 @@ type pwObject struct {
 }
 
 func pwDump() ([]pwObject, error) {
+	if objs, ok := graph.snapshot(); ok {
+		return objs, nil
+	}
 	out, err := exec.Command("pw-dump").Output()
 	if err != nil {
 		return nil, fmt.Errorf("pw-dump: %w", err)
