@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"ggl/internal/paths"
 
@@ -73,8 +74,9 @@ func (f *fakeEngine) PrismWrite(id int, w []devicert.PrismWrite) error {
 	f.frames[id] = w
 	return nil
 }
-func (f *fakeEngine) PrismRelease(int)             {}
-func (f *fakeEngine) OnPrismDevicesChanged(func()) {}
+func (f *fakeEngine) PrismRelease(int)                        {}
+func (f *fakeEngine) WatchPrismInput(func(engine.PrismInput)) {}
+func (f *fakeEngine) OnPrismDevicesChanged(func())            {}
 
 func testDevices() []engine.PrismDevice {
 	kb := &devicert.PrismData{Supported: true, Whitelisted: true, StepMs: 33, HasBitmap: true,
@@ -185,3 +187,45 @@ func BenchmarkRender(b *testing.B) {
 }
 
 func itoa64(i int64) string { return json.Number(fmt.Sprint(i)).String() }
+
+// A Fade reaction, as the client builds it (isLocal, a single colour,
+// row wave with no spread, and an aperture fading it out).
+const fadeReactive = `{"base":{"globalConfig":{"defaultColor":{"red":0,"green":0,"blue":0},"graphics":[],"foundation":{}}},
+"idle":{"globalConfig":{"defaultColor":{"red":0,"green":0,"blue":40},"graphics":[],"foundation":{}}},"idleTimeMs":60000,
+"reactive":{"globalConfig":{"triggerConfig":{"isLocal":true,"graphicId":"r1"},"graphics":[{"type":0,"zIndex":0,"uniqueId":"r1","hasForeground":true,
+"foreground":{"duration":1000,"spatialWavelength":0,"phaseMatrixShape":2,"repetitions":1,"origin":{"x":0,"y":0},"isOriginFixed":false,
+"gradient":{"colors":[{"position":0,"color":{"red":255,"green":255,"blue":255}}]}},"hasAperture":true,
+"aperture":{"duration":1000,"spatialWavelength":0,"repetitions":1,"origin":{"x":0,"y":0},"isOriginFixed":false,
+"gradient":{"initialMask":{"opacity":255,"brightness":255},"sections":[{"finalMask":{"opacity":0,"brightness":0},"length":255}]},"phaseMatrixShape":2}}],"foundation":{}}}}`
+
+func TestReactiveAndIdle(t *testing.T) {
+	fe := &fakeEngine{devs: testDevices(), frames: map[int][]devicert.PrismWrite{}}
+	s, err := New(t.TempDir()+"/prism.db", "", fe, func(string, any) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.refreshDevices()
+	devs := s.connected()
+	c := &configRow{ID: "r", Data: parseConfig(fadeReactive)}
+	if !usesInput(&c.Data) {
+		t.Fatal("a reactive layer needs input")
+	}
+	s.mu.Lock()
+	s.current = c
+	s.mu.Unlock()
+	// The keyboard's A key (HID 4) is pressed.
+	s.onInput(engine.PrismInput{DeviceID: 159, Pressed: []uint8{4}})
+	colors := renderZones(&ConfigData{Base: c.Data.Base}, devs, 0)
+	s.react(colors, devs)
+	a, other := devs[0].Zones[0].UniqueID, devs[0].Zones[1].UniqueID
+	if colors[a] == (Color{}) || colors[other] != (Color{}) {
+		t.Errorf("after the press: key %v, other key %v", colors[a], colors[other])
+	}
+	// Idle once the idle time passes without input.
+	if g := s.layerFor(&c.Data, time.Now().Add(-2*time.Minute)); g != &c.Data.Idle {
+		t.Error("should be idle")
+	}
+	if g := s.layerFor(&c.Data, time.Now()); g != &c.Data.Base {
+		t.Error("should be active")
+	}
+}

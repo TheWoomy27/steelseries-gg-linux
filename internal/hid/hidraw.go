@@ -103,11 +103,14 @@ type Device struct {
 	mu      sync.Mutex
 	waiting chan []byte
 	events  func([]byte)
-	last    []byte    // most recent input report, when it arrived and how
-	lastAt  time.Time // many times in a row it has repeated
-	repeats int
-	opened  time.Time
-	closed  chan struct{}
+	// listeners also get every input report (PrismSync watching keys).
+	listeners map[int]func([]byte)
+	nextL     int
+	last      []byte    // most recent input report, when it arrived and how
+	lastAt    time.Time // many times in a row it has repeated
+	repeats   int
+	opened    time.Time
+	closed    chan struct{}
 }
 
 var ErrTimeout = errors.New("hid: timed out waiting for report")
@@ -135,6 +138,24 @@ func (d *Device) Close() error {
 	return d.f.Close()
 }
 
+// Listen adds a callback for every input report; the returned function
+// removes it.
+func (d *Device) Listen(fn func([]byte)) (remove func()) {
+	d.mu.Lock()
+	if d.listeners == nil {
+		d.listeners = map[int]func([]byte){}
+	}
+	id := d.nextL
+	d.nextL++
+	d.listeners[id] = fn
+	d.mu.Unlock()
+	return func() {
+		d.mu.Lock()
+		delete(d.listeners, id)
+		d.mu.Unlock()
+	}
+}
+
 // OnEvent installs a callback for input reports that are not replies.
 func (d *Device) OnEvent(fn func([]byte)) {
 	d.mu.Lock()
@@ -159,6 +180,10 @@ func (d *Device) readLoop() {
 		}
 		d.mu.Lock()
 		w, ev := d.waiting, d.events
+		var ls []func([]byte)
+		for _, l := range d.listeners {
+			ls = append(ls, l)
+		}
 		if bytes.Equal(r, d.last) {
 			d.repeats++
 		} else {
@@ -176,6 +201,9 @@ func (d *Device) readLoop() {
 		}
 		if !delivered && ev != nil {
 			ev(r)
+		}
+		for _, l := range ls {
+			l(r)
 		}
 	}
 }

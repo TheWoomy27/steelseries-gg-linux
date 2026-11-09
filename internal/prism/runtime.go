@@ -158,7 +158,7 @@ func (s *Service) renderLoop(ctx context.Context) {
 				s.started = time.Now()
 			}
 		}
-		cur, started := s.current, s.started
+		cur, started, lastInput := s.current, s.started, s.lastInput
 		var active []*device
 		present := map[int]bool{}
 		for _, d := range s.devices {
@@ -184,9 +184,13 @@ func (s *Service) renderLoop(ctx context.Context) {
 			go s.eng.PrismRelease(id)
 		}
 		if cur == nil || len(active) == 0 {
+			s.watchInput(false)
 			continue
 		}
-		colors := renderZones(&cur.Data, active, time.Since(started).Milliseconds())
+		s.watchInput(usesInput(&cur.Data))
+		layer := ConfigData{Base: *s.layerFor(&cur.Data, lastInput)}
+		colors := renderZones(&layer, active, time.Since(started).Milliseconds())
+		s.react(colors, active)
 		for _, d := range active {
 			w := writers[d.ID]
 			if w == nil || w.dev != d {
@@ -231,6 +235,8 @@ func newFrameWriter(eng Engine, d *device, first bool, config string) *frameWrit
 		var sent time.Time
 		logged := !first
 		failed := false
+		var backoff time.Duration
+		var retry time.Time
 		for {
 			var f []devicert.PrismWrite
 			select {
@@ -242,14 +248,24 @@ func newFrameWriter(eng Engine, d *device, first bool, config string) *frameWrit
 			if bytes.Equal(flat, last) && time.Since(sent) < 2*time.Second {
 				continue
 			}
+			if time.Now().Before(retry) {
+				continue
+			}
 			if err := eng.PrismWrite(d.ID, f); err != nil {
 				if !failed {
 					slog.Warn("prism: frame not written", "device", d.FullName, "err", err)
 					failed = true
 				}
+				// A device not answering (a wireless mouse asleep) is
+				// left alone for a while rather than waited on per frame.
+				backoff = min(max(backoff*2, 2*time.Second), 15*time.Second)
+				retry = time.Now().Add(backoff)
 				continue
 			}
-			failed = false
+			if failed {
+				slog.Info("prism: device takes frames again", "device", d.FullName)
+			}
+			failed, backoff = false, 0
 			last, sent = flat, time.Now()
 			if !logged {
 				slog.Info("prism: lighting device", "device", d.FullName, "config", config)

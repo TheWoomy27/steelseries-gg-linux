@@ -32,14 +32,15 @@ type Engine struct {
 	rt    *devicert.Runtime
 	hid   *hid.Manager
 
-	mu        sync.Mutex
-	addr      string
-	gsAddr    string
-	broadcast func(event string, data any)
-	live      map[int]*liveDevice // by catalog device id
-	prism     prismState
-	userID    int
-	appSet    map[string]any
+	mu         sync.Mutex
+	addr       string
+	gsAddr     string
+	broadcast  func(event string, data any)
+	live       map[int]*liveDevice // by catalog device id
+	prism      prismState
+	prismInput prismInputState
+	userID     int
+	appSet     map[string]any
 
 	deviceEvents chan deviceEvent
 	sequencer    *sequencer

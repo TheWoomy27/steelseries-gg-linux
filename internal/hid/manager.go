@@ -77,6 +77,19 @@ func (m *Manager) Find(pid, page, usage uint16, iface int) *Device {
 	return cands[0]
 }
 
+// Devices lists the open nodes of a product.
+func (m *Manager) Devices(pid uint16) []*Device {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []*Device
+	for _, d := range m.devices {
+		if d.ProductID == pid {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
 // Products lists the product ids currently connected.
 func (m *Manager) Products() map[uint16][]Info {
 	m.mu.Lock()

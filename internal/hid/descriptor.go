@@ -17,6 +17,18 @@ type Descriptor struct {
 	Input   map[uint8]int
 	Output  map[uint8]int
 	Feature map[uint8]int
+	// Keys are the input fields carrying keyboard keys (usage page 7).
+	Keys []KeyField
+}
+
+// KeyField is an input field of keyboard usages: an array of key codes
+// (boot keyboards) or a bitmap with one bit per key (NKRO).
+type KeyField struct {
+	ReportID           uint8
+	BitOffset          int // after the report ID
+	Size, Count        int
+	UsageMin, UsageMax uint16
+	Array              bool
 }
 
 // ParseDescriptor walks the short items of a report descriptor, tracking
@@ -26,14 +38,15 @@ func ParseDescriptor(b []byte) Descriptor {
 	d := Descriptor{Input: map[uint8]int{}, Output: map[uint8]int{}, Feature: map[uint8]int{}}
 	bits := map[string]map[uint8]int{"in": {}, "out": {}, "feat": {}}
 	var (
-		usagePage   uint16
-		usage       uint16
-		haveUsage   bool
-		reportSize  int
-		reportCount int
-		reportID    uint8
-		depth       int
-		stack       []struct{ page uint16 }
+		usageMin, usageMax uint16
+		usagePage          uint16
+		usage              uint16
+		haveUsage          bool
+		reportSize         int
+		reportCount        int
+		reportID           uint8
+		depth              int
+		stack              []struct{ page uint16 }
 	)
 	for i := 0; i < len(b); {
 		prefix := b[i]
@@ -63,6 +76,10 @@ func ParseDescriptor(b []byte) Descriptor {
 			switch tag {
 			case 0x8, 0x9, 0xb: // input, output, feature
 				key := map[uint8]string{0x8: "in", 0x9: "out", 0xb: "feat"}[tag]
+				if tag == 0x8 && usagePage == 0x07 && val&1 == 0 && reportSize > 0 && reportCount > 0 {
+					d.Keys = append(d.Keys, KeyField{ReportID: reportID, BitOffset: bits["in"][reportID], Size: reportSize, Count: reportCount,
+						UsageMin: usageMin, UsageMax: usageMax, Array: val&2 == 0})
+				}
 				bits[key][reportID] += reportSize * reportCount
 			case 0xa: // collection
 				if depth == 0 && val == 1 {
@@ -77,6 +94,7 @@ func ParseDescriptor(b []byte) Descriptor {
 				}
 			}
 			haveUsage = false
+			usageMin, usageMax = 0, 0
 		case 1: // global
 			switch tag {
 			case 0x0:
@@ -94,6 +112,12 @@ func ParseDescriptor(b []byte) Descriptor {
 				reportCount = int(val)
 			}
 		case 2: // local
+			switch tag {
+			case 0x1:
+				usageMin = uint16(val)
+			case 0x2:
+				usageMax = uint16(val)
+			}
 			if tag == 0x0 && !haveUsage {
 				if size == 4 {
 					usagePage = uint16(val >> 16)
@@ -124,4 +148,40 @@ func (d Descriptor) Has(page, usage uint16) bool {
 		}
 	}
 	return false
+}
+
+// PressedKeys decodes the keys held down in an input report (report ID
+// first, 0 for unnumbered reports).
+func (d Descriptor) PressedKeys(r []byte) []uint8 {
+	if len(r) == 0 {
+		return nil
+	}
+	id, data := r[0], r[1:]
+	bit := func(i int) bool { return i/8 < len(data) && data[i/8]&(1<<(i%8)) != 0 }
+	var out []uint8
+	for _, f := range d.Keys {
+		if f.ReportID != id {
+			continue
+		}
+		for i := 0; i < f.Count; i++ {
+			off := f.BitOffset + i*f.Size
+			if f.Array {
+				var v uint32
+				for b := 0; b < f.Size && b < 32; b++ {
+					if bit(off + b) {
+						v |= 1 << b
+					}
+				}
+				u := uint32(f.UsageMin) + v
+				if v != 0 && u <= 0xff && (f.UsageMax == 0 || u <= uint32(f.UsageMax)) && u > 3 {
+					out = append(out, uint8(u))
+				}
+			} else if f.Size == 1 && bit(off) {
+				if u := int(f.UsageMin) + i; u > 3 && u <= 0xff {
+					out = append(out, uint8(u))
+				}
+			}
+		}
+	}
+	return out
 }

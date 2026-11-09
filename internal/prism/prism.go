@@ -27,6 +27,7 @@ type Engine interface {
 	PrismWrite(id int, writes []devicert.PrismWrite) error
 	PrismRelease(id int)
 	OnPrismDevicesChanged(fn func())
+	WatchPrismInput(fn func(engine.PrismInput))
 }
 
 type Service struct {
@@ -44,6 +45,11 @@ type Service struct {
 	started  time.Time       // when the current configuration began
 	current  *configRow
 	previews map[string]preview // by config id and mode
+
+	// Input, for the idle and reactive layers.
+	watching  bool
+	lastInput time.Time
+	reactions []reaction
 }
 
 func New(dbPath, migrations string, eng Engine, emit func(string, any)) (*Service, error) {
@@ -52,7 +58,7 @@ func New(dbPath, migrations string, eng Engine, emit func(string, any)) (*Servic
 		return nil, err
 	}
 	s := &Service{srv: httpx.NewServer("prism", ""), hub: events.NewHub("prism-sock", ""), db: d, eng: eng, emit: emit,
-		kick: make(chan struct{}, 1), done: make(chan struct{}), devices: map[int]*device{}, lit: map[int]bool{}, started: time.Now(), previews: map[string]preview{}}
+		kick: make(chan struct{}, 1), done: make(chan struct{}), devices: map[int]*device{}, lit: map[int]bool{}, started: time.Now(), previews: map[string]preview{}, lastInput: time.Now()}
 	s.routes()
 	if eng != nil {
 		eng.OnPrismDevicesChanged(s.refreshDevices)

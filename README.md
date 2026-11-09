@@ -122,9 +122,13 @@ In progress / not done:
   in or out. ggd renders the lighting and sends it to the devices
   SteelSeries made for it (Apex 7, Alias, the Aerox 3/5 Wireless...),
   which follow Prism as soon as they connect, as on Windows; a device
-  switched out gets its own configuration's lighting back. Not done yet:
-  the idle and reactive (key press) layers, Audio visualizer, Reflect
-  (screen colours), image sync and dimming while the monitor sleeps.
+  switched out gets its own configuration's lighting back. The idle
+  layer (after a time without input) and the reactive one (Line, Ripple
+  and Fade on key presses) follow the SteelSeries keyboards and mice
+  themselves; ggd reads their key reports only while the configuration
+  uses one of those layers, and only to light the keys. Not done yet:
+  Audio visualizer, Reflect (screen colours), image sync and dimming
+  while the monitor sleeps.
 - Macro recording, GameSense lighting effects and keyboard binding
   conversion are not implemented.
 - A device whose battery runs low (5%, as its spec says) gets a desktop

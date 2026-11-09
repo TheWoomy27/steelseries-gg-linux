@@ -290,3 +290,33 @@ func (c *compiled) color(zone point, t int64) Color {
 	}
 	return mix(c.def, gc, op*c.opacity/255)
 }
+
+// overlay renders a triggered graphic (a key press reaction) at a zone:
+// its colour and opacity, or ok false where the wave is not.
+func (c *compiled) overlay(zone point, t int64) (Color, int, bool) {
+	if !c.graphic || !c.hasFG {
+		return Color{}, 0, false
+	}
+	dx, dy := zone.X-c.origin.X, zone.Y-c.origin.Y
+	v, in := waveValue(c.fgW, t, phaseIndex(c.fgS, dx, dy))
+	if !in {
+		return Color{}, 0, false
+	}
+	gc, op := c.fg.at(v), 255
+	if c.hasAperture {
+		av, ain := waveValue(c.apW, t, phaseIndex(c.apS, dx, dy))
+		if !ain {
+			return Color{}, 0, false
+		}
+		m := c.mask.at(av)
+		gc, op = scale(gc, int(m.Brightness)), int(m.Opacity)
+	}
+	return gc, op, true
+}
+
+// compileGraphic prepares one graphic (rather than a configuration's
+// foundation) to render from an origin.
+func compileGraphic(g *Graphic, origin point) *compiled {
+	s := Single{Graphics: []Graphic{*g}, Foundation: Foundation{GraphicID: g.UniqueID, Opacity: 255}}
+	return compile(&s, origin)
+}
