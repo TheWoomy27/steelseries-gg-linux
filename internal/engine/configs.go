@@ -323,6 +323,15 @@ func (e *Engine) deploy(l *liveDevice, settings map[string]any, force, saveToFla
 		slog.Debug("post_deploy", "device", d.Name, "err", err)
 	}
 	if len(errs) > 0 {
+		l.mu.Lock()
+		away := l.linkKnown && !l.linkUp
+		l.mu.Unlock()
+		if away {
+			// A wireless device asleep or out of range: its spec rewrites
+			// the settings when it connects again.
+			slog.Info("deploy waits for the wireless device", "device", l.cat.Name, "settings", len(errs))
+			return nil
+		}
 		slog.Warn("deploy finished with errors", "device", l.cat.Name, "errors", strings.Join(errs, "; "))
 		return fmt.Errorf("%d settings failed: %s", len(errs), strings.Join(errs, "; "))
 	}
