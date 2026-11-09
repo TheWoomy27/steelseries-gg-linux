@@ -71,7 +71,7 @@ func (e *Engine) handleDeviceEvent(ev deviceEvent) {
 		e.mu.Lock()
 		fn := e.onBatteryLow
 		e.mu.Unlock()
-		if fn != nil {
+		if off, _ := e.appSettings()["disableNotifications"].(bool); fn != nil && !off {
 			name, _ := e.deviceJSON(l.cat, l)["display_name"].(string)
 			fn(name, percent)
 		}
