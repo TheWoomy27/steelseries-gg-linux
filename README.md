@@ -71,8 +71,10 @@ Working:
 
 In progress / not done:
 - Config deploys run on the Apex 7 (settings, key mappings and the meta
-  layer re-applied on connect); other devices' writes are untested.
-  gg-linux does not write to a device until you change a setting in GG.
+  layer), the Aerox 5 Wireless, the Alias and the Arctis Nova 7 Gen 2,
+  re-applied on connect; settings a wireless mouse misses while asleep
+  are written when it wakes. gg-linux does not write to a device until
+  you change a setting in GG.
   Onboard macros are not converted yet: keys keep their mappings and the
   macro area is written empty.
 - Sonar: setup, mixer and settings pages, and classic mode audio on

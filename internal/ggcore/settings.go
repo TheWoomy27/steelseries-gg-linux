@@ -75,12 +75,15 @@ func (c *Core) settingsRoutes() {
 			Key   string `json:"key"`
 			Value any    `json:"value"`
 		}
-		if err := json.Unmarshal(body, &p); err != nil || p.Key == "" {
+		if err := json.Unmarshal(body, &p); err != nil {
 			slog.Warn("gg settings: request not understood", "body", string(body[:min(len(body), 300)]))
 			httpx.Error(w, 400, "bad setting")
 			return
 		}
-		c.setSetting(p.Key, p.Value)
+		// The client also posts an empty object, and gets the settings back.
+		if p.Key != "" {
+			c.setSetting(p.Key, p.Value)
+		}
 		httpx.JSON(w, map[string]any{"settings": c.settings()})
 	})
 	s.Handle("POST /settings/dateTime", func(w http.ResponseWriter, r *http.Request) {
