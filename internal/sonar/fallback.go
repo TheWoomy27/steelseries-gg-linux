@@ -56,9 +56,11 @@ func (p presentDevice) online(trigger bool) bool { return !trigger || !p.wireles
 func (s *Service) presentDevices(objs []pwObject) map[string]presentDevice {
 	usb := usbIDs(objs)
 	h := s.headsetSource()
+	hide := otherProfileNodes(objs)
+	s.otherProfiles.Store(&hide)
 	out := map[string]presentDevice{}
 	for _, d := range devicesIn(objs, "", "") {
-		if d.IsVad {
+		if d.IsVad || hide[d.ID] {
 			continue
 		}
 		p := presentDevice{label: d.FriendlyName, flow: d.DataFlow}
@@ -100,6 +102,12 @@ func (s *Service) wirelessTrigger() bool {
 // the end. The device watch decides where those go (see fallbackTick).
 func (s *Service) order(r fallbackRole, present map[string]presentDevice) []string {
 	ids := s.idList(r.listKey())
+	// Lists made before a card's other-profile copies were hidden still
+	// name them.
+	if hide := s.otherProfiles.Load(); hide != nil {
+		cur := s.redirectionDevices()[r.redirect]
+		ids = slices.DeleteFunc(ids, func(id string) bool { return (*hide)[id] && id != cur })
+	}
 	for _, id := range sortedKeys(present) {
 		if present[id].flow == r.flow && !slices.Contains(ids, id) {
 			ids = append(ids, id)

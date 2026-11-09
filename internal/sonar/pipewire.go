@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"strconv"
+	"strings"
 )
 
 // audioDevice is Sonar's AudioDevice: an output or input Sonar's channels
@@ -37,8 +39,11 @@ type pwObject struct {
 			Props []struct {
 				ChannelVolumes []float64 `json:"channelVolumes"`
 				Mute           *bool     `json:"mute"`
-			} `json:"Props"`
-		} `json:"params"` // nodes
+			} `json:"Props"` // nodes
+			Profile []struct {
+				Name string `json:"name"`
+			} `json:"Profile"` // devices
+		} `json:"params"`
 	} `json:"info"`
 }
 
@@ -63,7 +68,58 @@ func audioDevices() ([]audioDevice, error) {
 		return nil, err
 	}
 	sink, source, _ := defaultDevices()
-	return devicesIn(objs, sink, source), nil
+	return activeProfileDevices(objs, devicesIn(objs, sink, source), sink, source), nil
+}
+
+// activeProfileDevices leaves out the nodes a sound card offers for its
+// inactive profiles (see otherProfileNodes), but for the default devices.
+func activeProfileDevices(objs []pwObject, devs []audioDevice, sink, source string) []audioDevice {
+	hide := otherProfileNodes(objs)
+	out := devs[:0:0]
+	for _, d := range devs {
+		if !hide[d.ID] || d.ID == sink || d.ID == source {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// otherProfileNodes are the idle nodes a sound card offers for profiles
+// other than its active one. Some UCM cards (onboard USB audio, for one)
+// expose every jack once per profile, HiFi, HiFi 5+1 and HiFi 7+1 alike,
+// which Windows shows as a single endpoint each. A running node (a channel
+// plays to it) is never hidden.
+func otherProfileNodes(objs []pwObject) map[string]bool {
+	active := map[string]string{} // device id -> active profile
+	for _, o := range objs {
+		if o.Type == "PipeWire:Interface:Device" && len(o.Info.Params.Profile) > 0 {
+			active[strconv.Itoa(o.ID)] = o.Info.Params.Profile[0].Name
+		}
+	}
+	type node struct {
+		name, device, profile string
+		running               bool
+	}
+	var nodes []node
+	matching := map[string]bool{} // devices with nodes named after their active profile
+	for _, o := range objs {
+		if o.Type != "PipeWire:Interface:Node" {
+			continue
+		}
+		name, _ := o.Info.Props["node.name"].(string)
+		n := node{name, propString(o.Info.Props, "device.id"), propString(o.Info.Props, "device.profile.name"), o.Info.State == "running"}
+		nodes = append(nodes, n)
+		if a := active[n.device]; a != "" && strings.HasPrefix(n.profile, a+":") {
+			matching[n.device] = true
+		}
+	}
+	hide := map[string]bool{}
+	for _, n := range nodes {
+		if matching[n.device] && !strings.HasPrefix(n.profile, active[n.device]+":") && !n.running {
+			hide[n.name] = true
+		}
+	}
+	return hide
 }
 
 // devicesIn lists the sinks and sources in a pw-dump, given the default

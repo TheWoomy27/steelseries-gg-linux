@@ -83,6 +83,8 @@ devices, as on Windows. Turning Sonar off restores the previous defaults.
 | Per-app routing | `target.object` metadata on the app's stream, remembered by WirePlumber |
 | Samples, recording | pw-play, looping; pw-record of the raw microphone, played back through the microphone channel |
 | Fallback devices | a one-second watch of PipeWire's devices; Engine's headset link for the wireless trigger |
+| Link All | copies one output channel's device and priority lists to the others; while linked the client sets all output channels at once |
+| Device lists | PipeWire sinks and sources; a UCM card's copies of its jacks for inactive profiles (HiFi 5+1, HiFi 7+1 beside HiFi) are left out unless in use |
 
 ## Phases
 

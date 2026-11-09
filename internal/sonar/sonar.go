@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"ggl/internal/db"
@@ -31,8 +32,11 @@ type Service struct {
 	headsets  Headsets
 
 	fallbackMu sync.Mutex // fallback list changes
-	samples    samples
-	floor      *noiseFloor // the microphone's, for the automatic gate
+	// otherProfiles are the device nodes hidden as other-profile copies
+	// (see otherProfileNodes), as of the last device scan.
+	otherProfiles atomic.Pointer[map[string]bool]
+	samples       samples
+	floor         *noiseFloor // the microphone's, for the automatic gate
 }
 
 func New(token string) (*Service, error) {
@@ -118,6 +122,7 @@ func (s *Service) routes() {
 	s.sampleRoutes()
 	s.streamerRoutes()
 	s.deviceVolumeRoutes()
+	s.linkAllRoutes()
 
 	sv.Handle("GET /configs", func(w http.ResponseWriter, r *http.Request) {
 		vad := 0

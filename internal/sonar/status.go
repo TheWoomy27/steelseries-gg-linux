@@ -234,7 +234,6 @@ func (s *Service) statusRoutes() {
 		})
 	})
 
-	sv.Handle("GET /linkAll/isRenderLinkAllEnabled", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, false) })
 	sv.Handle("GET /keyboardShortcuts", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, []any{}) })
 
 	// QuickSet profiles and in-game overlays come from GG features that
