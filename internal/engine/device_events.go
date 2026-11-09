@@ -71,9 +71,11 @@ func (e *Engine) handleDeviceEvent(ev deviceEvent) {
 		e.mu.Lock()
 		fn := e.onBatteryLow
 		e.mu.Unlock()
-		if off, _ := e.appSettings()["disableNotifications"].(bool); fn != nil && !off {
+		app := e.appSettings()
+		if off, _ := app["disableNotifications"].(bool); fn != nil && !off {
 			name, _ := e.deviceJSON(l.cat, l)["display_name"].(string)
-			fn(name, percent)
+			sound, _ := app["playLowBatterySound"].(bool)
+			fn(name, percent, sound)
 		}
 	}
 	e.headsetEvent(ev.productID, ev.data)

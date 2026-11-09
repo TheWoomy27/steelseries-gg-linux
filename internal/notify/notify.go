@@ -43,8 +43,9 @@ func icon() string {
 func fileExists(f string) bool { _, err := os.Stat(f); return err == nil }
 
 // Send shows a notification. A later one with the same tag replaces it
-// instead of stacking.
-func Send(tag, summary, body string) error {
+// instead of stacking. sound names a sound from the freedesktop sound
+// theme to play with it, "" for none.
+func Send(tag, summary, body, sound string) error {
 	mu.Lock()
 	defer mu.Unlock()
 	if conn == nil || !conn.Connected() {
@@ -55,6 +56,11 @@ func Send(tag, summary, body string) error {
 		conn = c
 	}
 	hints := map[string]dbus.Variant{"desktop-entry": dbus.MakeVariant("steelseries-gg")}
+	if sound != "" {
+		hints["sound-name"] = dbus.MakeVariant(sound)
+	} else {
+		hints["suppress-sound"] = dbus.MakeVariant(true)
+	}
 	var id uint32
 	err := conn.Object(service, path).Call(service+".Notify", 0,
 		"SteelSeries GG", ids[tag], icon(), summary, body, []string{}, hints, int32(-1)).Store(&id)

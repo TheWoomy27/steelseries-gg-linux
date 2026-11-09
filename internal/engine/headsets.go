@@ -46,8 +46,8 @@ func (e *Engine) OnChatMix(fn func(audio uint32, game, chat int)) {
 }
 
 // OnBatteryLow registers fn for a device whose battery runs low, with its
-// name and battery level.
-func (e *Engine) OnBatteryLow(fn func(device string, percent int)) {
+// name, battery level and whether Engine's low battery sound is on.
+func (e *Engine) OnBatteryLow(fn func(device string, percent int, sound bool)) {
 	e.mu.Lock()
 	e.onBatteryLow = fn
 	e.mu.Unlock()

@@ -50,7 +50,7 @@ func TestSend(t *testing.T) {
 		{"SteelSeries GG", uint32(0), "Low battery", "Aerox 5 Wireless: 5% left"},
 		{"SteelSeries GG", uint32(7), "Low battery", "Aerox 5 Wireless: 4% left"},
 	} {
-		if err := Send("battery/1", "Low battery", want[3].(string)); err != nil {
+		if err := Send("battery/1", "Low battery", want[3].(string), ""); err != nil {
 			t.Fatal(err)
 		}
 		select {

@@ -122,8 +122,12 @@ func run(verbose bool) error {
 	})
 	// Windows GG shows an overlay for a low battery; Linux shows a desktop
 	// notification.
-	eng.OnBatteryLow(func(device string, percent int) {
-		if err := notify.Send("battery/"+device, "Low battery", fmt.Sprintf("%s: %d%% left", device, percent)); err != nil {
+	eng.OnBatteryLow(func(device string, percent int, sound bool) {
+		name := ""
+		if sound {
+			name = "battery-low"
+		}
+		if err := notify.Send("battery/"+device, "Low battery", fmt.Sprintf("%s: %d%% left", device, percent), name); err != nil {
 			slog.Warn("low battery notification", "device", device, "err", err)
 		}
 	})

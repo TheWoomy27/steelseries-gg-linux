@@ -47,7 +47,7 @@ type Engine struct {
 	mmDevices     map[uint32]mmDevice // headsets, by USB audio device
 	onChatMix     func(audio uint32, game, chat int)
 	onHeadsetLink func()
-	onBatteryLow  func(device string, percent int)
+	onBatteryLow  func(device string, percent int, sound bool)
 	deploying     map[uint32]int // deploys in progress, by physical device
 	autoFlatten   func() bool    // Sonar handles EQ (see flatten.go)
 }
