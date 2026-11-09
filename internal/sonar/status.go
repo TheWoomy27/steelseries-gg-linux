@@ -77,9 +77,23 @@ func (s *Service) setClassicVolume(role string, set func(*volume)) error {
 	return nil
 }
 
-// vadStatuses are Sonar's VadStatus entries for the running channels.
+// vadStatuses are Sonar's VadStatus entries for the running channels,
+// with the device each plays to or records from and, for a SteelSeries
+// device Engine knows, Engine's name for it (QuickSet's tiles compare it).
 func (s *Service) vadStatuses() []map[string]any {
 	out := []map[string]any{}
+	targets := s.redirectionDevices()
+	if s.streamMode() {
+		targets = s.streamTargets()
+	}
+	present, usb := map[string]bool{}, map[string]uint32{}
+	if objs, err := pwDump(); err == nil {
+		for _, d := range devicesIn(objs, "", "") {
+			present[d.ID] = true
+		}
+		usb = usbIDs(objs)
+	}
+	headsets := s.headsetSource()
 	for _, c := range s.enabledChannels() {
 		if !s.audio.isRunning(c) {
 			continue
@@ -92,9 +106,18 @@ func (s *Service) vadStatuses() []map[string]any {
 		if cfgs, err := s.queryConfigs(`WHERE id IN (SELECT config_id FROM selected_config WHERE vad = ?)`, c.vad); err == nil && len(cfgs) > 0 {
 			cfg = map[string]string{"id": cfgs[0].ID, "name": cfgs[0].Name}
 		}
+		var device, name any
+		if id := targets[c.redirect]; id != "" && present[id] {
+			device = id
+			if u, ok := usb[id]; ok && headsets != nil {
+				if h, ok := headsets.Headset(u); ok && h.Name != "" {
+					name = h.Name
+				}
+			}
+		}
 		out = append(out, map[string]any{
 			"id": c.node, "dataFlow": flow, "virtualAudioDevice": camel(c.role), "defaultRole": s.defaultRole(c),
-			"isChannelEnabled": true, "streamRedirectionDevice": nil, "streamRedirectionDeviceName": nil, "config": cfg,
+			"isChannelEnabled": true, "streamRedirectionDevice": device, "streamRedirectionDeviceName": name, "config": cfg,
 		})
 	}
 	return out

@@ -15,3 +15,6 @@
 .idea/
 .vscode/
 *.swp
+
+# Local working files (research notes, test setups); never committed
+/tmp/

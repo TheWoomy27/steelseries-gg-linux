@@ -221,7 +221,7 @@ type headsets struct{ eng *engine.Engine }
 
 func (h headsets) Headset(usb uint32) (sonar.Headset, bool) {
 	e, ok := h.eng.Headset(usb)
-	return sonar.Headset{ChatMixDial: e.ChatMixDial, Wireless: e.Wireless, Connected: e.Connected}, ok
+	return sonar.Headset{Name: e.Name, ChatMixDial: e.ChatMixDial, Wireless: e.Wireless, Connected: e.Connected}, ok
 }
 
 func (h headsets) ChatMixLevels(usb uint32) (int, int, bool) { return h.eng.ChatMixLevels(usb) }

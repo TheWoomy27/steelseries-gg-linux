@@ -45,6 +45,7 @@ func (e *Engine) routes() {
 	s := e.srv
 	s.Handle("GET /sock", e.hub.ServeHTTP)
 	s.Handle("GET /{$}", func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })
+	s.Handle("GET /assets/loadoutImages/{path...}", e.serveImages)
 
 	// ---- devices
 	s.Handle("GET /devices", func(w http.ResponseWriter, r *http.Request) {

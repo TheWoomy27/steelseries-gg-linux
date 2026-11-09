@@ -9,6 +9,7 @@ import (
 // device: whether ChatMix is set on the headset and, for wireless
 // headsets, whether the headset is connected to its dongle.
 type Headset struct {
+	Name        string // the Engine device's name
 	ChatMixDial bool
 	Wireless    bool
 	Connected   bool

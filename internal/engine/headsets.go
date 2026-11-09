@@ -21,9 +21,10 @@ type mmDevice struct {
 
 // Headset is what Engine knows about a headset's audio device.
 type Headset struct {
-	ChatMixDial bool // ChatMix is set on the headset
-	Wireless    bool // Engine follows the headset's wireless link
-	Connected   bool // the link is up
+	Name        string // the Engine device's name (arctis_nova_7_gen2_tx)
+	ChatMixDial bool   // ChatMix is set on the headset
+	Wireless    bool   // Engine follows the headset's wireless link
+	Connected   bool   // the link is up
 }
 
 func (e *Engine) registerMMDevice(pid uint32, data map[string]any) {
@@ -79,6 +80,7 @@ func (e *Engine) Headset(audio uint32) (Headset, bool) {
 		l.mu.Lock()
 		h.Wireless, h.Connected = l.linkKnown, l.linkUp
 		l.mu.Unlock()
+		h.Name = l.cat.Name
 	}
 	return h, true
 }

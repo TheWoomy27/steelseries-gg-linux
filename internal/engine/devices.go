@@ -266,7 +266,7 @@ func (e *Engine) deviceJSON(cat *catalogDevice, l *liveDevice) map[string]any {
 	// physical device that connects; until the user picks one, the card
 	// shows the connected variant's art and name.
 	children := e.childDevices(cat.ID)
-	optimized, display := ud.OptimizedFor, cat.FullName
+	optimized, display, variant := ud.OptimizedFor, cat.FullName, ""
 	if optimized == 0 {
 		for _, p := range phys {
 			for _, c := range children {
@@ -278,7 +278,7 @@ func (e *Engine) deviceJSON(cat *catalogDevice, l *liveDevice) map[string]any {
 	}
 	for _, c := range children {
 		if c.ID == optimized && c.FullName != "" {
-			display = c.FullName
+			display, variant = c.FullName, c.Name
 		}
 	}
 	cfgs := e.configMetadata(cat.ID)
@@ -319,7 +319,7 @@ func (e *Engine) deviceJSON(cat *catalogDevice, l *liveDevice) map[string]any {
 		"genericDevicePropertiesRead":      []any{},
 		"genericDevicePropertiesWrite":     []any{},
 		"genericDevicePropertiesStatus":    []any{},
-		"imageUrl":                         "",
+		"imageUrl":                         e.imageURL(deviceImage([]string{variant, cat.Name}, cat.Type)),
 		"wireless_device_information":      e.wirelessInfo(connectedPID, uint32(cat.ProductID)),
 		"firstConnectionTime":              ud.FirstConnect,
 	}
