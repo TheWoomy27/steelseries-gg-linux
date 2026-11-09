@@ -23,6 +23,19 @@ const PATCHES = [
     replace: '(process.env.GG_LINUX_DATA_DIR+"/$1")',
   },
   {
+    file: 'main/index.js',
+    name: 'audio meter',
+    // The native AudioMeter loads only on Windows; Linux has audiometer.js.
+    find: /if\("win32"!==process\.platform\)throw new Error\("unsupported platform for audio meter"\)/,
+    replace: 'if(global.ggLinuxAudioMeter)return global.ggLinuxAudioMeter.AudioMeter;$&',
+  },
+  {
+    file: 'main/index.js',
+    name: 'capture audio meter',
+    find: /if\("win32"!==process\.platform\)throw new Error\("unsupported platform for capture audio meter"\)/,
+    replace: 'if(global.ggLinuxAudioMeter)return global.ggLinuxAudioMeter.CaptureAudioMeter;$&',
+  },
+  {
     file: 'main/preload.js',
     name: 'platform',
     // The pages check window.api.os.platform() for "win32" or "darwin" and

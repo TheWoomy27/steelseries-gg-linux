@@ -65,8 +65,11 @@ In progress / not done:
 - Sonar: setup, mixer and settings pages, and classic mode audio on
   PipeWire (channels, EQ, volumes, ChatMix, device routing, default
   devices), per-app routing, samples, fallback devices, the Arctis Nova
-  7's ChatMix dial and streamer mode; see docs/sonar.md. The mic effects,
-  and the mixer's device volumes and level meters, are next.
+  7's ChatMix dial, streamer mode, the mixer's device volumes and level
+  meters, and the mic effects (ClearCast on the mic and chat, noise
+  reduction, noise gate, compressor); see docs/sonar.md. The effects need
+  DeepFilterNet's LADSPA plugin and LSP plugins; without them they are
+  left out. Surround and reverb are not done.
 - Moments (capture), macro recording, GameSense
   lighting effects, PrismSync rendering, headset-specific Go logic
   (applying Arctis Gen2 EQ to the headset), and keyboard binding

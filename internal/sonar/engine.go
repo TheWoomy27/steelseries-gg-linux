@@ -144,6 +144,7 @@ func (s *Service) syncAudio() {
 func (s *Service) Stop() { s.stopAudio() }
 
 func (s *Service) stopAudio() {
+	s.floor.follow("")
 	s.stopSamples()
 	s.restoreDefaults()
 	s.audio.stop()
@@ -164,7 +165,10 @@ func (s *Service) applyChannel(c channel) {
 	}
 	if cfgs, err := s.queryConfigs(`WHERE id IN (SELECT config_id FROM selected_config WHERE vad = ?)`, c.vad); err == nil && len(cfgs) > 0 {
 		if data, ok := cfgs[0].Data.(*object); ok {
-			s.audio.setControls(c, append(channelParams(c, data, s.mixFactor(c, vols)), mixes...))
+			s.audio.setControls(c, append(channelParams(c, data, s.mixFactor(c, vols), s.floor.get()), mixes...))
+			if c.capture {
+				s.followNoiseFloor(data)
+			}
 		}
 	} else if stream {
 		s.audio.setControls(c, mixes)
@@ -175,6 +179,15 @@ func (s *Service) applyChannel(c channel) {
 	}
 	v := vols.Roles[c.role]
 	s.audio.setVolume(c, sliderGain(v.Volume), v.Muted)
+}
+
+// followNoiseFloor measures the microphone while the automatic gate is on.
+func (s *Service) followNoiseFloor(data *object) {
+	dev := ""
+	if autoGate(data) {
+		dev = s.audio.target("Mic")
+	}
+	s.floor.follow(dev)
 }
 
 func (s *Service) applyVAD(vad int) {

@@ -33,6 +33,12 @@ type pwObject struct {
 		InputPort  int            `json:"input-port-id"`
 		OutputNode int            `json:"output-node-id"`
 		InputNode  int            `json:"input-node-id"`
+		Params     struct {
+			Props []struct {
+				ChannelVolumes []float64 `json:"channelVolumes"`
+				Mute           *bool     `json:"mute"`
+			} `json:"Props"`
+		} `json:"params"` // nodes
 	} `json:"info"`
 }
 

@@ -1,10 +1,8 @@
 package sonar
 
 import (
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -158,30 +156,4 @@ func TestRoutingOnPipeWire(t *testing.T) {
 	player.Process.Kill()
 	player.Wait()
 	waitEvent("SONAR_EVENT_AUDIO_SESSION_CLOSED_DATA", `"processId":`+strconv.Itoa(pid))
-}
-
-func writeTone(t *testing.T, path string, d time.Duration) {
-	const rate = 48000
-	n := int(d.Seconds() * rate)
-	pcm := make([]byte, 0, n*4)
-	for i := 0; i < n; i++ {
-		v := int16(1000 * math.Sin(2*math.Pi*440*float64(i)/rate))
-		pcm = binary.LittleEndian.AppendUint16(pcm, uint16(v))
-		pcm = binary.LittleEndian.AppendUint16(pcm, uint16(v))
-	}
-	h := []byte("RIFF")
-	h = binary.LittleEndian.AppendUint32(h, uint32(36+len(pcm)))
-	h = append(h, "WAVEfmt "...)
-	h = binary.LittleEndian.AppendUint32(h, 16)
-	h = binary.LittleEndian.AppendUint16(h, 1)
-	h = binary.LittleEndian.AppendUint16(h, 2)
-	h = binary.LittleEndian.AppendUint32(h, rate)
-	h = binary.LittleEndian.AppendUint32(h, rate*4)
-	h = binary.LittleEndian.AppendUint16(h, 4)
-	h = binary.LittleEndian.AppendUint16(h, 16)
-	h = append(h, "data"...)
-	h = binary.LittleEndian.AppendUint32(h, uint32(len(pcm)))
-	if err := os.WriteFile(path, append(h, pcm...), 0o644); err != nil {
-		t.Fatal(err)
-	}
 }

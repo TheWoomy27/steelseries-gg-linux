@@ -32,6 +32,7 @@ type Service struct {
 
 	fallbackMu sync.Mutex // fallback list changes
 	samples    samples
+	floor      *noiseFloor // the microphone's, for the automatic gate
 }
 
 func New(token string) (*Service, error) {
@@ -39,9 +40,10 @@ func New(token string) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Service{srv: httpx.NewServer("sonar", token), ws: events.NewHub("sonar", ""), db: d}
+	s := &Service{srv: httpx.NewServer("sonar", token), ws: events.NewHub("sonar", ""), db: d, floor: newNoiseFloor()}
 	s.audio.onRunning = s.applyChannel
 	s.audio.onCopyRunning = s.applyMicCopy
+	s.floor.changed = func() { s.applyVAD(vadChatCapture) }
 	s.upgradeConfigs()
 	s.routes()
 	return s, nil
@@ -115,6 +117,7 @@ func (s *Service) routes() {
 	s.fallbackRoutes()
 	s.sampleRoutes()
 	s.streamerRoutes()
+	s.deviceVolumeRoutes()
 
 	sv.Handle("GET /configs", func(w http.ResponseWriter, r *http.Request) {
 		vad := 0

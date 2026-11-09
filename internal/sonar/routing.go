@@ -84,7 +84,9 @@ func appStreams(objs []pwObject) []appStream {
 			continue
 		}
 		p := o.Info.Props
-		if p["stream.capture.sink"] == true {
+		// Recordings of a device's output and level meters (GG's own among
+		// them) are not apps.
+		if p["stream.capture.sink"] == true || p["stream.monitor"] == true {
 			continue
 		}
 		// Streams from native PipeWire clients leave the process to their
@@ -270,11 +272,12 @@ type sessionKey struct{ device, id string }
 
 // watch follows apps and devices while Sonar is on, until stop is closed:
 // it tells the client when apps start and stop playing or recording, as
-// Sonar's session notifications do, and moves channels between fallback
-// devices.
+// Sonar's session notifications do, moves channels between fallback
+// devices and sends the devices' volumes when they change.
 func (s *Service) watch(stop chan struct{}) {
 	var sessions map[sessionKey]deviceAudioSessions
 	var devices map[string]presentDevice
+	var volumes []deviceVolume
 	t := time.NewTicker(time.Second)
 	defer t.Stop()
 	for {
@@ -285,6 +288,7 @@ func (s *Service) watch(stop chan struct{}) {
 			s.fallbackTick(present, devices)
 			s.fallbackMu.Unlock()
 			devices = present
+			volumes = s.volumeTick(objs, volumes)
 		}
 		select {
 		case <-stop:

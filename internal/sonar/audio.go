@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -69,14 +70,24 @@ const eqBands = 10
 
 // Stage names in a channel's filter graph. Playback channels add Sonar's
 // tone controls after the parametric EQ, and a mix stage for the master
-// volume and ChatMix.
+// volume and ChatMix. Effects (see effects.go) come first, but for the
+// volume stabilizer, which follows the EQ.
 func (c channel) stages() []string {
+	plugins := c.effectPlugins()
 	var s []string
+	for _, st := range []string{"nc", "gate"} {
+		if _, ok := plugins[st]; ok {
+			s = append(s, st)
+		}
+	}
 	for i := 1; i <= eqBands; i++ {
 		s = append(s, fmt.Sprintf("eq%d", i))
 	}
 	if !c.capture {
 		s = append(s, "bass", "treble", "clarity")
+	}
+	if _, ok := plugins["stab"]; ok {
+		s = append(s, "stab")
 	}
 	s = append(s, "gain")
 	if !c.capture {
@@ -94,37 +105,105 @@ func isGainStage(name string) bool { return name == "gain" || name == "mix" }
 // links them to the streaming device's front pair.
 var streamPorts = map[string]string{"RL": "FL", "RR": "FR"}
 
+// A playback channel's graph has a node per audio channel for each stage,
+// named with the channel's suffix, but one node for a stereo plugin; the
+// microphone's graph is mono.
+func (c channel) channelSuffixes() []string {
+	if c.capture {
+		return []string{""}
+	}
+	return []string{"_l", "_r"}
+}
+
+func isStereo(p *ladspa) bool { return p != nil && len(p.in) > 1 }
+
+// controls names a channel's controls by node: a stage with a node per
+// audio channel takes each value on every one.
+func (c channel) controls(params []any) []any {
+	if c.capture {
+		return params
+	}
+	plugins := c.effectPlugins()
+	var out []any
+	for i := 0; i+1 < len(params); i += 2 {
+		key, _ := params[i].(string)
+		st, ctrl, _ := strings.Cut(key, ":")
+		if isStereo(plugins[st]) {
+			out = append(out, key, params[i+1])
+			continue
+		}
+		for _, sfx := range c.channelSuffixes() {
+			out = append(out, st+sfx+":"+ctrl, params[i+1])
+		}
+	}
+	return out
+}
+
 // moduleConf is the filter-chain module for a channel; stream adds the
 // streaming mix.
 func (c channel) moduleConf(stream bool) string {
-	var nodes, links []string
+	plugins := c.effectPlugins()
 	stages := c.stages()
-	for i, st := range stages {
-		if isGainStage(st) {
-			nodes = append(nodes, fmt.Sprintf(`{ type = builtin name = %s label = linear control = { "Mult" = 1.0 } }`, st))
-		} else {
-			nodes = append(nodes, fmt.Sprintf(`{ type = builtin name = %s label = bq_raw config = { coefficients = [ { rate = %d b0 = 1.0 b1 = 0.0 b2 = 0.0 a0 = 1.0 a1 = 0.0 a2 = 0.0 } ] } }`, st, sampleRate))
+	sfx := c.channelSuffixes()
+	node := func(st string, ch int) string {
+		if isStereo(plugins[st]) {
+			return st
 		}
-		if i > 0 {
-			links = append(links, fmt.Sprintf(`{ output = "%s:Out" input = "%s:In" }`, stages[i-1], st))
+		return st + sfx[ch]
+	}
+	port := func(st string, ch int, out bool) string {
+		if p, ok := plugins[st]; ok {
+			ports := p.in
+			if out {
+				ports = p.out
+			}
+			return node(st, ch) + ":" + ports[min(ch, len(ports)-1)]
+		}
+		if out {
+			return node(st, ch) + ":Out"
+		}
+		return node(st, ch) + ":In"
+	}
+	var nodes, links, inputs, outputs []string
+	for i, st := range stages {
+		p, ok := plugins[st]
+		for ch := range sfx {
+			switch {
+			case isStereo(p) && ch > 0:
+			case ok:
+				nodes = append(nodes, pluginNode(node(st, ch), p))
+			case isGainStage(st):
+				nodes = append(nodes, fmt.Sprintf(`{ type = builtin name = %s label = linear control = { "Mult" = 1.0 } }`, node(st, ch)))
+			default:
+				nodes = append(nodes, fmt.Sprintf(`{ type = builtin name = %s label = bq_raw config = { coefficients = [ { rate = %d b0 = 1.0 b1 = 0.0 b2 = 0.0 a0 = 1.0 a1 = 0.0 a2 = 0.0 } ] } }`, node(st, ch), sampleRate))
+			}
+			if i > 0 {
+				links = append(links, fmt.Sprintf(`{ output = %q input = %q }`, port(stages[i-1], ch, true), port(st, ch, false)))
+			}
+		}
+	}
+	last := stages[len(stages)-1]
+	for ch := range sfx {
+		inputs = append(inputs, strconv.Quote(port(stages[0], ch, false)))
+		if !stream || c.capture {
+			outputs = append(outputs, strconv.Quote(port(last, ch, true)))
+			continue
+		}
+		// Each audio channel's monitoring and streaming outputs, in the
+		// device stream's FL RL FR RR order.
+		for _, mix := range []string{"mon", "str"} {
+			n := mix + sfx[ch]
+			nodes = append(nodes, fmt.Sprintf(`{ type = builtin name = %s label = linear control = { "Mult" = 0.0 } }`, n))
+			links = append(links, fmt.Sprintf(`{ output = %q input = "%s:In" }`, port(last, ch, true), n))
+			outputs = append(outputs, strconv.Quote(n+":Out"))
 		}
 	}
 	position, channels := "[ FL FR ]", 2
 	if c.capture {
 		position, channels = "[ MONO ]", 1
 	}
-	devicePorts, ports := "", ""
+	devicePorts := ""
 	if stream && !c.capture {
-		last := stages[len(stages)-1]
-		nodes = append(nodes,
-			`{ type = builtin name = mon label = linear control = { "Mult" = 0.0 } }`,
-			`{ type = builtin name = str label = linear control = { "Mult" = 0.0 } }`)
-		links = append(links,
-			fmt.Sprintf(`{ output = "%s:Out" input = "mon:In" }`, last),
-			fmt.Sprintf(`{ output = "%s:Out" input = "str:In" }`, last))
-		ports = fmt.Sprintf(`
-        inputs = [ "%s:In" ]
-        outputs = [ "mon:Out" "str:Out" ]`, stages[0])
 		devicePorts = " audio.channels = 4 audio.position = [ FL RL FR RR ]"
 	}
 	// The virtual device apps use, and the stream to or from the real
@@ -149,13 +228,15 @@ func (c channel) moduleConf(stream bool) string {
         ]
         links = [
           %s
-        ]%s
+        ]
+        inputs = [ %s ]
+        outputs = [ %s ]
       }
       %s
       %s
     }
   }
-`, c.desc, c.desc, channels, position, strings.Join(nodes, "\n          "), strings.Join(links, "\n          "), ports, virtual, device)
+`, c.desc, c.desc, channels, position, strings.Join(nodes, "\n          "), strings.Join(links, "\n          "), strings.Join(inputs, " "), strings.Join(outputs, " "), virtual, device)
 }
 
 // micCopyConf is streamer mode's copy of the processed microphone, to the
@@ -259,8 +340,9 @@ var toneFilters = map[string]struct {
 }
 
 // channelParams are the filter-chain controls for a config's data. mix is
-// the playback channels' master volume and ChatMix factor.
-func channelParams(c channel, data *object, mix float64) []any {
+// the playback channels' master volume and ChatMix factor, floor the
+// microphone's noise floor for the automatic gate (NaN if not measured).
+func channelParams(c channel, data *object, mix, floor float64) []any {
 	on := dataBool(data, "globalEnableState")
 	eqOn := on && dataBool(data, "parametricEQ", "enabled")
 	var params []any
@@ -301,7 +383,7 @@ func channelParams(c channel, data *object, mix float64) []any {
 	if !c.capture {
 		params = append(params, "mix:Mult", mix)
 	}
-	return params
+	return append(params, effectParams(c, data, floor)...)
 }
 
 // podParams formats filter-chain controls for pw-cli.
@@ -492,7 +574,7 @@ func (a *audio) setControls(c channel, params []any) {
 	if c.capture {
 		node = c.deviceStream()
 	}
-	a.setParam(node, podParams(params))
+	a.setParam(node, podParams(c.controls(params)))
 }
 
 // setVolume sets a channel's virtual device volume.
@@ -526,6 +608,13 @@ func (a *audio) setTarget(redirect, target string) {
 	a.targets[redirect] = target
 	a.mu.Unlock()
 	a.relink()
+}
+
+// target is the device a redirection plays to or records from.
+func (a *audio) target(redirect string) string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.targets[redirect]
 }
 
 // isLinked reports whether a channel plays to (or captures from) its device.

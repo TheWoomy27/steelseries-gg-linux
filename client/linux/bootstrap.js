@@ -80,6 +80,8 @@ async function main() {
   process.env.PROGRAMW6432 = env.dataDir;
 
   require('./ipc').install();
+  // Picked up by the patched audio meter loaders in the main bundle.
+  global.ggLinuxAudioMeter = require('./audiometer');
   loadClientMain();
   core.onExit(props.pid, () => app.quit());
 }

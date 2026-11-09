@@ -71,9 +71,11 @@ devices, as on Windows. Turning Sonar off restores the previous defaults.
 | General gain | builtin gain |
 | Smart volume | compressor and limiter (LSP plugins, when installed) |
 | Mic EQ (10-band graphic) | `bq_peaking` at fixed frequencies |
-| Mic noise reduction (ClearCast), impact noise reduction | DeepFilterNet LADSPA when installed, otherwise WebRTC noise suppression |
-| Noise gate, automatic noise gate | LSP gate |
-| Volume stabilizer | WebRTC AGC or LSP compressor |
+| ClearCast AI noise cancellation, mic and chat | DeepFilterNet LADSPA (mono on the mic, stereo on chat); the mix factor becomes its attenuation limit |
+| Mic noise reduction, impact noise reduction | DeepFilterNet, holding noise at most 20 dB down |
+| Noise gate, automatic noise gate | LSP Gate; the automatic gate sits 3 dB over the mic's measured noise floor |
+| Volume stabilizer (the "Compressor") | LSP Autogain, its level the target loudness (-30 to -12 LUFS) |
+| Acoustic echo canceling | not done; the client shows it only when a feature flag is unlocked |
 | Virtual surround 7.1, reverb | HRIR convolver (needs an HRIR set), later |
 | ChatMix | Game and Chat channel gains, on Sonar's curve; a headset's dial (Arctis Nova 7) sets it through Engine |
 | Per-app routing | `target.object` metadata on the app's stream, remembered by WirePlumber |
@@ -136,7 +138,31 @@ devices, as on Windows. Turning Sonar off restores the previous defaults.
      devices for the monitoring and microphone devices, which Windows
      leaves empty until chosen.
    Tested on a private PipeWire with WirePlumber (TestStreamModeOnPipeWire
-   measures each mix) and in the mixer. The device percentages in the
-   mixer come from GG's native audio meter module, which has no Linux
-   counterpart yet.
-5. Mic effects, then surround and reverb equivalents.
+   measures each mix) and in the mixer.
+5. Device volumes, level meters and mic effects. Done:
+   - The client's native audio meter (`audioMeter.node`, Windows endpoint
+     and session meters) is client/linux/audiometer.js. Peaks come from
+     pw-record streams in PipeWire's peak mode, 25 a second; they are
+     passive and marked `stream.monitor`, so they neither keep devices
+     running nor show up as apps. A sink is metered through its monitor,
+     and a session meter (the GUIDs the mixer builds for Sonar's streams)
+     through the Sonar channel's own device, before its volume. One
+     `pw-dump -m` follows device volumes while a meter is open; wpctl sets
+     them, on the cubic scale desktop volume controls use.
+   - Sonar's device volume routes, which the classic mixer's device
+     percentages read, give the channels' devices' volumes and send
+     `SONAR_EVENT_DEVICE_VOLUMES_UPDATE` when they change.
+   - The effects are LADSPA plugins that stay in the graph and are switched
+     by their controls: DeepFilterNet costs nothing at an attenuation limit
+     of 0 (about a quarter of a core when on), and LSP's plugins have a
+     bypass, so changing an effect never restarts the audio. Playback
+     graphs have a node per audio channel so chat can run the stereo
+     DeepFilterNet (one instance instead of two). PipeWire's builtin
+     noisegate is not used: in 1.6 its level input defaults to 0 instead
+     of following the signal, so it never opens.
+   - The automatic gate's noise floor is the 30th percentile of the raw
+     mic's 40 ms peaks over the last ten seconds of sound.
+   Tested on a private PipeWire with WirePlumber (TestMicEffectsOnPipeWire
+   measures each effect, TestDeviceVolumesOnPipeWire the volume routes)
+   and in the mixer.
+6. Surround and reverb equivalents.

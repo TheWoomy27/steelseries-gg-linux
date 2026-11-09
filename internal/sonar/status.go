@@ -221,7 +221,6 @@ func (s *Service) statusRoutes() {
 		s.syncAudio()
 		w.WriteHeader(http.StatusOK)
 	})
-	sv.Handle("GET /volumeSettings/devices/volumes", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, []any{}) })
 
 	// GameDAC line and headphone outputs.
 	sv.Handle("GET /deviceOut", func(w http.ResponseWriter, r *http.Request) {
