@@ -156,3 +156,50 @@ func TestSurroundOnPipeWire(t *testing.T) {
 		t.Errorf("reverb tail with surround off: %.1f dB", off)
 	}
 }
+
+// TestSmartVolumeOnPipeWire plays loud and quiet noise into Game with smart
+// volume on a private PipeWire instance (see newPWTest).
+func TestSmartVolumeOnPipeWire(t *testing.T) {
+	if pluginPath(lspAutogainStereo) == "" {
+		t.Skip("LSP's Autogain Stereo is not installed")
+	}
+	p := newPWTest(t)
+	const d = 5 * time.Second
+	loud, quiet := filepath.Join(p.tmp, "loud.wav"), filepath.Join(p.tmp, "quiet.wav")
+	writeNoise(t, loud, d, -12, false)
+	writeNoise(t, quiet, d, -45, false)
+	// The first play lets the gain settle.
+	game := func(wav string) float64 {
+		t.Helper()
+		p.level("test_head", "sonar_game", wav)
+		return p.level("test_head", "sonar_game", wav)
+	}
+	set := func(kv ...any) {
+		t.Helper()
+		p.editConfig("game", func(data map[string]any) {
+			for i := 0; i < len(kv); i += 2 {
+				setPath(data, kv[i].(string), kv[i+1])
+			}
+		})
+	}
+	set("globalEnableState", true, "parametricEQ.enabled", false, "bassBoostState.enabled", false, "trebleBoostState.enabled", false,
+		"voiceClarityState.enabled", false, "generalGain", 0.0, "virtualSurroundState", false,
+		"smartVolume.enabled", false, "smartVolume.volumeLevel", 1.0, "smartVolume.loudness", "balanced")
+	loudOff, quietOff := p.level("test_head", "sonar_game", loud), p.level("test_head", "sonar_game", quiet)
+	t.Logf("off: loud %.1f, quiet %.1f dBFS", loudOff, quietOff)
+
+	set("smartVolume.enabled", true)
+	loudOn, quietOn := game(loud), game(quiet)
+	t.Logf("on: loud %.1f, quiet %.1f dBFS", loudOn, quietOn)
+	if loudOn > loudOff-10 || quietOn < quietOff+10 || math.Abs(loudOn-quietOn) > 6 {
+		t.Errorf("smart volume should bring loud and quiet noise together")
+	}
+
+	// At half the impact the original and the leveled noise add in phase.
+	set("smartVolume.volumeLevel", 0.5)
+	g := math.Pow(10, (quietOn-quietOff)/20)
+	p.near("quiet noise at half the impact", game(quiet), quietOff+20*math.Log10(0.5*g+0.5))
+
+	set("smartVolume.enabled", false)
+	p.near("loud noise with smart volume off again", p.level("test_head", "sonar_game", loud), loudOff)
+}

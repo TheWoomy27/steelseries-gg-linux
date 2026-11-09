@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -70,5 +71,42 @@ func TestChannelControls(t *testing.T) {
 	mic, _ := channelByRole("ChatCapture")
 	if got := mic.controls([]any{"eq1:b0", 1.0}); !reflect.DeepEqual(got, []any{"eq1:b0", 1.0}) {
 		t.Errorf("microphone controls: %v", got)
+	}
+}
+
+func TestSmartVolume(t *testing.T) {
+	withPlugins(t)
+	game, _ := channelByRole("Game")
+	data := func(js string) *object {
+		var o object
+		if err := o.UnmarshalJSON([]byte(js)); err != nil {
+			t.Fatal(err)
+		}
+		return &o
+	}
+	got := effectParams(game, data(`{"globalEnableState": true, "smartVolume": {"enabled": true, "volumeLevel": 0.25, "loudness": "extreme"}}`), math.NaN())
+	want := []any{"sv:Bypass", 0.0, "sv:Desired loudness level (LUFS)", -16.0, "svmix:Gain 1", 0.25, "svmix:Gain 2", 0.75}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("smart volume on:\n got %v\nwant %v", got, want)
+	}
+	got = effectParams(game, data(`{"globalEnableState": true, "smartVolume": {"enabled": false, "volumeLevel": 0.25, "loudness": "balanced"}}`), math.NaN())
+	want = []any{"sv:Bypass", 1.0, "sv:Desired loudness level (LUFS)", -23.0, "svmix:Gain 1", 0.0, "svmix:Gain 2", 1.0}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("smart volume off:\n got %v\nwant %v", got, want)
+	}
+	// The mix stage takes smart volume's output and the stage before it.
+	conf := game.moduleConf(false)
+	for _, link := range []string{
+		`{ output = "clarity_l:Out" input = "sv:Input L" }`,
+		`{ output = "sv:Output R" input = "svmix_r:In 1" }`,
+		`{ output = "clarity_r:Out" input = "svmix_r:In 2" }`,
+		`{ output = "svmix_l:Out" input = "gain_l:In" }`,
+	} {
+		if !strings.Contains(conf, link) {
+			t.Errorf("Game's graph lacks %s", link)
+		}
+	}
+	if got := game.controls([]any{"sv:Bypass", 1.0, "svmix:Gain 1", 0.5}); !reflect.DeepEqual(got, []any{"sv:Bypass", 1.0, "svmix_l:Gain 1", 0.5, "svmix_r:Gain 1", 0.5}) {
+		t.Errorf("smart volume controls: %v", got)
 	}
 }

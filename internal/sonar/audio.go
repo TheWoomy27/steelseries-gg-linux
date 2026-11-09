@@ -72,7 +72,8 @@ const eqBands = 10
 // Stage names in a channel's filter graph. Playback channels add Sonar's
 // tone controls after the parametric EQ, and a mix stage for the master
 // volume and ChatMix. Effects (see effects.go) come first, but for the
-// volume stabilizer, which follows the EQ.
+// volume stabilizer and smart volume, which follow the EQ; smart volume's
+// mix stage blends it with the stage before it.
 func (c channel) stages() []string {
 	plugins := c.effectPlugins()
 	var s []string
@@ -89,6 +90,9 @@ func (c channel) stages() []string {
 	}
 	if _, ok := plugins["stab"]; ok {
 		s = append(s, "stab")
+	}
+	if _, ok := plugins["sv"]; ok {
+		s = append(s, "sv", "svmix")
 	}
 	s = append(s, "gain")
 	if !c.capture {
@@ -180,6 +184,9 @@ func (c channel) moduleConf(stream bool) string {
 		if out {
 			return node(st, ch) + ":Out"
 		}
+		if st == "svmix" {
+			return node(st, ch) + ":In 1"
+		}
 		return node(st, ch) + ":In"
 	}
 	var nodes, links, inputs, outputs []string
@@ -192,11 +199,17 @@ func (c channel) moduleConf(stream bool) string {
 				nodes = append(nodes, pluginNode(node(st, ch), p))
 			case isGainStage(st):
 				nodes = append(nodes, fmt.Sprintf(`{ type = builtin name = %s label = linear control = { "Mult" = 1.0 } }`, node(st, ch)))
+			case st == "svmix":
+				nodes = append(nodes, fmt.Sprintf(`{ type = builtin name = %s label = mixer control = { "Gain 1" = 0 "Gain 2" = 1 } }`, node(st, ch)))
 			default:
 				nodes = append(nodes, fmt.Sprintf(`{ type = builtin name = %s label = bq_raw config = { coefficients = [ { rate = %d b0 = 1.0 b1 = 0.0 b2 = 0.0 a0 = 1.0 a1 = 0.0 a2 = 0.0 } ] } }`, node(st, ch), sampleRate))
 			}
 			if i > 0 {
 				links = append(links, fmt.Sprintf(`{ output = %q input = %q }`, port(stages[i-1], ch, true), port(st, ch, false)))
+			}
+			if st == "svmix" {
+				// The original, from before smart volume.
+				links = append(links, fmt.Sprintf(`{ output = %q input = "%s:In 2" }`, port(stages[i-2], ch, true), node(st, ch)))
 			}
 		}
 	}

@@ -69,7 +69,7 @@ devices, as on Windows. Turning Sonar off restores the previous defaults.
 | Bass and treble boost | low and high shelf |
 | Voice clarity | presence boost (approximation) |
 | General gain | builtin gain |
-| Smart volume | not done |
+| Smart volume | LSP Autogain Stereo at -28, -23 or -16 LUFS (soft, balanced, extreme); the level mixes it with the original |
 | Mic EQ (10-band graphic) | `bq_peaking` at fixed frequencies |
 | ClearCast AI noise cancellation, mic and chat | DeepFilterNet LADSPA (mono on the mic, stereo on chat); the mix factor becomes its attenuation limit |
 | Mic noise reduction, impact noise reduction | DeepFilterNet, holding noise at most 20 dB down |
@@ -187,4 +187,13 @@ devices, as on Windows. Turning Sonar off restores the previous defaults.
    measures each ear for the downmix, the virtual speakers, moved and
    closer speakers, speaker mode and the reverb's tail) and in the Game
    page.
-7. Smart volume.
+7. Smart volume. Done: LSP's Autogain Stereo on Game, Media and Aux,
+   after the tone controls, holding the channel at the loudness its
+   loudness type sets (balanced, -23 LUFS, unless a config says
+   otherwise; the client has no control for it), raising quiet audio by
+   at most 18 dB and leaving silence alone. The level, "the impact of the
+   effect", mixes the leveled signal with the original; Autogain only
+   applies a gain, without latency, so the mix is a gain between none
+   and the full correction. Tested on a private PipeWire
+   (TestSmartVolumeOnPipeWire: loud and quiet noise both end up at the
+   target, and half the level gives the in-phase mix).

@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -24,6 +25,12 @@ import (
 //     microphone's noise floor, as Sonar does (see noiseFloor).
 //   - The volume stabilizer is LSP's Autogain, its level the loudness it
 //     holds the voice at.
+//   - Smart volume, on Game, Media and Aux, is LSP's Autogain Stereo,
+//     holding the channel at a loudness its loudness type sets. Its level,
+//     "the impact of the effect", mixes the leveled signal with the
+//     original. Autogain only applies a gain, without latency, so the two
+//     stay in phase and the mix is a gain between none and the full
+//     correction.
 //
 // The plugins stay in the graph and are switched by their controls (an
 // attenuation limit of 0 turns DeepFilterNet off at no cost, and LSP's
@@ -36,10 +43,11 @@ type ladspa struct {
 }
 
 var (
-	deepFilterMono   = &ladspa{"libdeep_filter_ladspa.so", "deep_filter_mono", []string{"Audio In"}, []string{"Audio Out"}}
-	deepFilterStereo = &ladspa{"libdeep_filter_ladspa.so", "deep_filter_stereo", []string{"Audio In L", "Audio In R"}, []string{"Audio Out L", "Audio Out R"}}
-	lspGate          = &ladspa{"lsp-plugins-ladspa.so", "http://lsp-plug.in/plugins/ladspa/gate_mono", []string{"Input"}, []string{"Output"}}
-	lspAutogain      = &ladspa{"lsp-plugins-ladspa.so", "http://lsp-plug.in/plugins/ladspa/autogain_mono", []string{"Input"}, []string{"Output"}}
+	deepFilterMono    = &ladspa{"libdeep_filter_ladspa.so", "deep_filter_mono", []string{"Audio In"}, []string{"Audio Out"}}
+	deepFilterStereo  = &ladspa{"libdeep_filter_ladspa.so", "deep_filter_stereo", []string{"Audio In L", "Audio In R"}, []string{"Audio Out L", "Audio Out R"}}
+	lspGate           = &ladspa{"lsp-plugins-ladspa.so", "http://lsp-plug.in/plugins/ladspa/gate_mono", []string{"Input"}, []string{"Output"}}
+	lspAutogain       = &ladspa{"lsp-plugins-ladspa.so", "http://lsp-plug.in/plugins/ladspa/autogain_mono", []string{"Input"}, []string{"Output"}}
+	lspAutogainStereo = &ladspa{"lsp-plugins-ladspa.so", "http://lsp-plug.in/plugins/ladspa/autogain_stereo", []string{"Input L", "Input R"}, []string{"Output L", "Output R"}}
 )
 
 // ladspaDirs are searched after LADSPA_PATH.
@@ -90,6 +98,8 @@ func (c channel) effectPlugins() map[string]*ladspa {
 		add("stab", lspAutogain)
 	case "ChatRender":
 		add("nc", deepFilterStereo)
+	case "Game", "Media", "Aux":
+		add("sv", lspAutogainStereo)
 	}
 	return out
 }
@@ -104,6 +114,8 @@ func pluginNode(name string, p *ladspa) string {
 		controls = `"Bypass" = 1 "Reduction (G)" = 0.001 "Attack (ms)" = 5 "Release (ms)" = 150 "Hold time (ms)" = 150 "Sidechain reactivity (ms)" = 10 "Curve zone size (G)" = 0.5 "Pause graph analysis" = 1`
 	case lspAutogain:
 		controls = `"Bypass" = 1 "Enable maximum amplification gain limitation" = 1 "The maximum amplification gain (dB)" = 24 "The level of silence (LUFS)" = -60`
+	case lspAutogainStereo:
+		controls = fmt.Sprintf(`"Bypass" = 1 "Enable maximum amplification gain limitation" = 1 "The maximum amplification gain (dB)" = %g "The level of silence (LUFS)" = -60 "Long gain grow amount" = 7 "Long gain fall amount" = 7 "Short gain grow amount" = 7 "Short gain fall amount" = 7`, smartVolumeMaxGainDB)
 	}
 	return fmt.Sprintf(`{ type = ladspa name = %s plugin = %q label = %q control = { %s } }`, name, pluginPath(p), p.label, controls)
 }
@@ -114,7 +126,13 @@ const (
 	autoGateOffsetDB = 3.0
 	gateMinDB        = -60.0
 	gateMaxDB        = -10.0
+	// Smart volume raises quiet audio by at most this much.
+	smartVolumeMaxGainDB = 18.0
 )
+
+// smartVolumeTargets are the loudness smart volume holds, in LUFS, by
+// Sonar's loudness type (the client always leaves it balanced).
+var smartVolumeTargets = map[string]float64{"soft": -28, "balanced": -23, "extreme": -16}
 
 // attenuationLimit maps ClearCast's mix factor to DeepFilterNet's
 // attenuation limit, in dB (100 is the plugin's unlimited).
@@ -163,6 +181,18 @@ func effectParams(c channel, data *object, floor float64) []any {
 		stabOn := on && dataBool(data, "volumeStabilizerState", "enabled")
 		level := math.Max(0, math.Min(1, dataFloat(data, "volumeStabilizerState", "value")))
 		params = append(params, "stab:Bypass", boolParam(!stabOn), "stab:Desired loudness level (LUFS)", -30+18*level)
+	}
+	if _, ok := plugins["sv"]; ok {
+		svOn := on && dataBool(data, "smartVolume", "enabled")
+		target, ok := smartVolumeTargets[strings.ToLower(fmt.Sprint(dataPath(data, "smartVolume", "loudness")))]
+		if !ok {
+			target = smartVolumeTargets["balanced"]
+		}
+		wet := 0.0
+		if svOn {
+			wet = math.Max(0, math.Min(1, dataFloat(data, "smartVolume", "volumeLevel")))
+		}
+		params = append(params, "sv:Bypass", boolParam(!svOn), "sv:Desired loudness level (LUFS)", target, "svmix:Gain 1", wet, "svmix:Gain 2", 1-wet)
 	}
 	return params
 }

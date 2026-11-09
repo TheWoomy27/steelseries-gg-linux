@@ -67,11 +67,11 @@ In progress / not done:
   devices), per-app routing, samples, fallback devices, the Arctis Nova
   7's ChatMix dial, streamer mode, the mixer's device volumes and level
   meters, the mic effects (ClearCast on the mic and chat, noise
-  reduction, noise gate, compressor) and spatial audio (virtual 7.1 for
-  headphones or speakers, with reverb); see docs/sonar.md. The effects
-  need DeepFilterNet's LADSPA plugin and LSP plugins, and spatial audio
-  PipeWire's SOFA plugin and libmysofa's HRTF set; without them they are
-  left out. Smart volume is not done.
+  reduction, noise gate, compressor), smart volume and spatial audio
+  (virtual 7.1 for headphones or speakers, with reverb); see
+  docs/sonar.md. The effects need DeepFilterNet's LADSPA plugin and LSP
+  plugins, and spatial audio PipeWire's SOFA plugin and libmysofa's HRTF
+  set; without them they are left out. Echo canceling is not done.
 - Moments (capture), macro recording, GameSense
   lighting effects, PrismSync rendering, headset-specific Go logic
   (applying Arctis Gen2 EQ to the headset), and keyboard binding
