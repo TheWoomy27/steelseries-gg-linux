@@ -48,6 +48,7 @@ type Engine struct {
 	onChatMix     func(audio uint32, game, chat int)
 	onHeadsetLink func()
 	onBatteryLow  func(device string, percent int)
+	deploying     map[uint32]int // deploys in progress, by physical device
 }
 
 // SetSubAppSource lets the Engine's /subApps mirror the GG core's list;
@@ -169,6 +170,14 @@ func (e *Engine) Shutdown() {
 // devicert.Hooks
 
 func (e *Engine) Log(devID uint32, msg string) { slog.Debug("device log", "id", devID, "msg", msg) }
+
+// Deploying reports whether a configuration is being written to a
+// physical device.
+func (e *Engine) Deploying(devID uint32) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.deploying[devID] > 0
+}
 
 func (e *Engine) ActiveConfigSettings(devID uint32) map[string]any {
 	l := e.liveByProduct(devID)

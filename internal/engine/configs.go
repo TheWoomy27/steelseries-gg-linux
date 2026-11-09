@@ -293,6 +293,17 @@ func (e *Engine) deploy(l *liveDevice, settings map[string]any, force, saveToFla
 	if d == nil {
 		return fmt.Errorf("%s has no connected interface", l.cat.FullName)
 	}
+	e.mu.Lock()
+	if e.deploying == nil {
+		e.deploying = map[uint32]int{}
+	}
+	e.deploying[d.ID]++
+	e.mu.Unlock()
+	defer func() {
+		e.mu.Lock()
+		e.deploying[d.ID]--
+		e.mu.Unlock()
+	}()
 	keys := make([]string, 0, len(settings))
 	for k := range settings {
 		keys = append(keys, k)

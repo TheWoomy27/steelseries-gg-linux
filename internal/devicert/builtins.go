@@ -254,8 +254,14 @@ func registerServiceBuiltins() {
 		if err != nil {
 			return nil, err
 		}
+		// Specs rewrite what was deployed when a wireless device they
+		// could not reach connects again; nothing deployed, nothing to do.
 		api := sym(a[1])
-		return lispBool(d.WriteApi(api, d.CachedValues(api)) == nil), nil
+		vals := d.WantedValues(api)
+		if len(vals) == 0 {
+			return lispBool(false), nil
+		}
+		return lispBool(d.WriteApi(api, vals) == nil), nil
 	})
 	sf("get-cached-values", "2", func(a []*golisp.Data, env *golisp.SymbolTableFrame) (*golisp.Data, error) {
 		v, err := instance.eval(a[0], env)
@@ -266,7 +272,7 @@ func registerServiceBuiltins() {
 		if err != nil {
 			return nil, err
 		}
-		return jsonString(map[string]any{sym(a[1]): d.CachedValues(sym(a[1]))}), nil
+		return jsonString(map[string]any{sym(a[1]): d.WantedValues(sym(a[1]))}), nil
 	})
 	pf("call-device-function", "2", func(a []*golisp.Data, _ *golisp.SymbolTableFrame) (*golisp.Data, error) {
 		d, err := instance.deviceArg(a[0])
@@ -754,7 +760,9 @@ func registerMiscBuiltins() {
 		}
 		return golisp.InternalMakeList(mappings, bytesObj(make([]byte, golisp.IntegerValue(a[4])))), nil
 	})
-	pf("if-deploying", "1", func(a []*golisp.Data, _ *golisp.SymbolTableFrame) (*golisp.Data, error) { return a[0], nil })
+	pf("if-deploying", "1", func(a []*golisp.Data, _ *golisp.SymbolTableFrame) (*golisp.Data, error) {
+		return lispBool(golisp.IntegerP(a[0]) && instance.hooks.Deploying(uint32(golisp.IntegerValue(a[0])))), nil
+	})
 
 	// Windows registry and external-software checks: nothing to find on
 	// Linux.

@@ -48,6 +48,9 @@ type Hooks interface {
 	DeviceEvent(devID uint32, kind string, data map[string]any)
 	ActiveConfigSettings(devID uint32) map[string]any
 	Log(devID uint32, msg string)
+	// Deploying reports whether a configuration is being written to the
+	// device (the spec's if-deploying).
+	Deploying(devID uint32) bool
 }
 
 type nopHooks struct{}
@@ -55,6 +58,7 @@ type nopHooks struct{}
 func (nopHooks) DeviceEvent(uint32, string, map[string]any) {}
 func (nopHooks) ActiveConfigSettings(uint32) map[string]any { return nil }
 func (nopHooks) Log(uint32, string)                         {}
+func (nopHooks) Deploying(uint32) bool                      { return false }
 
 // Runtime owns the golisp global environment and all device declarations.
 // golisp keeps its primitives in a process-wide table, so there is one

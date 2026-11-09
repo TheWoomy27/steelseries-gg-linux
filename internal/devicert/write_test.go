@@ -1,6 +1,7 @@
 package devicert
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,10 +15,16 @@ type sentChunk struct {
 	read bool
 }
 
-type recordingTransport struct{ sent []sentChunk }
+type recordingTransport struct {
+	sent   []sentChunk
+	asleep bool // reads time out, as a wireless mouse asleep behind its dongle
+}
 
 func (r *recordingTransport) Chunk(_ Target, _, _ int, data []byte, read bool, _, _ time.Duration) ([]byte, error) {
 	r.sent = append(r.sent, sentChunk{append([]byte{}, data...), read})
+	if read && r.asleep {
+		return nil, errors.New("timed out")
+	}
 	if read {
 		return []byte{0, 0x2b, 0x40}, nil
 	}
@@ -47,6 +54,9 @@ const writeTestSpec = `
     (api polling_rate
         (mixes-reads-writes)
         (api-write HID (write-chunk HIDIO 65 [0x00 0x01]) (read-chunk HIDIO 65 payload)))
+
+    (define (rewrite) (rewrite-cached-values 0x10380001 polling_rate))
+    (define (rewrite-dimmer) (rewrite-cached-values 0x10380001 dimmer))
 
     (define (macros)
         (convert-onboard-macro-bindings 1 "" (list 1 2) (list 3 4) 8 0x71)))
@@ -106,5 +116,30 @@ func TestConvertOnboardMacroBindingsKeepsMappings(t *testing.T) {
 	}
 	if got := bytesOf(golisp.Cadr(v)); len(got) != 8 || string(got) != string(make([]byte, 8)) {
 		t.Errorf("macro data: % x, want 8 zero bytes", got)
+	}
+}
+
+// A setting the device did not take (a wireless mouse asleep) is still
+// what the spec rewrites when the device connects again; an api nothing
+// was written to is left alone.
+func TestRewriteCachedValues(t *testing.T) {
+	d, tr := writeTestDevice(t)
+	tr.asleep = true
+	if err := d.WriteApi("polling_rate", map[string]any{"level": 3}); err == nil {
+		t.Fatal("the write should fail while the device sleeps")
+	}
+	if len(d.CachedValues("polling_rate")) != 0 {
+		t.Errorf("a failed write was cached: %v", d.CachedValues("polling_rate"))
+	}
+	tr.asleep, tr.sent = false, nil
+	if v, err := d.Call("rewrite"); err != nil || !golisp.BooleanValue(v) {
+		t.Fatalf("rewrite: %v %v", golisp.String(v), err)
+	}
+	if n := len(tr.sent); n != 2 || string(tr.sent[1].data) != string([]byte{0x00, 0x2b, 0x03}) {
+		t.Errorf("rewrite sent %v, want the polling rate at level 3", tr.sent)
+	}
+	tr.sent = nil
+	if v, err := d.Call("rewrite-dimmer"); err != nil || golisp.BooleanValue(v) || len(tr.sent) != 0 {
+		t.Errorf("rewriting an api never written sent %v (%v %v)", tr.sent, golisp.String(v), err)
 	}
 }

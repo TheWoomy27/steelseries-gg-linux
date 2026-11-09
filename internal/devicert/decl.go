@@ -49,7 +49,8 @@ type Decl struct {
 	CommandInterfaceEventFunc *golisp.Data
 
 	mu                 sync.Mutex
-	cache              map[string]map[string]any
+	cache              map[string]map[string]any // values the device took or reported
+	wanted             map[string]map[string]any // values last written, taken or not
 	blocked            bool
 	firmwareSupported  *bool
 	outputOnboardSchem int64
@@ -136,6 +137,27 @@ func (d *Decl) ApiNames() []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// WantedValues returns the values last written to an api, whether or not
+// the device took them (a wireless mouse asleep in its dongle's range does
+// not), else its cached values.
+func (d *Decl) WantedValues(api string) map[string]any {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if v, ok := d.wanted[api]; ok {
+		return copyMap(v)
+	}
+	return copyMap(d.cache[api])
+}
+
+func (d *Decl) setWanted(api string, v map[string]any) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.wanted == nil {
+		d.wanted = map[string]map[string]any{}
+	}
+	d.wanted[api] = copyMap(v)
 }
 
 // CachedValues returns the last values written to or read from an api.

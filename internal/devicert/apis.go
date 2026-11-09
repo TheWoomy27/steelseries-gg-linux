@@ -441,6 +441,9 @@ func (d *Decl) WriteApi(name string, values any) error {
 	if err != nil {
 		return err
 	}
+	if isMap && !api.CacheExempt {
+		d.setWanted(name, m)
+	}
 	st := d.newIOState()
 	var last []byte
 	var runErr error
