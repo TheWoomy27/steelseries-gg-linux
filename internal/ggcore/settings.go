@@ -47,6 +47,9 @@ func (c *Core) settings() map[string]any {
 	if out["locale"] == "" {
 		out["locale"] = systemLocale()
 	}
+	if installed, enabled := autostartInstalled(); installed {
+		out["shouldAutoStart"] = enabled
+	}
 	return out
 }
 
@@ -61,6 +64,9 @@ func (c *Core) setSetting(key string, value any) {
 	c.Broadcast("EVENT_APP_SETTING_CHANGED", map[string]any{"key": key, "value": value})
 	if key == "locale" {
 		c.Broadcast("EVENT_LOCALE_CHANGED", map[string]any{"locale": value})
+	}
+	if on, ok := value.(bool); ok && key == "shouldAutoStart" {
+		setAutostart(on)
 	}
 }
 
