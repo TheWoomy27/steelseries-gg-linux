@@ -261,6 +261,25 @@ func (e *Engine) deviceJSON(cat *catalogDevice, l *liveDevice) map[string]any {
 			"priority":                  p.Priority,
 		})
 	}
+	// Colour and edition variants (CMF children) are told apart by the
+	// physical device that connects; until the user picks one, the card
+	// shows the connected variant's art and name.
+	children := e.childDevices(cat.ID)
+	optimized, display := ud.OptimizedFor, cat.FullName
+	if optimized == 0 {
+		for _, p := range phys {
+			for _, c := range children {
+				if p.ProductID == connectedPID && c.IsCmf == 1 && c.Name == p.Name {
+					optimized = c.ID
+				}
+			}
+		}
+	}
+	for _, c := range children {
+		if c.ID == optimized && c.FullName != "" {
+			display = c.FullName
+		}
+	}
 	cfgs := e.configMetadata(cat.ID)
 	m := map[string]any{
 		"id":                               cat.ID,
@@ -269,13 +288,13 @@ func (e *Engine) deviceJSON(cat *catalogDevice, l *liveDevice) map[string]any {
 		"secondary_connected_product_id":   0,
 		"name":                             cat.Name,
 		"full_name":                        cat.FullName,
-		"display_name":                     cat.FullName,
+		"display_name":                     display,
 		"type":                             cat.Type,
 		"deviceTypeName":                   typeName(cat.Type),
 		"connected":                        connected,
 		"configuration_metadata":           cfgs,
-		"optimized_for":                    ud.OptimizedFor,
-		"child_devices":                    e.childDevices(cat.ID),
+		"optimized_for":                    optimized,
+		"child_devices":                    children,
 		"physical_devices":                 physJSON,
 		"lighting_templates":               e.lightingTemplates(cat.ID),
 		"hidden":                           ud.Hidden,
