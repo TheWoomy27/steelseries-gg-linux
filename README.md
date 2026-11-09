@@ -87,10 +87,13 @@ In progress / not done:
   docs/sonar.md. The effects need DeepFilterNet's LADSPA plugin and LSP
   plugins, and spatial audio PipeWire's SOFA plugin and libmysofa's HRTF
   set; without them they are left out. Echo canceling is not done.
-- Moments (capture), macro recording, GameSense
-  lighting effects, PrismSync rendering, headset-specific Go logic
-  (applying Arctis Gen2 EQ to the headset), and keyboard binding
-  conversion are not implemented.
+- Headset EQ: the Arctis Nova 7 Gen 2's on-device EQ deploys with its
+  configuration, and with Sonar on GG's Auto-Flatten EQ banner reports
+  a headset EQ that is not flat and flattens it on request (not on its
+  own).
+- Moments (capture), macro recording, GameSense lighting effects,
+  PrismSync rendering and keyboard binding conversion are not
+  implemented.
 - A device whose battery runs low (5%, as its spec says) gets a desktop
   notification where Windows GG shows an overlay; GG's switch for battery
   overlays is not wired to it yet.
