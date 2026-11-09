@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=SteelSeries GG
+Comment=Configure SteelSeries devices and Sonar audio
+Exec=@BINDIR@/steelseries-gg
+Icon=steelseries-gg
+Terminal=false
+Categories=Settings;HardwareSettings;
+Keywords=SteelSeries;Sonar;Engine;

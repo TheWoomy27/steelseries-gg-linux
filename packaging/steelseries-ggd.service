@@ -1,0 +1,16 @@
+# SteelSeries GG for Linux: ggd, the services behind the GG client (device
+# runtime, Sonar, tray icon), started with the graphical session.
+# packaging/install.sh fills in @BINDIR@.
+[Unit]
+Description=SteelSeries GG services (ggd)
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=@BINDIR@/ggd
+# The tray's Exit stops ggd on purpose.
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target

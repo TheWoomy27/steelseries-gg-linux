@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"syscall"
 
 	"ggl/internal/httpx"
@@ -98,11 +99,18 @@ func (c *Core) miscRoutes() {
 	}
 }
 
-// StartClient launches the Electron client (tray "Open" and /startClient).
+// StartClient launches the Electron client (tray "Open" and /startClient):
+// $GG_LINUX_CLIENT, the launcher installed beside ggd, or steelseries-gg
+// from PATH (a desktop session's PATH often lacks ~/.local/bin).
 func (c *Core) StartClient() {
 	bin := os.Getenv("GG_LINUX_CLIENT")
 	if bin == "" {
 		bin = "steelseries-gg"
+		if exe, err := os.Executable(); err == nil {
+			if beside := filepath.Join(filepath.Dir(exe), bin); isExecutable(beside) {
+				bin = beside
+			}
+		}
 	}
 	cmd := exec.Command(bin)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
@@ -111,4 +119,9 @@ func (c *Core) StartClient() {
 		return
 	}
 	go cmd.Wait()
+}
+
+func isExecutable(path string) bool {
+	st, err := os.Stat(path)
+	return err == nil && st.Mode().IsRegular() && st.Mode()&0o111 != 0
 }

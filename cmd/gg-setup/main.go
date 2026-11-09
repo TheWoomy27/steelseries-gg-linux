@@ -22,7 +22,15 @@ func main() {
 	installer := flag.String("installer", "", "path to SteelSeriesGG<version>Setup.exe")
 	firmware := flag.Bool("with-firmware", false, "also import device firmware images (needed for firmware updates)")
 	keep := flag.Bool("keep-temp", false, "keep the temporary unpack directory")
+	bootstrap := flag.Bool("bootstrap", false, "only reinstall the Linux bootstrap into the imported client (after updating gg-linux)")
 	flag.Parse()
+	if *bootstrap {
+		if err := InstallBootstrap(filepath.Join(paths.Client(), "app")); err != nil {
+			fmt.Fprintln(os.Stderr, "gg-setup:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if *installer == "" && flag.NArg() > 0 {
 		*installer = flag.Arg(0)
 	}

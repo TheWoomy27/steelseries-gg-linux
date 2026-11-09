@@ -20,16 +20,29 @@ provide, and recovers the device-spec key from your copy of
 
 ## Setup
 
+Needs Go, 7z and electron37 or newer.
+
     go build -o bin/ ./cmd/...
-    bin/gg-setup SteelSeriesGG<version>Setup.exe      # needs 7z
+    bin/gg-setup SteelSeriesGG<version>Setup.exe      # import into ~/.local/share/steelseries-gg
+    packaging/install.sh                               # install for your user
     sudo cp packaging/70-steelseries-gg.rules /etc/udev/rules.d/   # device access
-    GG_LINUX_GGD=$PWD/bin/ggd packaging/steelseries-gg              # needs electron37+
+    systemctl --user enable --now steelseries-ggd.service          # start ggd at login
+
+`install.sh` puts `ggd`, `ggctl`, `gg-setup` and the `steelseries-gg`
+launcher in `~/.local/bin` (`PREFIX` changes that), adds a "SteelSeries
+GG" desktop entry with GG's icon, and installs a systemd user service that
+starts `ggd` with your graphical session. Run it again after updating
+gg-linux: it also refreshes the Linux bootstrap in the imported client
+(`gg-setup --bootstrap`). The launcher starts `ggd` itself when it is not
+running.
 
 `ggd` puts GG's tray icon in your notification area (StatusNotifierItem:
-KDE, waybar and most Wayland bars, GNOME with the AppIndicator extension).
-To keep it there after you close GG, start `ggd` at login (for example
-`exec-once = ggd` in Hyprland); its "Open SteelSeries GG" runs
+KDE, waybar and most Wayland bars, GNOME with the AppIndicator extension);
+its "Open SteelSeries GG" runs the launcher installed beside `ggd`,
 `steelseries-gg` from your PATH, or `$GG_LINUX_CLIENT`.
+
+To run a source checkout without installing, point the launcher at it:
+`GG_LINUX_GGD=$PWD/bin/ggd GG_LINUX_BOOTSTRAP=$PWD/client/linux/bootstrap.js packaging/steelseries-gg`.
 
 `ggctl` talks to devices directly: `ggctl devices`, `ggctl apis 1852`,
 `ggctl read 1852 read_battery_status`, `ggctl call 22a1 get_headset_status`.

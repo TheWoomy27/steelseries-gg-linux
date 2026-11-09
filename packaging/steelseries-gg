@@ -11,6 +11,13 @@ if [ ! -f "$app/package.json" ]; then
     exit 1
 fi
 
+# The client starts ggd when it is not running: the one installed beside
+# this launcher, or ggd from PATH.
+if [ -z "${GG_LINUX_GGD:-}" ]; then
+    here=$(dirname "$(readlink -f "$0")")
+    [ -x "$here/ggd" ] && export GG_LINUX_GGD="$here/ggd"
+fi
+
 electron="${GG_LINUX_ELECTRON:-}"
 if [ -z "$electron" ]; then
     # The Windows client ships Electron 31; newer releases keep the
