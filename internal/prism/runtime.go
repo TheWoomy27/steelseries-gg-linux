@@ -85,6 +85,12 @@ func (s *Service) reconcile() {
 // renderZones renders the base layer of a configuration at time t for
 // the devices given.
 func renderZones(c *ConfigData, devs []*device, t int64) map[string]Color {
+	return renderZonesAsleep(c, devs, t, false)
+}
+
+// renderZonesAsleep renders, dimmed as each configuration says when the
+// monitors are asleep.
+func renderZonesAsleep(c *ConfigData, devs []*device, t int64, asleep bool) map[string]Color {
 	out := make(map[string]Color, 128)
 	ready := map[*Single]*compiled{}
 	for _, d := range devs {
@@ -96,7 +102,11 @@ func renderZones(c *ConfigData, devs []*device, t int64) map[string]Color {
 				r = compile(cfg, waveOrigin(cfg, c, devs))
 				ready[cfg] = r
 			}
-			out[z.UniqueID] = r.color(z.pos(), t)
+			col := r.color(z.pos(), t)
+			if asleep && r.dim > 0 {
+				col = scale(col, 255-r.dim)
+			}
+			out[z.UniqueID] = col
 		}
 	}
 	return out
@@ -189,7 +199,8 @@ func (s *Service) renderLoop(ctx context.Context) {
 		}
 		s.watchInput(usesInput(&cur.Data))
 		layer := ConfigData{Base: *s.layerFor(&cur.Data, lastInput)}
-		colors := renderZones(&layer, active, time.Since(started).Milliseconds())
+		asleep := usesDimming(&layer.Base) && monitorsAsleep()
+		colors := renderZonesAsleep(&layer, active, time.Since(started).Milliseconds(), asleep)
 		s.react(colors, active)
 		for _, d := range active {
 			w := writers[d.ID]

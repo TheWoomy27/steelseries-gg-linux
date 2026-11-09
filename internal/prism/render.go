@@ -217,6 +217,7 @@ type point struct{ X, Y int }
 // compiled is a configuration ready to render: its foundation graphic's
 // gradients and waves worked out once, then rendered at many zones.
 type compiled struct {
+	dim           int // dimming while the monitors sleep, 0-255
 	def           Color
 	opacity       int
 	origin        point
@@ -230,7 +231,7 @@ type compiled struct {
 }
 
 func compile(s *Single, origin point) *compiled {
-	c := &compiled{def: s.DefaultColor, origin: origin}
+	c := &compiled{def: s.DefaultColor, origin: origin, dim: int(s.DimFactorOnMonitorSleep)}
 	if s.Foundation.GraphicID == "" {
 		return c
 	}

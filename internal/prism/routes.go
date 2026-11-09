@@ -164,7 +164,28 @@ func (s *Service) routes() {
 		if mode == "baseOrIdle" || mode == "" {
 			mode = modeBase
 		}
-		s.applyUpdates(c, mode, preset.Data, sel)
+		// The client sends the dimming chosen for the preset beside it
+		// (configuration_types.PresetUpdateData).
+		var extra struct {
+			PresetUpdateData *struct {
+				DimFactorOnMonitorSleep *uint8 `json:"dimFactorOnMonitorSleep"`
+			} `json:"presetUpdateData"`
+			PresetUpdate *struct {
+				DimFactorOnMonitorSleep *uint8 `json:"dimFactorOnMonitorSleep"`
+			} `json:"presetUpdate"`
+		}
+		json.Unmarshal(b, &extra)
+		ups := append([]update(nil), preset.Data...)
+		for _, x := range []*struct {
+			DimFactorOnMonitorSleep *uint8 `json:"dimFactorOnMonitorSleep"`
+		}{extra.PresetUpdateData, extra.PresetUpdate} {
+			if x != nil && x.DimFactorOnMonitorSleep != nil {
+				for i := range ups {
+					ups[i].DimFactorOnMonitorSleep = x.DimFactorOnMonitorSleep
+				}
+			}
+		}
+		s.applyUpdates(c, mode, ups, sel)
 		httpx.JSON(w, s.frontend(c))
 	})
 

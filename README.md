@@ -126,9 +126,10 @@ In progress / not done:
   layer (after a time without input) and the reactive one (Line, Ripple
   and Fade on key presses) follow the SteelSeries keyboards and mice
   themselves; ggd reads their key reports only while the configuration
-  uses one of those layers, and only to light the keys. Not done yet:
-  Audio visualizer, Reflect (screen colours), image sync and dimming
-  while the monitor sleeps.
+  uses one of those layers, and only to light the keys. On Hyprland the
+  lighting dims or goes off while the monitors sleep, as each
+  configuration's "When Monitor Sleeps" says. Not done yet: Audio
+  visualizer, Reflect (screen colours) and image sync.
 - Macro recording, GameSense lighting effects and keyboard binding
   conversion are not implemented.
 - A device whose battery runs low (5%, as its spec says) gets a desktop
