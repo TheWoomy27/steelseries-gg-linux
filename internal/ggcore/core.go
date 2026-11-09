@@ -32,6 +32,10 @@ type Core struct {
 	games       gameLibrary
 	taskbar     taskbar
 	quickset    quicksetHooks
+	// The services following the game being played, and its unique id.
+	gameWatchers []gameWatcher
+	playing      string
+	shortcuts    shortcutStore
 }
 
 // OnSubAppToggle registers the in-process service behind a sub-app so it
@@ -113,6 +117,8 @@ func (c *Core) routes() {
 	c.loadoutRoutes()
 	c.quicksetRoutes()
 	c.alertRoutes()
+	c.autoclipRoutes()
+	c.shortcutRoutes()
 	c.gameRoutes()
 	c.ggezRoutes()
 	c.taskbarRoutes()

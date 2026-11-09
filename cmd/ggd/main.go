@@ -156,6 +156,11 @@ func run(verbose bool) error {
 	connectQuickset(core, snr)
 	go snr.SetActive(core.SubAppEnabled("sonar"))
 
+	mom, err := startMoments(ctx, core, token, tlsCfg)
+	if err != nil {
+		return fmt.Errorf("moments: %w", err)
+	}
+
 	if err := writeCoreProps(ggAddr, engAddr, gsAddr, token); err != nil {
 		return err
 	}
@@ -169,6 +174,7 @@ func run(verbose bool) error {
 	<-ctx.Done()
 	slog.Info("ggd shutting down")
 	snr.Stop()
+	mom.Stop()
 	eng.Shutdown()
 	os.Remove(paths.CoreProps())
 	return nil

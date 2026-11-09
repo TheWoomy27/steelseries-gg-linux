@@ -116,8 +116,23 @@ func (c *Core) userRoutes() {
 	s.Handle("GET /user/token/refresh", func(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusUnauthorized, "no access token")
 	})
+	// Sharing services. Linking them goes through SteelSeries' cloud, so
+	// on Linux each is listed but cannot be linked; Moments' share dialog
+	// needs them listed.
 	s.Handle("GET /user/linkedAccounts", func(w http.ResponseWriter, r *http.Request) {
-		httpx.JSON(w, map[string]any{"linkedAccounts": []any{}})
+		type account struct {
+			Key                     string `json:"key"`
+			DisplayName             string `json:"display_name"`
+			AuthenticationAvailable bool   `json:"authentication_available"`
+			AuthenticationRequired  bool   `json:"authentication_required"`
+			Authenticated           bool   `json:"authenticated"`
+			AuthenticatedName       string `json:"authenticated_name"`
+		}
+		out := []account{}
+		for _, a := range [][2]string{{"youtube", "YouTube"}, {"discord", "Discord"}, {"reddit", "Reddit"}, {"tiktok", "TikTok"}, {"twitter", "Twitter"}, {"facebook", "Facebook"}} {
+			out = append(out, account{Key: a[0], DisplayName: a[1], AuthenticationRequired: true})
+		}
+		httpx.JSON(w, map[string]any{"linkedAccounts": out})
 	})
 	s.Handle("GET /user/avatars", func(w http.ResponseWriter, r *http.Request) {
 		httpx.JSON(w, map[string]any{"avatars": []any{}})

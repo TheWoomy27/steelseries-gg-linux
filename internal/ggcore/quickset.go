@@ -291,12 +291,19 @@ func (c *Core) watchGames(ctx context.Context) {
 			return
 		case <-t.C:
 		}
-		if !c.loadLoadouts().ProfilesEnabled || c.Setting("autoDeployLoadouts") == false {
+		quickset := c.loadLoadouts().ProfilesEnabled && c.Setting("autoDeployLoadouts") != false
+		if !quickset && !c.gameWatchersInterested() {
 			current = ""
+			c.setPlaying(nil)
 			continue
 		}
 		running := runningGames(c.cachedGames())
 		sort.Slice(running, func(i, j int) bool { return running[i].UniqueIdentifier < running[j].UniqueIdentifier })
+		c.setPlaying(running)
+		if !quickset {
+			current = ""
+			continue
+		}
 		uid := ""
 		if i := slices.IndexFunc(running, func(g ScannedGame) bool { return g.UniqueIdentifier == current }); i >= 0 {
 			continue // still playing

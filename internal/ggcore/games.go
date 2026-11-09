@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -319,3 +320,60 @@ func runningGames(games []ScannedGame) []ScannedGame {
 	}
 	return out
 }
+
+// gameWatcher is a service that follows the game being played (Moments
+// records it).
+type gameWatcher struct {
+	interested func() bool
+	changed    func(g *ScannedGame)
+}
+
+// WatchGames calls changed with the game being played whenever it changes
+// (nil when none is), checking while interested says so.
+func (c *Core) WatchGames(interested func() bool, changed func(g *ScannedGame)) {
+	c.mu.Lock()
+	c.gameWatchers = append(c.gameWatchers, gameWatcher{interested, changed})
+	c.mu.Unlock()
+}
+
+func (c *Core) gameWatchersInterested() bool {
+	c.mu.Lock()
+	ws := c.gameWatchers
+	c.mu.Unlock()
+	for _, w := range ws {
+		if w.interested() {
+			return true
+		}
+	}
+	return false
+}
+
+// setPlaying tells the game watchers about the game being played, the
+// one running longest when there are several.
+func (c *Core) setPlaying(running []ScannedGame) {
+	c.mu.Lock()
+	uid := ""
+	if i := slices.IndexFunc(running, func(g ScannedGame) bool { return g.UniqueIdentifier == c.playing }); i >= 0 {
+		uid = c.playing
+	} else if len(running) > 0 {
+		uid = running[0].UniqueIdentifier
+	}
+	if uid == c.playing {
+		c.mu.Unlock()
+		return
+	}
+	c.playing = uid
+	ws := c.gameWatchers
+	c.mu.Unlock()
+	var g *ScannedGame
+	if uid != "" {
+		i := slices.IndexFunc(running, func(g ScannedGame) bool { return g.UniqueIdentifier == uid })
+		g = &running[i]
+	}
+	for _, w := range ws {
+		w.changed(g)
+	}
+}
+
+// ScannedGames is GG's game library.
+func (c *Core) ScannedGames() []ScannedGame { return c.cachedGames() }

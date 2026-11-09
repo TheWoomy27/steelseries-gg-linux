@@ -277,22 +277,29 @@ func (c *Core) taskbarRoutes() {
 			IsRecording bool   `json:"isRecording"`
 		}](r)
 		tb.mu.Lock()
-		t, changed := tb.icon, tb.recording != p.IsRecording
-		tb.recording = p.IsRecording
+		t := tb.icon
 		tb.mu.Unlock()
-		if t != nil {
-			if p.HoverText != "" {
-				t.SetToolTip(p.HoverText)
-			}
-			if changed {
-				state := "ok"
-				if p.IsRecording {
-					state = "recording"
-				}
-				t.SetIcon(trayIcon(state))
-			}
+		if t != nil && p.HoverText != "" {
+			t.SetToolTip(p.HoverText)
 		}
+		c.SetRecording(p.IsRecording)
 		httpx.OK(w)
 	})
 	s.Handle("POST /taskbar/notification", func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })
+}
+
+// SetRecording shows in the tray icon whether Moments is recording.
+func (c *Core) SetRecording(on bool) {
+	tb := &c.taskbar
+	tb.mu.Lock()
+	t, changed := tb.icon, tb.recording != on
+	tb.recording = on
+	tb.mu.Unlock()
+	if t != nil && changed {
+		state := "ok"
+		if on {
+			state = "recording"
+		}
+		t.SetIcon(trayIcon(state))
+	}
 }

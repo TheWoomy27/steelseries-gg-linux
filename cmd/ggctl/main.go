@@ -7,6 +7,9 @@
 //	ggctl read PID API            read an api and print the decoded reply
 //	ggctl call PID FUNCTION       call a function from the device spec
 //	ggctl write PID API JSON      write an api (changes device state!)
+//	ggctl moments clip            save a Moments clip (bind it to a key)
+//	ggctl moments toggle|mic|desktop  switch capture, mic, desktop capture
+//	ggctl moments status          what Moments is recording
 package main
 
 import (
@@ -42,7 +45,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: ggctl hid | devices | apis PID | read PID API | call PID FUNCTION | write PID API JSON")
+	fmt.Fprintln(os.Stderr, "usage: ggctl hid | devices | apis PID | read PID API | call PID FUNCTION | write PID API JSON | moments clip|status")
 	os.Exit(2)
 }
 
@@ -58,6 +61,9 @@ func parsePID(s string) (uint32, error) {
 }
 
 func run(cmd string, args []string) error {
+	if cmd == "moments" {
+		return momentsCommand(args)
+	}
 	if cmd == "hid" {
 		infos, err := hid.Enumerate()
 		if err != nil {

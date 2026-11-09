@@ -34,22 +34,6 @@ func (c *Core) miscRoutes() {
 		httpx.JSON(w, map[string]any{"applicationMetadata": map[string]any{}})
 	})
 
-	s.Handle("GET /keyboardShortcuts", func(w http.ResponseWriter, r *http.Request) {
-		ks := map[string]any{}
-		c.db.Get("keyboardShortcuts", &ks)
-		httpx.JSON(w, map[string]any{"keyboardShortcuts": ks})
-	})
-	s.Handle("POST /keyboardShortcuts", func(w http.ResponseWriter, r *http.Request) {
-		p, _ := decode[map[string]any](r)
-		ks := map[string]any{}
-		c.db.Get("keyboardShortcuts", &ks)
-		for k, v := range p {
-			ks[k] = v
-		}
-		c.db.Set("keyboardShortcuts", ks)
-		httpx.JSON(w, map[string]any{"keyboardShortcuts": ks})
-	})
-
 	// Updates come from the distribution / gg-setup, not an in-app updater.
 	s.Handle("POST /update/check", func(w http.ResponseWriter, r *http.Request) {
 		c.Broadcast("EVENT_APP_UPDATE_VERSION_IS_CURRENT", map[string]any{})

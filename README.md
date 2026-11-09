@@ -46,6 +46,9 @@ To run a source checkout without installing, point the launcher at it:
 
 `ggctl` talks to devices directly: `ggctl devices`, `ggctl apis 1852`,
 `ggctl read 1852 read_battery_status`, `ggctl call 22a1 get_headset_status`.
+It also drives Moments in the running ggd: `ggctl moments clip` saves a
+clip, and `ggctl moments toggle|mic|desktop|status` switch capture, the
+microphone and desktop capture.
 
 ## Status
 
@@ -98,9 +101,23 @@ In progress / not done:
   configuration, and with Sonar on GG's Auto-Flatten EQ banner reports
   a headset EQ that is not flat and flattens it on request (not on its
   own).
-- Moments (capture), macro recording, GameSense lighting effects,
-  PrismSync rendering and keyboard binding conversion are not
-  implemented.
+- Moments: the clip library, the editor (trim, 9:16 crop, texts, audio
+  tracks, screenshots, montages), exports and the settings pages. Capture
+  is off until you turn it on. Then Moments keeps the last minutes of
+  the game being played (or the desktop, in desktop mode) in a replay
+  buffer in RAM, and a shortcut saves it as a clip in
+  ~/Videos/SteelSeries Moments. Recording uses gpu-screen-recorder when
+  it is installed (recommended: it encodes on the GPU and keeps sound and
+  picture in sync), else wf-recorder on Wayland or ffmpeg on X11, with
+  the game sound, chat and microphone each on a track of their own.
+  On Hyprland, GG's Moments shortcuts (Alt+S saves a clip) are bound
+  while capture is on, except keys your configuration already uses; on
+  other desktops, bind a key to `ggctl moments clip`. Uploading to
+  sharing services is not available; drag a clip out of GG or export it.
+  Toggling the microphone restarts the recording, which empties the
+  buffer.
+- Macro recording, GameSense lighting effects, PrismSync rendering and
+  keyboard binding conversion are not implemented.
 - A device whose battery runs low (5%, as its spec says) gets a desktop
   notification where Windows GG shows an overlay; GG's switch for battery
   overlays is not wired to it yet.
