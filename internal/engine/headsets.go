@@ -45,6 +45,14 @@ func (e *Engine) OnChatMix(fn func(audio uint32, game, chat int)) {
 	e.mu.Unlock()
 }
 
+// OnBatteryLow registers fn for a device whose battery runs low, with its
+// name and battery level.
+func (e *Engine) OnBatteryLow(fn func(device string, percent int)) {
+	e.mu.Lock()
+	e.onBatteryLow = fn
+	e.mu.Unlock()
+}
+
 // OnHeadsetLink registers fn for changes of a headset's wireless link.
 func (e *Engine) OnHeadsetLink(fn func()) {
 	e.mu.Lock()

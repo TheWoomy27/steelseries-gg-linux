@@ -47,6 +47,7 @@ type Engine struct {
 	mmDevices     map[uint32]mmDevice // headsets, by USB audio device
 	onChatMix     func(audio uint32, game, chat int)
 	onHeadsetLink func()
+	onBatteryLow  func(device string, percent int)
 }
 
 // SetSubAppSource lets the Engine's /subApps mirror the GG core's list;

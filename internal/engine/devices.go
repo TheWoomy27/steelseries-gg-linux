@@ -37,6 +37,7 @@ type liveDevice struct {
 	battery   *batteryState
 	linkKnown bool
 	linkUp    bool
+	low       bool // the spec reports the battery low
 }
 
 type batteryState struct {

@@ -22,6 +22,7 @@ import (
 	"ggl/internal/engine"
 	"ggl/internal/ggcore"
 	"ggl/internal/httpx"
+	"ggl/internal/notify"
 	"ggl/internal/paths"
 	"ggl/internal/prism"
 	"ggl/internal/sonar"
@@ -115,6 +116,13 @@ func run(verbose bool) error {
 	snr.SetHeadsets(headsets{eng})
 	eng.OnChatMix(snr.HeadsetChatMix)
 	eng.OnHeadsetLink(snr.HeadsetLinkChanged)
+	// Windows GG shows an overlay for a low battery; Linux shows a desktop
+	// notification.
+	eng.OnBatteryLow(func(device string, percent int) {
+		if err := notify.Send("battery/"+device, "Low battery", fmt.Sprintf("%s: %d%% left", device, percent)); err != nil {
+			slog.Warn("low battery notification", "device", device, "err", err)
+		}
+	})
 	// Plain HTTP, like the Windows Sonar, which registers its server URL
 	// (scheme included) as webServerAddress.
 	sonarAddr, err := serve(ctx, snr.Handler(), nil)

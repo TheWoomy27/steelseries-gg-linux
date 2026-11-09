@@ -65,7 +65,17 @@ func (e *Engine) handleDeviceEvent(ev deviceEvent) {
 	}
 	l.trackStatus(ev.data)
 	linkChanged := l.linkKnown != linkKnown || l.linkUp != linkUp
+	becameLow, percent := l.batteryLow(ev.data)
 	l.mu.Unlock()
+	if becameLow {
+		e.mu.Lock()
+		fn := e.onBatteryLow
+		e.mu.Unlock()
+		if fn != nil {
+			name, _ := e.deviceJSON(l.cat, l)["display_name"].(string)
+			fn(name, percent)
+		}
+	}
 	e.headsetEvent(ev.productID, ev.data)
 	if linkChanged {
 		e.mu.Lock()
@@ -88,6 +98,20 @@ func (e *Engine) handleDeviceEvent(ev deviceEvent) {
 		e.emit("device_event", msg)
 		e.emit("EVENT_DEVICE_STATUS_CHANGED", map[string]any{"deviceId": l.dbID, "device": l.cat.Name, "status": ev.data})
 	}
+}
+
+// batteryLow follows the low battery flag specs pass to the core with the
+// battery level (5% or less), saying whether the battery has just run low.
+// Callers hold l.mu.
+func (l *liveDevice) batteryLow(d map[string]any) (becameLow bool, percent int) {
+	b, ok := d["coreBatteryUpdateEvent"].(map[string]any)
+	if !ok {
+		return false, 0
+	}
+	low, _ := b["isBatteryLow"].(bool)
+	percent, _ = number(b["percentage"])
+	becameLow, l.low = low && !l.low, low
+	return becameLow, percent
 }
 
 // trackStatus records battery, charging and link state from the event

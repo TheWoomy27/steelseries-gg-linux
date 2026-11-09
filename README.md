@@ -89,7 +89,9 @@ In progress / not done:
   lighting effects, PrismSync rendering, headset-specific Go logic
   (applying Arctis Gen2 EQ to the headset), and keyboard binding
   conversion are not implemented.
-- Tray notifications (update and battery toasts) are not shown yet.
+- A device whose battery runs low (5%, as its spec says) gets a desktop
+  notification where Windows GG shows an overlay; GG's switch for battery
+  overlays is not wired to it yet.
 - Hyprland ignores the minimize button, as it has no minimized state.
 - Firmware updates are deliberately disabled.
 - GG runs with a local profile (your Linux user, signed in) so Sonar and
