@@ -86,6 +86,13 @@ func (p *pwTest) call(method, path, body string) string {
 // and returns the level device records, in dBFS: a sink's monitor or a
 // source.
 func (p *pwTest) level(device, into, wav string) float64 {
+	p.t.Helper()
+	return rmsDB(p.t, p.record(device, into, wav))
+}
+
+// record plays a recording into a node and records a device meanwhile, in
+// 16-bit stereo, returning the recording's path.
+func (p *pwTest) record(device, into, wav string) string {
 	t := p.t
 	t.Helper()
 	time.Sleep(1500 * time.Millisecond) // let relinking settle
@@ -126,11 +133,15 @@ func (p *pwTest) level(device, into, wav string) float64 {
 		}
 		pl.Wait()
 	} else {
-		pwCommand("pw-cat", "-p", "--target", into, wav).Run()
+		args := []string{"-p", "--target", into}
+		if len(readWAV(t, wav)) == len(speakers) {
+			args = append(args, "--channel-map", "FL,FR,FC,LFE,RL,RR,SL,SR")
+		}
+		pwCommand("pw-cat", append(args, wav)...).Run()
 	}
 	r.Process.Signal(syscall.SIGINT)
 	r.Wait()
-	return rmsDB(t, rec)
+	return rec
 }
 
 func (p *pwTest) near(what string, got, want float64) {
@@ -151,44 +162,67 @@ func (p *pwTest) silent(what string, got float64) {
 	}
 }
 
+// rmsDB is a recording's level over the middle half, in dBFS.
 func rmsDB(t *testing.T, path string) float64 {
+	t.Helper()
+	var all []float64
+	for _, ch := range readWAV(t, path) {
+		all = append(all, ch[len(ch)/4:len(ch)*3/4]...)
+	}
+	return levelDB(all)
+}
+
+func levelDB(x []float64) float64 {
+	var sum float64
+	for _, v := range x {
+		sum += v * v
+	}
+	if sum == 0 {
+		return -120
+	}
+	return 10 * math.Log10(sum/float64(len(x)))
+}
+
+// readWAV reads a 16-bit WAV file's channels.
+func readWAV(t *testing.T, path string) [][]float64 {
 	t.Helper()
 	b, err := os.ReadFile(path)
 	if err != nil || len(b) < 44 {
 		t.Fatalf("recording %s: %v", path, err)
 	}
+	n := int(binary.LittleEndian.Uint16(b[22:]))
 	pcm := b[44:]
-	n := len(pcm) / 2
-	var sum float64
-	from, to := n/4, n*3/4
-	for i := from; i < to; i++ {
-		v := float64(int16(binary.LittleEndian.Uint16(pcm[2*i:]))) / 32768
-		sum += v * v
+	chans := make([][]float64, n)
+	for i := 0; i+1 < len(pcm); i += 2 {
+		chans[i/2%n] = append(chans[i/2%n], float64(int16(binary.LittleEndian.Uint16(pcm[i:])))/32768)
 	}
-	r := math.Sqrt(sum / float64(to-from))
-	if r == 0 {
-		return -120
-	}
-	return 20 * math.Log10(r)
+	return chans
 }
 
 // writeWAV writes 48 kHz stereo 16-bit audio, the same in both channels.
 func writeWAV(t *testing.T, path string, samples []float64) {
-	pcm := make([]byte, 0, len(samples)*4)
-	for _, s := range samples {
-		v := int16(math.Max(-32768, math.Min(32767, s*32768)))
-		pcm = binary.LittleEndian.AppendUint16(pcm, uint16(v))
-		pcm = binary.LittleEndian.AppendUint16(pcm, uint16(v))
+	writeChannels(t, path, [][]float64{samples, samples})
+}
+
+// writeChannels writes 48 kHz 16-bit audio with a channel per slice.
+func writeChannels(t *testing.T, path string, chans [][]float64) {
+	n := len(chans)
+	pcm := make([]byte, 0, len(chans[0])*2*n)
+	for i := range chans[0] {
+		for _, ch := range chans {
+			v := int16(math.Max(-32768, math.Min(32767, ch[i]*32768)))
+			pcm = binary.LittleEndian.AppendUint16(pcm, uint16(v))
+		}
 	}
 	h := []byte("RIFF")
 	h = binary.LittleEndian.AppendUint32(h, uint32(36+len(pcm)))
 	h = append(h, "WAVEfmt "...)
 	h = binary.LittleEndian.AppendUint32(h, 16)
 	h = binary.LittleEndian.AppendUint16(h, 1)
-	h = binary.LittleEndian.AppendUint16(h, 2)
+	h = binary.LittleEndian.AppendUint16(h, uint16(n))
 	h = binary.LittleEndian.AppendUint32(h, 48000)
-	h = binary.LittleEndian.AppendUint32(h, 48000*4)
-	h = binary.LittleEndian.AppendUint16(h, 4)
+	h = binary.LittleEndian.AppendUint32(h, uint32(48000*2*n))
+	h = binary.LittleEndian.AppendUint16(h, uint16(2*n))
 	h = binary.LittleEndian.AppendUint16(h, 16)
 	h = append(h, "data"...)
 	h = binary.LittleEndian.AppendUint32(h, uint32(len(pcm)))

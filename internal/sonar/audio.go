@@ -43,14 +43,15 @@ type channel struct {
 	node     string // node.name of the virtual device
 	desc     string
 	capture  bool // the microphone channel
+	surround bool // 7.1, with virtual surround (surround.go)
 }
 
 var channels = []channel{
-	{"Game", vadGame, "Game", "sonar_game", "SteelSeries Sonar - Gaming", false},
-	{"ChatRender", vadChatRender, "Chat", "sonar_chat", "SteelSeries Sonar - Chat", false},
-	{"Media", vadMedia, "Media", "sonar_media", "SteelSeries Sonar - Media", false},
-	{"Aux", vadAux, "Aux", "sonar_aux", "SteelSeries Sonar - Aux", false},
-	{"ChatCapture", vadChatCapture, "Mic", "sonar_mic", "SteelSeries Sonar - Microphone", true},
+	{"Game", vadGame, "Game", "sonar_game", "SteelSeries Sonar - Gaming", false, true},
+	{"ChatRender", vadChatRender, "Chat", "sonar_chat", "SteelSeries Sonar - Chat", false, false},
+	{"Media", vadMedia, "Media", "sonar_media", "SteelSeries Sonar - Media", false, true},
+	{"Aux", vadAux, "Aux", "sonar_aux", "SteelSeries Sonar - Aux", false, true},
+	{"ChatCapture", vadChatCapture, "Mic", "sonar_mic", "SteelSeries Sonar - Microphone", true, false},
 }
 
 func channelByRole(role string) (channel, bool) {
@@ -117,18 +118,35 @@ func (c channel) channelSuffixes() []string {
 
 func isStereo(p *ladspa) bool { return p != nil && len(p.in) > 1 }
 
+// virtualChannels is the number of audio channels of the channel's virtual
+// device.
+func (c channel) virtualChannels() int {
+	switch {
+	case c.capture:
+		return 1
+	case c.surround:
+		return len(speakers)
+	}
+	return 2
+}
+
 // controls names a channel's controls by node: a stage with a node per
-// audio channel takes each value on every one.
+// audio channel (and streamer mode's mixes) takes each value on every one.
+// Other controls, such as the virtualizer's, name their node.
 func (c channel) controls(params []any) []any {
 	if c.capture {
 		return params
 	}
 	plugins := c.effectPlugins()
+	split := map[string]bool{"mon": true, "str": true}
+	for _, st := range c.stages() {
+		split[st] = !isStereo(plugins[st])
+	}
 	var out []any
 	for i := 0; i+1 < len(params); i += 2 {
 		key, _ := params[i].(string)
 		st, ctrl, _ := strings.Cut(key, ":")
-		if isStereo(plugins[st]) {
+		if !split[st] {
 			out = append(out, key, params[i+1])
 			continue
 		}
@@ -182,9 +200,18 @@ func (c channel) moduleConf(stream bool) string {
 			}
 		}
 	}
+	if c.surround {
+		sn, sl, si, outs := surroundGraph()
+		nodes, links, inputs = append(nodes, sn...), append(links, sl...), si
+		for ch := range sfx {
+			links = append(links, fmt.Sprintf(`{ output = %q input = %q }`, outs[ch], port(stages[0], ch, false)))
+		}
+	}
 	last := stages[len(stages)-1]
 	for ch := range sfx {
-		inputs = append(inputs, strconv.Quote(port(stages[0], ch, false)))
+		if !c.surround {
+			inputs = append(inputs, strconv.Quote(port(stages[0], ch, false)))
+		}
 		if !stream || c.capture {
 			outputs = append(outputs, strconv.Quote(port(last, ch, true)))
 			continue
@@ -202,9 +229,12 @@ func (c channel) moduleConf(stream bool) string {
 	if c.capture {
 		position, channels = "[ MONO ]", 1
 	}
-	devicePorts := ""
+	devicePorts, virtualPorts := "", ""
 	if stream && !c.capture {
 		devicePorts = " audio.channels = 4 audio.position = [ FL RL FR RR ]"
+	}
+	if c.surround {
+		virtualPorts = fmt.Sprintf(" audio.channels = %d audio.position = %s", len(speakers), surroundPosition)
 	}
 	// The virtual device apps use, and the stream to or from the real
 	// device, which ggd links.
@@ -213,7 +243,7 @@ func (c channel) moduleConf(stream bool) string {
 		virtual = fmt.Sprintf(`playback.props = { node.name = %q node.description = %q media.class = Audio/Source audio.rate = %d }`, c.node, c.desc, sampleRate)
 		device = fmt.Sprintf(`capture.props = { node.name = %q node.description = %q node.autoconnect = false audio.rate = %d }`, c.deviceStream(), c.desc, sampleRate)
 	} else {
-		virtual = fmt.Sprintf(`capture.props = { node.name = %q node.description = %q media.class = Audio/Sink audio.rate = %d }`, c.node, c.desc, sampleRate)
+		virtual = fmt.Sprintf(`capture.props = { node.name = %q node.description = %q media.class = Audio/Sink audio.rate = %d%s }`, c.node, c.desc, sampleRate, virtualPorts)
 		device = fmt.Sprintf(`playback.props = { node.name = %q node.description = %q node.autoconnect = false audio.rate = %d%s }`, c.deviceStream(), c.desc, sampleRate, devicePorts)
 	}
 	return fmt.Sprintf(`  { name = libpipewire-module-filter-chain
@@ -383,7 +413,8 @@ func channelParams(c channel, data *object, mix, floor float64) []any {
 	if !c.capture {
 		params = append(params, "mix:Mult", mix)
 	}
-	return append(params, effectParams(c, data, floor)...)
+	params = append(params, effectParams(c, data, floor)...)
+	return append(params, surroundParams(c, data)...)
 }
 
 // podParams formats filter-chain controls for pw-cli.
@@ -468,6 +499,11 @@ func (a *audio) start(chs []channel, targets map[string]string, stream bool) err
 	defer a.mu.Unlock()
 	a.stopLocked()
 	conf := filepath.Join(paths.State(), "sonar-pipewire.conf")
+	if hrtfPath() != "" {
+		if err := writeSurroundFilters(); err != nil {
+			return err
+		}
+	}
 	if err := os.WriteFile(conf, []byte(graphConf(chs, stream)), 0o644); err != nil {
 		return err
 	}
@@ -579,10 +615,7 @@ func (a *audio) setControls(c channel, params []any) {
 
 // setVolume sets a channel's virtual device volume.
 func (a *audio) setVolume(c channel, gain float64, mute bool) {
-	vols := fmt.Sprintf("%g %g", gain, gain)
-	if c.capture {
-		vols = fmt.Sprintf("%g", gain)
-	}
+	vols := strings.TrimSpace(strings.Repeat(fmt.Sprintf("%g ", gain), c.virtualChannels()))
 	a.setParam(c.node, fmt.Sprintf("{ mute = %t channelVolumes = [ %s ] }", mute, vols))
 }
 

@@ -69,14 +69,16 @@ devices, as on Windows. Turning Sonar off restores the previous defaults.
 | Bass and treble boost | low and high shelf |
 | Voice clarity | presence boost (approximation) |
 | General gain | builtin gain |
-| Smart volume | compressor and limiter (LSP plugins, when installed) |
+| Smart volume | not done |
 | Mic EQ (10-band graphic) | `bq_peaking` at fixed frequencies |
 | ClearCast AI noise cancellation, mic and chat | DeepFilterNet LADSPA (mono on the mic, stereo on chat); the mix factor becomes its attenuation limit |
 | Mic noise reduction, impact noise reduction | DeepFilterNet, holding noise at most 20 dB down |
 | Noise gate, automatic noise gate | LSP Gate; the automatic gate sits 3 dB over the mic's measured noise floor |
 | Volume stabilizer (the "Compressor") | LSP Autogain, its level the target loudness (-30 to -12 LUFS) |
 | Acoustic echo canceling | not done; the client shows it only when a feature flag is unlocked |
-| Virtual surround 7.1, reverb | HRIR convolver (needs an HRIR set), later |
+| Virtual surround 7.1 (spatial audio) | 7.1 virtual devices for Game, Media and Aux; PipeWire's SOFA spatializer per speaker, at its position, with libmysofa's MIT KEMAR HRTF set (or `hrtf.sofa` in GG's sonar data folder) |
+| Speaker mode (form factor) | the same, through a RACE crosstalk canceller unrolled into FIR filters |
+| Reverb ("Performance" to "Immersion") | convolution with a generated small-room response (0.5 s), fed from the downmix |
 | ChatMix | Game and Chat channel gains, on Sonar's curve; a headset's dial (Arctis Nova 7) sets it through Engine |
 | Per-app routing | `target.object` metadata on the app's stream, remembered by WirePlumber |
 | Samples, recording | pw-play, looping; pw-record of the raw microphone, played back through the microphone channel |
@@ -165,4 +167,24 @@ devices, as on Windows. Turning Sonar off restores the previous defaults.
    Tested on a private PipeWire with WirePlumber (TestMicEffectsOnPipeWire
    measures each effect, TestDeviceVolumesOnPipeWire the volume routes)
    and in the mixer.
-6. Surround and reverb equivalents.
+6. Spatial audio. Done:
+   - Game, Media and Aux have 7.1 virtual devices, as Sonar's are on
+     Windows; stereo apps play to the front pair (PipeWire does not upmix
+     them). With spatial audio off they are downmixed with PipeWire's own
+     coefficients, so stereo plays as before.
+   - Each speaker goes through PipeWire's SOFA spatializer at its
+     position (Sonar's angles turn counterclockwise, as SOFA's azimuths
+     do); a speaker's gain, which the distance slider sets, is its level.
+     Speaker mode adds a crosstalk canceller: RACE (the far ear's path
+     delayed 0.26 ms, 3 dB down, 250 Hz to 5 kHz), unrolled into FIR
+     filters because a filter graph cannot loop.
+   - The reverb convolves the downmix with a small room's response that
+     ggd generates; Sonar's -12 to 0 dB sits 9 dB under the direct sound.
+   - As with the effects, mixer gains switch between the downmix and the
+     virtual speakers, and the speakers' angles are controls, so nothing
+     restarts the audio. The virtualizers add well under 1% of a core.
+   Tested on a private PipeWire with WirePlumber (TestSurroundOnPipeWire
+   measures each ear for the downmix, the virtual speakers, moved and
+   closer speakers, speaker mode and the reverb's tail) and in the Game
+   page.
+7. Smart volume.
