@@ -108,11 +108,13 @@ func (e *Engine) onHotplug(added, removed []hid.Info) {
 	}
 	e.mu.Lock()
 	var gone []*liveDevice
+	var unplugged []uint32
 	for id, l := range e.live {
 		l.mu.Lock()
 		for phys := range l.physical {
 			if _, ok := present[uint16(phys&0xffff)]; !ok {
 				delete(l.physical, phys)
+				unplugged = append(unplugged, phys)
 			}
 		}
 		empty := len(l.physical) == 0
@@ -127,6 +129,9 @@ func (e *Engine) onHotplug(added, removed []hid.Info) {
 		slog.Info("device disconnected", "device", l.cat.FullName)
 		e.emit("deviceDisconnected", map[string]any{"id": l.dbID, "product_id": l.cat.ProductID})
 		e.emit("EVENT_DEVICE_STATUS_CHANGED", map[string]any{"deviceId": l.dbID, "connected": false})
+	}
+	if len(unplugged) > 0 {
+		e.prismDevicesChanged(unplugged)
 	}
 }
 
@@ -199,6 +204,7 @@ func (e *Engine) initDevice(l *liveDevice, d *devicert.Decl) {
 	l.mu.Unlock()
 	e.emit("deviceConnected", e.deviceJSON(l.cat, l))
 	e.emit("EVENT_DEVICE_STATUS_CHANGED", map[string]any{"deviceId": l.dbID, "connected": true})
+	e.prismDevicesChanged(nil)
 
 	// gg-linux only writes settings it owns: once a configuration has been
 	// deployed from GG, reconnecting the device re-applies it, as the

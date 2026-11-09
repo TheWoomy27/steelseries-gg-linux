@@ -116,11 +116,20 @@ In progress / not done:
   sharing services is not available; drag a clip out of GG or export it.
   Toggling the microphone restarts the recording, which empties the
   buffer.
-- Macro recording, GameSense lighting effects, PrismSync rendering and
-  keyboard binding conversion are not implemented.
+- Prism (PrismSync V2, the Engine page's Prism tab): configurations,
+  presets, the effects Off, Single color, Breathe and Color shift on any
+  selection of keys and zones, the device canvas, and switching devices
+  in or out. ggd renders the lighting and sends it to the devices
+  SteelSeries made for it (Apex 7, Alias, the Aerox 3/5 Wireless...),
+  which follow Prism as soon as they connect, as on Windows; a device
+  switched out gets its own configuration's lighting back. Not done yet:
+  the idle and reactive (key press) layers, Audio visualizer, Reflect
+  (screen colours), image sync and dimming while the monitor sleeps.
+- Macro recording, GameSense lighting effects and keyboard binding
+  conversion are not implemented.
 - A device whose battery runs low (5%, as its spec says) gets a desktop
-  notification where Windows GG shows an overlay; GG's switch for battery
-  overlays is not wired to it yet.
+  notification where Windows GG shows an overlay, following GG's overlay,
+  notification and low battery sound switches.
 - Hyprland ignores the minimize button, as it has no minimized state.
 - Firmware updates are deliberately disabled.
 - GG runs with a local profile (your Linux user, signed in) so Sonar and

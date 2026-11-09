@@ -34,6 +34,8 @@ type Decl struct {
 	SupportsOnboardProfiles   bool
 	SupportsPrismSync         bool
 	PrismSyncV2Whitelisted    bool
+	prismIO                   sync.Once
+	prismTiming               *ioState
 	PausePrismSyncOnDeploy    bool
 	AlwaysWriteAllSettings    bool
 	AllowDisablingDeployment  bool

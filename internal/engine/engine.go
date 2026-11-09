@@ -6,6 +6,7 @@ package engine
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"path/filepath"
@@ -36,6 +37,7 @@ type Engine struct {
 	gsAddr    string
 	broadcast func(event string, data any)
 	live      map[int]*liveDevice // by catalog device id
+	prism     prismState
 	userID    int
 	appSet    map[string]any
 
@@ -60,6 +62,44 @@ func (e *Engine) SetSubAppSource(fn func() any) {
 	e.mu.Lock()
 	e.subApps = fn
 	e.mu.Unlock()
+}
+
+// engineSubApps are the sub-apps the Engine hosts (PrismSync), as GG
+// lists them.
+func (e *Engine) engineSubApps() map[string]json.RawMessage {
+	out := map[string]json.RawMessage{}
+	e.mu.Lock()
+	fn := e.subApps
+	e.mu.Unlock()
+	if fn == nil {
+		return out
+	}
+	var all map[string]json.RawMessage
+	b, _ := json.Marshal(fn())
+	json.Unmarshal(b, &all)
+	if v, ok := all[prismSubApp]; ok {
+		out[prismSubApp] = v
+	}
+	return out
+}
+
+const prismSubApp = "prismSyncV2"
+
+// replayEngineSubApps tells a client that connects to the Engine socket
+// where PrismSync runs; the announcement made when it started is long
+// gone by then.
+func (e *Engine) replayEngineSubApps(send func(event string, data any)) {
+	for name, raw := range e.engineSubApps() {
+		var a struct {
+			IsRunning bool            `json:"isRunning"`
+			IsEnabled bool            `json:"isEnabled"`
+			Metadata  json.RawMessage `json:"metadata"`
+		}
+		if json.Unmarshal(raw, &a) != nil || !a.IsRunning {
+			continue
+		}
+		send("EVENT_ENGINE_SUB_APP_READY", map[string]any{"subAppName": name, "metadata": a.Metadata, "isEnabled": a.IsEnabled})
+	}
 }
 
 func New(ctx context.Context) (*Engine, error) {
@@ -92,6 +132,7 @@ func New(ctx context.Context) (*Engine, error) {
 		slog.Warn("configuration migrations", "err", err)
 	}
 	e.routes()
+	e.hub.OnAuthenticated(e.replayEngineSubApps)
 	e.gameSenseRoutes()
 	return e, nil
 }

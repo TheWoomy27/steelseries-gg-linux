@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -88,6 +89,10 @@ func run(verbose bool) error {
 		return fmt.Errorf("gg core: %w", err)
 	}
 
+	// GG_LINUX_PPROF=127.0.0.1:6060 serves Go's profiler, for development.
+	if addr := os.Getenv("GG_LINUX_PPROF"); addr != "" {
+		go http.ListenAndServe(addr, nil)
+	}
 	tlsCfg := &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}
 	ggAddr, err := serve(ctx, core.Handler(), tlsCfg)
 	if err != nil {
@@ -114,6 +119,7 @@ func run(verbose bool) error {
 		return err
 	}
 	core.RegisterSubApp("prismSyncV2", ggcore.SubAppMetadata{EncryptedWebServerAddress: prismAddr})
+	go ps.Run(ctx)
 
 	snr, err := sonar.New(token)
 	if err != nil {
@@ -129,8 +135,11 @@ func run(verbose bool) error {
 		return on && core.SubAppEnabled("sonar")
 	})
 	// Windows GG shows an overlay for a low battery; Linux shows a desktop
-	// notification.
+	// notification, unless GG's overlay is switched off.
 	eng.OnBatteryLow(func(device string, percent int, sound bool) {
+		if core.Setting("overlayEnabled") == false {
+			return
+		}
 		name := ""
 		if sound {
 			name = "battery-low"
@@ -175,6 +184,7 @@ func run(verbose bool) error {
 	slog.Info("ggd shutting down")
 	snr.Stop()
 	mom.Stop()
+	ps.Wait()
 	eng.Shutdown()
 	os.Remove(paths.CoreProps())
 	return nil

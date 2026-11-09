@@ -268,7 +268,7 @@ func (e *Engine) routes() {
 	s.Handle("POST /v1/refreshWirelessDeviceConnectionStatus", func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })
 	s.Handle("GET /avneradevices", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, map[string]any{"devices": []any{}}) })
 	s.Handle("GET /subApps", func(w http.ResponseWriter, r *http.Request) {
-		httpx.JSON(w, map[string]any{"subApps": map[string]any{}})
+		httpx.JSON(w, map[string]any{"subApps": e.engineSubApps()})
 	})
 	s.Handle("POST /subApps/ready", func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })
 	s.Handle("POST /subApps/register", func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })

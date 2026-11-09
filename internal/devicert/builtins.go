@@ -292,6 +292,7 @@ func registerServiceBuiltins() {
 		}
 		return v, nil
 	})
+	// serialize-api-to-bytearray builds PrismSync reports (see prism.go).
 	pf("serialize-api-to-bytearray", "2", func(a []*golisp.Data, _ *golisp.SymbolTableFrame) (*golisp.Data, error) {
 		d, err := instance.deviceArg(a[0])
 		if err != nil {
@@ -303,17 +304,8 @@ func registerServiceBuiltins() {
 		}
 		var out []byte
 		for name, v := range req {
-			st := d.Struct(name)
-			if st == nil {
-				return nil, fmt.Errorf("serialize: unknown struct %s", name)
-			}
-			vals := st.Defaults(instance)
-			if m, ok := v.(map[string]any); ok {
-				for k, x := range m {
-					vals[k] = x
-				}
-			}
-			b, err := st.Encode(instance, st.Outgoing, vals)
+			m, _ := v.(map[string]any)
+			b, err := d.serializeForPrism(name, m)
 			if err != nil {
 				return nil, err
 			}
@@ -788,8 +780,16 @@ func registerMiscBuiltins() {
 	// prism-sync-make-device-rewrite re-applies PrismSync's lighting to a
 	// device that reconnects (an Aerox mouse waking up); without PrismSync
 	// there is nothing to re-apply.
-	for _, n := range []string{"prism-sync-zone", "prism-sync-zone-bitmap-hid-code", "prism-sync-zone-linear", "prism-sync-actuation_level", "pause-prism-sync", "resume-prism-sync", "prism-sync-make-device-rewrite"} {
+	for _, n := range []string{"prism-sync-actuation_level", "pause-prism-sync", "resume-prism-sync", "prism-sync-make-device-rewrite"} {
 		pf(n, "*", func([]*golisp.Data, *golisp.SymbolTableFrame) (*golisp.Data, error) { return nil, nil })
+	}
+	// The zone builtins return their own form, so zone lists a spec builds
+	// read the same as quoted ones (see prismZoneForm).
+	for _, n := range []string{"prism-sync-zone", "prism-sync-zone-bitmap-hid-code", "prism-sync-zone-linear"} {
+		sym := golisp.Intern(n)
+		pf(n, "*", func(a []*golisp.Data, _ *golisp.SymbolTableFrame) (*golisp.Data, error) {
+			return golisp.Cons(sym, golisp.ArrayToList(a)), nil
+		})
 	}
 	sf("pause-prism-sync-for-block", "*", func(a []*golisp.Data, env *golisp.SymbolTableFrame) (*golisp.Data, error) {
 		if len(a) < 2 {
