@@ -61,6 +61,26 @@ func (e *Engine) mainProductFor(physical uint32) uint32 {
 	return main
 }
 
+// wirelessInfo is how a wireless headset's transmitter (its dongle) pairs
+// with its receiver (the headset, a device of its own when plugged in by
+// USB), from the Engine's table, for the first of pids it lists. Device
+// cards ask the receiver for its connection and firmware.
+func (e *Engine) wirelessInfo(pids ...uint32) map[string]any {
+	info := map[string]any{"transmitter_product_id": 0, "transmitter_name": "", "receiver_product_id": 0, "receiver_id": 0, "receiver_name": ""}
+	for _, pid := range pids {
+		var tx, rx, rxID int64
+		var txName, rxName string
+		err := e.db.QueryRow(`SELECT transmitter_product_id, transmitter_name, receiver_product_id, receiver_id, receiver_name
+			FROM wireless_device_information WHERE transmitter_product_id = ?`, pid).Scan(&tx, &txName, &rx, &rxID, &rxName)
+		if err == nil {
+			info["transmitter_product_id"], info["transmitter_name"] = tx, txName
+			info["receiver_product_id"], info["receiver_id"], info["receiver_name"] = rx, rxID, rxName
+			break
+		}
+	}
+	return info
+}
+
 type physicalRow struct {
 	ProductID      uint32
 	Name           string

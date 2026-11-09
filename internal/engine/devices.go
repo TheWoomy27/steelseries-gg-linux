@@ -300,7 +300,7 @@ func (e *Engine) deviceJSON(cat *catalogDevice, l *liveDevice) map[string]any {
 		"genericDevicePropertiesWrite":     []any{},
 		"genericDevicePropertiesStatus":    []any{},
 		"imageUrl":                         "",
-		"wireless_device_information":      map[string]any{"transmitter_product_id": 0, "transmitter_name": "", "receiver_product_id": 0, "receiver_id": 0, "receiver_name": ""},
+		"wireless_device_information":      e.wirelessInfo(connectedPID, uint32(cat.ProductID)),
 		"firstConnectionTime":              ud.FirstConnect,
 	}
 	if primary != nil {

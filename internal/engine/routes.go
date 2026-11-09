@@ -10,6 +10,7 @@ import (
 
 	"github.com/steelseries/golisp"
 
+	"ggl/internal/devicert"
 	"ggl/internal/httpx"
 )
 
@@ -102,13 +103,13 @@ func (e *Engine) routes() {
 	// Device functions: (call-device-function ...) from the UI, e.g.
 	// reading headset status for the device card.
 	deviceFunc := func(w http.ResponseWriter, r *http.Request) {
-		l := e.liveByID(pathInt(r, "id"))
-		if l == nil || l.primary() == nil {
+		d := e.functionDecl(pathInt(r, "id"), uint32(pathInt(r, "pid")))
+		if d == nil {
 			httpx.Error(w, 404, "device not connected")
 			return
 		}
 		name := r.PathValue("fn")
-		v, err := l.primary().Call(name)
+		v, err := d.Call(name)
 		if err != nil {
 			httpx.Error(w, 500, err.Error())
 			return
@@ -510,4 +511,40 @@ func truncateJSON(v any) string {
 		return string(b[:300]) + "…"
 	}
 	return string(b)
+}
+
+// functionDecl is the spec a device function runs in: the connected
+// device's (or the physical device pid's), or for a known device that is
+// not connected its spec alone, which answers functions that need no I/O
+// such as the firmware version GG ships for it.
+func (e *Engine) functionDecl(id int, pid uint32) *devicert.Decl {
+	if l := e.liveByID(id); l != nil {
+		l.mu.Lock()
+		d := l.physical[pid]
+		l.mu.Unlock()
+		if d != nil {
+			return d
+		}
+		if d := l.primary(); d != nil {
+			return d
+		}
+	}
+	cat, err := e.catalogByID(id)
+	if err != nil {
+		return nil
+	}
+	pids := []uint32{pid, uint32(cat.ProductID)}
+	if phys, err := e.physicalDevices(uint32(cat.ProductID)); err == nil {
+		for _, p := range phys {
+			pids = append(pids, p.ProductID)
+		}
+	}
+	for _, p := range pids {
+		if p != 0 && e.rt.KnownDevice(p) {
+			if d, err := e.rt.Device(p); err == nil {
+				return d
+			}
+		}
+	}
+	return nil
 }

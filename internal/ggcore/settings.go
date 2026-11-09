@@ -1,6 +1,9 @@
 package ggcore
 
 import (
+	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -67,11 +70,13 @@ func (c *Core) settingsRoutes() {
 		httpx.JSON(w, map[string]any{"settings": c.settings()})
 	})
 	s.Handle("POST /settings", func(w http.ResponseWriter, r *http.Request) {
-		p, err := decode[struct {
+		body, _ := io.ReadAll(io.LimitReader(r.Body, 64<<10))
+		var p struct {
 			Key   string `json:"key"`
 			Value any    `json:"value"`
-		}](r)
-		if err != nil || p.Key == "" {
+		}
+		if err := json.Unmarshal(body, &p); err != nil || p.Key == "" {
+			slog.Warn("gg settings: request not understood", "body", string(body[:min(len(body), 300)]))
 			httpx.Error(w, 400, "bad setting")
 			return
 		}
