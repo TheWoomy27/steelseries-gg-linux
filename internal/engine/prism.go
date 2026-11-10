@@ -20,11 +20,13 @@ type PrismDevice struct {
 	Name      string
 	FullName  string
 	Data      *devicert.PrismData
+	GameSense *devicert.GameSenseInfo // nil without GameSense lighting
 }
 
 type prismState struct {
 	mu      sync.Mutex
 	data    map[uint32]*devicert.PrismData // by physical product
+	gs      map[uint32]*devicert.GameSenseInfo
 	changed []func()
 }
 
@@ -68,9 +70,35 @@ func (e *Engine) PrismSyncDevices() []PrismDevice {
 		if p == nil || !p.Whitelisted || len(p.Zones) == 0 {
 			continue
 		}
-		out = append(out, PrismDevice{ID: l.dbID, ProductID: d.ID, Type: l.cat.Type, Name: l.cat.Name, FullName: l.cat.FullName, Data: p})
+		out = append(out, PrismDevice{ID: l.dbID, ProductID: d.ID, Type: l.cat.Type, Name: l.cat.Name, FullName: l.cat.FullName, Data: p,
+			GameSense: e.gameSenseInfo(d)})
 	}
 	return out
+}
+
+// gameSenseInfo reads (once per product) how GameSense lights a device.
+func (e *Engine) gameSenseInfo(d *devicert.Decl) *devicert.GameSenseInfo {
+	ps := &e.prism
+	ps.mu.Lock()
+	info, ok := ps.gs[d.ID]
+	ps.mu.Unlock()
+	if ok {
+		return info
+	}
+	info, err := d.GameSense()
+	if err != nil {
+		slog.Warn("gamesense zones", "spec", d.Name, "err", err)
+	}
+	if info != nil && len(info.Zones) == 0 {
+		info = nil
+	}
+	ps.mu.Lock()
+	if ps.gs == nil {
+		ps.gs = map[uint32]*devicert.GameSenseInfo{}
+	}
+	ps.gs[d.ID] = info
+	ps.mu.Unlock()
+	return info
 }
 
 // prismData reads (once per connection) how a device takes frames.

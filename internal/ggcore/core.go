@@ -30,6 +30,7 @@ type Core struct {
 	ggAddr      string
 	subApps     map[string]*SubApp
 	subAppHooks map[string]func(enabled bool)
+	gameSense   GameSenseUI
 	games       gameLibrary
 	taskbar     taskbar
 	quickset    quicksetHooks

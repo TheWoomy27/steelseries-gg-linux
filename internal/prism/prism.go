@@ -17,6 +17,7 @@ import (
 	"ggl/internal/devicert"
 	"ggl/internal/engine"
 	"ggl/internal/events"
+	"ggl/internal/gamesense"
 	"ggl/internal/httpx"
 )
 
@@ -28,6 +29,7 @@ type Engine interface {
 	PrismRelease(id int)
 	OnPrismDevicesChanged(fn func())
 	WatchPrismInput(fn func(engine.PrismInput))
+	GameSense() *gamesense.State
 }
 
 type Service struct {

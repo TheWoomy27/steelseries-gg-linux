@@ -1,6 +1,7 @@
 package ggcore
 
 import (
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -68,11 +69,49 @@ func (c *Core) miscRoutes() {
 
 	// GameSense and overlay registries: the Windows handlers wrap each
 	// result in a key named after the operation.
-	for path, key := range map[string]string{"/overlays": "get_overlay_settings", "/game_integration_games": "game_integration_games",
-		"/game_integration_devices": "game_integration_devices", "/known_games": "known_games"} {
+	for path, key := range map[string]string{"/overlays": "get_overlay_settings", "/known_games": "known_games"} {
 		k := key
 		s.Handle("GET "+path, func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, map[string]any{k: []any{}}) })
 	}
+	// GameSense: the games lighting devices and their handlers.
+	s.Handle("GET /game_integration_games", func(w http.ResponseWriter, r *http.Request) {
+		var games any = []any{}
+		if gs := c.gameSenseUI(); gs != nil {
+			games = gs.GameIntegrationGames()
+		}
+		httpx.JSON(w, map[string]any{"game_integration_games": games})
+	})
+	s.Handle("GET /game_integration_devices", func(w http.ResponseWriter, r *http.Request) {
+		var devs any = []any{}
+		if gs := c.gameSenseUI(); gs != nil {
+			devs = gs.GameIntegrationDevices()
+		}
+		httpx.JSON(w, map[string]any{"game_integration_devices": devs})
+	})
+	s.Handle("POST /game_integration_toggle", func(w http.ResponseWriter, r *http.Request) {
+		p, err := decode[struct {
+			Game    string `json:"game"`
+			Enabled bool   `json:"enabled"`
+		}](r)
+		if err != nil {
+			httpx.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if gs := c.gameSenseUI(); gs != nil {
+			gs.ToggleGame(p.Game, p.Enabled)
+		}
+		httpx.OK(w)
+	})
+	s.Handle("POST /set_user_handlers", func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(io.LimitReader(r.Body, 4<<20))
+		if gs := c.gameSenseUI(); gs != nil {
+			if err := gs.SetUserHandlers(body); err != nil {
+				httpx.Error(w, http.StatusBadRequest, err.Error())
+				return
+			}
+		}
+		httpx.OK(w)
+	})
 	s.Handle("GET /game_integration/oled_active_for_device/{id}", func(w http.ResponseWriter, r *http.Request) {
 		httpx.JSON(w, map[string]any{"handleGameIntegrationOledActiveCheck": false})
 	})
@@ -108,4 +147,25 @@ func (c *Core) StartClient() {
 func isExecutable(path string) bool {
 	st, err := os.Stat(path)
 	return err == nil && st.Mode().IsRegular() && st.Mode()&0o111 != 0
+}
+
+// GameSenseUI is what GG's GameSense pages need from the Engine.
+type GameSenseUI interface {
+	GameIntegrationGames() any
+	GameIntegrationDevices() any
+	ToggleGame(game string, on bool)
+	SetUserHandlers(body []byte) error
+}
+
+// SetGameSense connects GG's GameSense pages to the Engine.
+func (c *Core) SetGameSense(g GameSenseUI) {
+	c.mu.Lock()
+	c.gameSense = g
+	c.mu.Unlock()
+}
+
+func (c *Core) gameSenseUI() GameSenseUI {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.gameSense
 }

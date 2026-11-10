@@ -74,6 +74,7 @@ type device struct {
 	stepMs    int
 	writes    []devicert.PrismWrite // frame template
 	init      []devicert.PrismWrite
+	gs        *gsDevice // nil without GameSense lighting
 }
 
 // zoneUniqueID is generateZoneUniqueID: the device id, the zone's
@@ -207,6 +208,7 @@ func newDevice(e engine.PrismDevice, adj *[2]int32, leftHanded bool) *device {
 		z.DeviceLinearMin, z.DeviceLinearMax, z.DeviceLinearSize = d.LinearMin, d.LinearMax, d.LinearSize
 	}
 	d.place()
+	d.gs = newGSDevice(e, d)
 	return d
 }
 

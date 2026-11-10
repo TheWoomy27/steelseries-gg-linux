@@ -244,6 +244,7 @@ func (s *Service) renderLoop(ctx context.Context) {
 		}
 		colors := renderZonesAsleep(&layer, active, time.Since(started).Milliseconds(), asleep, av, rf)
 		s.react(colors, active)
+		drawGameSense(s.eng.GameSense(), colors, active)
 		for _, d := range active {
 			w := writers[d.ID]
 			if w == nil || w.dev != d {

@@ -40,6 +40,7 @@ type Engine struct {
 	prism      prismState
 	prismInput prismInputState
 	soft       softState
+	gameSense  *gameSense
 	userID     int
 	appSet     map[string]any
 

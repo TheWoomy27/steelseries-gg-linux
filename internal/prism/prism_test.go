@@ -11,6 +11,7 @@ import (
 
 	"ggl/internal/devicert"
 	"ggl/internal/engine"
+	"ggl/internal/gamesense"
 )
 
 func TestGradient(t *testing.T) {
@@ -67,9 +68,16 @@ func TestWave(t *testing.T) {
 type fakeEngine struct {
 	devs   []engine.PrismDevice
 	frames map[int][]devicert.PrismWrite
+	gs     *gamesense.State
 }
 
 func (f *fakeEngine) PrismSyncDevices() []engine.PrismDevice { return f.devs }
+func (f *fakeEngine) GameSense() *gamesense.State {
+	if f.gs == nil {
+		f.gs = gamesense.New()
+	}
+	return f.gs
+}
 func (f *fakeEngine) PrismWrite(id int, w []devicert.PrismWrite) error {
 	f.frames[id] = w
 	return nil

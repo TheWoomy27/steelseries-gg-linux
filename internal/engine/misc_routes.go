@@ -280,6 +280,7 @@ func (e *Engine) miscRoutes() {
 func (e *Engine) gameSenseRoutes() {
 	g := e.gs
 	gs := newGameSense(e)
+	e.gameSense = gs
 	for _, p := range []string{"/game_metadata", "/register_game_event", "/bind_game_event", "/game_event", "/game_heartbeat",
 		"/remove_game_event", "/remove_game", "/stop_game", "/multiple_game_events", "/load_golisp_handlers"} {
 		path := p

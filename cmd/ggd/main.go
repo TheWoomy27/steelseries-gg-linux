@@ -109,6 +109,7 @@ func run(verbose bool) error {
 	}
 	eng.SetAddresses(engAddr, gsAddr)
 	core.SetAddresses(ggAddr, engAddr)
+	core.SetGameSense(eng)
 
 	ps, err := prism.New(paths.PrismDB(), paths.PrismDBMig(), eng, core.Broadcast)
 	if err != nil {

@@ -159,7 +159,22 @@ In progress / not done:
   previews of it use a made-up picture. The copies cost the compositor
   some CPU (Hyprland: about 10% of a core on a 2560x1440 monitor). Not
   done yet: image sync.
-- GameSense lighting effects are not implemented.
+- GameSense lighting: games that use the GameSense SDK (they find ggd
+  through `SteelSeries Engine 3/coreProps.json` in the data folder) light
+  keys and zones with their bound handlers, as the Windows Engine runs
+  them: static, gradient and ranged colours, flashing, percent and count
+  bars, context colours and 22x6 bitmaps, on the zones each device's
+  specification names. Prism draws the games' colours over its own
+  lighting on the zones they use, until the game stops or sends nothing
+  for its time-out (15 s by default). Games stay registered across
+  restarts; GG's Apps page lists them with their switch and shows their
+  effects on each device. Not done yet: saving effect changes made on
+  that page (ggd applies them, but the page does not send them),
+  GameSense screens (OLED) and vibration.
+- Cooldown timers are a lighting effect of GG's older per-key lighting
+  editor (Apex M750/M800, Apex 3 and MSI keyboards); they are not
+  implemented, and GG does not offer them for the Apex 7 or the Aerox
+  mice.
 - A device whose battery runs low (5%, as its spec says) gets a desktop
   notification where Windows GG shows an overlay, following GG's overlay,
   notification and low battery sound switches.
