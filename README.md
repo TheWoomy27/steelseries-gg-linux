@@ -83,7 +83,8 @@ In progress / not done:
   memory (the Apex 7, Apex Pro and Apex 9 keyboards, the Prime mice) play
   them themselves: they are written with the key mappings, in the format
   Windows GG uses. ggd runs the rest: macros on devices without macro
-  memory (most mice), launching an application, switching
+  memory (most mice), launching an application (the picker offers the
+  desktop's applications, .desktop files and AppImages), switching
   configurations and text macros (pasted from the clipboard with
   wl-copy, as Windows GG pastes them). A key or button bound that way is
   remapped to send a spare key code the desktop has no use for (an

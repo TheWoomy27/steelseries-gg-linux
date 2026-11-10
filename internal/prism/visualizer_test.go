@@ -23,8 +23,8 @@ func TestVisualizerZones(t *testing.T) {
 		{gridZone(9, 0), avHigh},       // the top of a full band
 		{gridZone(1, 5), avBackground}, // a silent band
 		{&zone{BitmapX: 0, BitmapY: 5, DeviceHasBitmapCoordinates: true, DeviceBitmapXSize: 7, DeviceBitmapYMax: 5, DeviceBitmapYSize: 6}, avNone}, // no bands for its width
-		{&zone{DeviceHasLinearIndexing: true, LinearIndex: 1, DeviceLinearSize: 3}, avMid},        // 1/3 under 0.5, coloured by the level
-		{&zone{DeviceHasLinearIndexing: true, LinearIndex: 2, DeviceLinearSize: 3}, avBackground}, // 2/3 above it
+		{&zone{DeviceHasLinearIndexing: true, LinearIndex: 1, DeviceLinearSize: 3}, avMid},                                                         // 1/3 under 0.5, coloured by the level
+		{&zone{DeviceHasLinearIndexing: true, LinearIndex: 2, DeviceLinearSize: 3}, avBackground},                                                  // 2/3 above it
 		{&zone{}, avMid}, // a single zone: the level's colour
 	} {
 		if got := avWhich(f, c.z); got != c.want {
@@ -34,6 +34,14 @@ func TestVisualizerZones(t *testing.T) {
 	dark := profileOf(&Single{UniqueEffectData: json.RawMessage(`{"audioVisualizerData":{"colorProfileId":"AUDIOVISUALIZER_COLOR_PROFILE_DARK"}}`)})
 	if got := avColor(f, gridZone(1, 5), dark); got != (Color{32, 32, 32}) {
 		t.Errorf("dark background %v", got)
+	}
+	// GG sends the profile by number.
+	darkBlind := profileOf(&Single{UniqueEffectData: json.RawMessage(`{"audioVisualizerData":{"colorProfileId":3}}`)})
+	if got := avColor(f, gridZone(1, 5), darkBlind); got != (Color{32, 32, 32}) {
+		t.Errorf("dark deuteranopia background %v", got)
+	}
+	if got := avColor(f, gridZone(9, 0), darkBlind); got != (Color{255, 0, 255}) {
+		t.Errorf("dark deuteranopia high %v", got)
 	}
 	if got := avColor(f, gridZone(0, 5), profileOf(&Single{})); got != (Color{2, 255, 140}) {
 		t.Errorf("light low %v", got)

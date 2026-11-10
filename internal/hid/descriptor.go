@@ -22,6 +22,10 @@ type Descriptor struct {
 	// Buttons are the input fields carrying buttons (usage page 9), one
 	// bit each.
 	Buttons []ButtonField
+	// Extra are the vendor bytes SteelSeries mice add to their pointer
+	// reports (usage page 0xffc1); the first carries the buttons GG calls
+	// extra buttons, one bit each.
+	Extra []ButtonField
 }
 
 // ButtonField is a run of button bits in an input report: button
@@ -91,6 +95,11 @@ func ParseDescriptor(b []byte) Descriptor {
 				if tag == 0x8 && usagePage == 0x07 && val&1 == 0 && reportSize > 0 && reportCount > 0 {
 					d.Keys = append(d.Keys, KeyField{ReportID: reportID, BitOffset: bits["in"][reportID], Size: reportSize, Count: reportCount,
 						UsageMin: usageMin, UsageMax: usageMax, Array: val&2 == 0})
+				}
+				if tag == 0x8 && usagePage == 0xffc1 && val&1 == 0 && reportSize == 8 && reportCount > 0 && len(d.Collections) > 0 {
+					if c := d.Collections[len(d.Collections)-1]; c.UsagePage == 1 && c.Usage == 2 {
+						d.Extra = append(d.Extra, ButtonField{ReportID: reportID, BitOffset: bits["in"][reportID], Count: reportCount})
+					}
 				}
 				if tag == 0x8 && usagePage == 0x09 && val&1 == 0 && val&2 != 0 && reportSize == 1 && reportCount > 0 {
 					first := usageMin
@@ -224,6 +233,28 @@ func (d Descriptor) PressedButtons(r []byte) []uint8 {
 				if n := int(f.UsageMin) + i; n <= 0xff {
 					out = append(out, uint8(n))
 				}
+			}
+		}
+	}
+	return out
+}
+
+// ExtraButtons decodes the extra buttons held down in a pointer report
+// (report ID first), as their bits (1, 2, 4...).
+func (d Descriptor) ExtraButtons(r []byte) []uint8 {
+	if len(r) == 0 {
+		return nil
+	}
+	id, data := r[0], r[1:]
+	var out []uint8
+	for _, f := range d.Extra {
+		if f.ReportID != id || f.BitOffset%8 != 0 || f.BitOffset/8 >= len(data) {
+			continue
+		}
+		b := data[f.BitOffset/8]
+		for bit := uint8(1); bit != 0; bit <<= 1 {
+			if b&bit != 0 {
+				out = append(out, bit)
 			}
 		}
 	}

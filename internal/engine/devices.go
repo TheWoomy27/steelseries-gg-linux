@@ -56,8 +56,32 @@ func (l *liveDevice) decls() []*devicert.Decl {
 	return out
 }
 
-// primary is the physical device configs are written through.
+// wiredLocked is the physical device that is the product itself (a
+// wireless mouse plugged in by cable) while its dongle is connected too;
+// l.mu is held.
+func (l *liveDevice) wiredLocked() *devicert.Decl {
+	if len(l.physical) < 2 || l.cat == nil {
+		return nil
+	}
+	return l.physical[uint32(l.cat.ProductID)]
+}
+
+// awayLocked reports whether a wireless device is out of reach: its
+// dongle reports no link and it isn't plugged in by cable; l.mu is held.
+func (l *liveDevice) awayLocked() bool {
+	return l.linkKnown && !l.linkUp && l.wiredLocked() == nil
+}
+
+// primary is the physical device configs are written through: the
+// product itself when it is plugged in (the dongle of a wireless mouse
+// reports no link then), else the one that declares the most APIs.
 func (l *liveDevice) primary() *devicert.Decl {
+	l.mu.Lock()
+	w := l.wiredLocked()
+	l.mu.Unlock()
+	if w != nil {
+		return w
+	}
 	ds := l.decls()
 	if len(ds) == 0 {
 		return nil

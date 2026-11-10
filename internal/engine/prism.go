@@ -31,6 +31,12 @@ type prismState struct {
 // prismDecl is the physical interface of a device that takes PrismSync
 // frames.
 func (l *liveDevice) prismDecl() *devicert.Decl {
+	l.mu.Lock()
+	w := l.wiredLocked()
+	l.mu.Unlock()
+	if w != nil && w.SupportsPrismSync {
+		return w
+	}
 	for _, d := range l.decls() {
 		if d.SupportsPrismSync {
 			return d
@@ -105,7 +111,7 @@ func (e *Engine) PrismWrite(id int, writes []devicert.PrismWrite) error {
 	busy := e.deploying[d.ID] > 0
 	e.mu.Unlock()
 	l.mu.Lock()
-	away := l.linkKnown && !l.linkUp
+	away := l.awayLocked()
 	l.mu.Unlock()
 	if busy || away {
 		// A wireless device asleep takes frames again once it wakes.

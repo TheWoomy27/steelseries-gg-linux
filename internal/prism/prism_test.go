@@ -229,3 +229,33 @@ func TestReactiveAndIdle(t *testing.T) {
 		t.Error("should be active")
 	}
 }
+
+// Dragging a device on the canvas moves it by the drag, and the answer
+// is the device where it now is (the canvas reads its new translation).
+func TestMoveDevice(t *testing.T) {
+	fe := &fakeEngine{devs: testDevices(), frames: map[int][]devicert.PrismWrite{}}
+	mig := ""
+	if _, err := os.Stat(paths.PrismDBMig()); err == nil {
+		mig = paths.PrismDBMig()
+	}
+	s, err := New(t.TempDir()+"/prism.db", mig, fe, func(string, any) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.refreshDevices()
+	before := *s.connected()[0]
+	moved := s.moveDevice(before.ID, 30, -20)
+	if moved == nil {
+		t.Fatal("no device")
+	}
+	if dx, dy := moved.CanvasTranslationX-before.CanvasTranslationX, moved.CanvasTranslationY-before.CanvasTranslationY; dx < 29 || dx > 31 || dy < -21 || dy > -19 {
+		t.Errorf("moved by (%d, %d), want (30, -20)", dx, dy)
+	}
+	again := s.moveDevice(before.ID, 0, 0)
+	if again.CanvasTranslationX != moved.CanvasTranslationX || again.CanvasTranslationY != moved.CanvasTranslationY {
+		t.Errorf("a zero drag moved it: %d,%d -> %d,%d", moved.CanvasTranslationX, moved.CanvasTranslationY, again.CanvasTranslationX, again.CanvasTranslationY)
+	}
+	if s.moveDevice(999, 1, 1) != nil {
+		t.Error("moved a device that isn't there")
+	}
+}

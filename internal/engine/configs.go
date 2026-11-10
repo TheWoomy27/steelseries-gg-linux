@@ -336,7 +336,7 @@ func (e *Engine) deploy(l *liveDevice, settings map[string]any, force, saveToFla
 	}
 	if len(errs) > 0 {
 		l.mu.Lock()
-		away := l.linkKnown && !l.linkUp
+		away := l.awayLocked()
 		l.mu.Unlock()
 		if away {
 			// A wireless device asleep or out of range: its spec rewrites

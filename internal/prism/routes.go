@@ -2,6 +2,7 @@ package prism
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -116,14 +117,7 @@ func (s *Service) routes() {
 				s.sendPreviews(c)
 			}
 		case a == "idle" && b == "time":
-			var p struct {
-				IdleTimeMs int `json:"idleTimeMs"`
-			}
-			json.Unmarshal(body, &p)
-			if c := s.currentConfig(); c != nil {
-				c.Data.IdleTimeMs = p.IdleTimeMs
-				s.saveConfig(c)
-			}
+			s.setIdleTime(body)
 		case b == "metadata":
 			var p struct {
 				Name *string `json:"name"`
@@ -138,6 +132,14 @@ func (s *Service) routes() {
 			httpx.Error(w, 404, "unknown configs route")
 			return
 		}
+		httpx.OK(w)
+	})
+
+	// GG sets the idle time here (PUT /idle/time, outside /configs).
+	r.Handle("PUT /idle/time", func(w http.ResponseWriter, req *http.Request) {
+		body, _ := io.ReadAll(io.LimitReader(req.Body, 1<<20))
+		logBody("PUT /idle/time", body)
+		s.setIdleTime(body)
 		httpx.OK(w)
 	})
 
@@ -198,10 +200,10 @@ func (s *Service) routes() {
 				n++
 			}
 		}
-		httpx.JSON(w, map[string]int{"count": n})
+		httpx.JSON(w, n) // the counts are bare numbers
 	})
 	r.Handle("GET /devices/connected/includeDisabled/count", func(w http.ResponseWriter, req *http.Request) {
-		httpx.JSON(w, map[string]int{"count": len(s.connected())})
+		httpx.JSON(w, len(s.connected()))
 	})
 	r.Handle("GET /devices/firstTimeConnections/count", func(w http.ResponseWriter, req *http.Request) {
 		n := 0
@@ -210,7 +212,7 @@ func (s *Service) routes() {
 				n++
 			}
 		}
-		httpx.JSON(w, map[string]int{"count": n})
+		httpx.JSON(w, n)
 	})
 	r.Handle("POST /devices/firstTimeConnections/clear", func(w http.ResponseWriter, req *http.Request) {
 		s.db.Exec(`UPDATE device_cache SET first_connection = 0`)
@@ -251,18 +253,20 @@ func (s *Service) routes() {
 	r.Handle("POST /devices/move", func(w http.ResponseWriter, req *http.Request) {
 		b, _ := io.ReadAll(io.LimitReader(req.Body, 1<<20))
 		logBody("POST /devices/move", b)
+		// publicapi.MoveDevicePayload: how far the device was dragged on
+		// the canvas; the answer is the device where it now is.
 		var p struct {
-			DeviceID int `json:"deviceId"`
-			ID       int `json:"id"`
-			X        int `json:"canvasTranslationX"`
-			Y        int `json:"canvasTranslationY"`
+			ID int `json:"id"`
+			X  int `json:"canvasOffsetX"`
+			Y  int `json:"canvasOffsetY"`
 		}
 		json.Unmarshal(b, &p)
-		if p.DeviceID == 0 {
-			p.DeviceID = p.ID
+		d := s.moveDevice(p.ID, p.X, p.Y)
+		if d == nil {
+			httpx.Error(w, http.StatusInternalServerError, fmt.Sprintf("Device to move not found: %d", p.ID))
+			return
 		}
-		s.moveDevice(p.DeviceID, p.X, p.Y)
-		httpx.OK(w)
+		httpx.JSON(w, d)
 	})
 
 	r.Handle("GET /settings", func(w http.ResponseWriter, req *http.Request) {
@@ -280,7 +284,7 @@ func (s *Service) routes() {
 				out[k] = x
 			}
 		}
-		httpx.JSON(w, map[string]any{"settings": out})
+		httpx.JSON(w, out) // a flat map: GG reads its keys at the top
 	})
 	r.Handle("PUT /settings", func(w http.ResponseWriter, req *http.Request) {
 		var p struct {
@@ -325,18 +329,22 @@ func (s *Service) sendPreviews(c *configRow) {
 
 // moveDevice stores where the user dragged a device on the canvas, as a
 // plane adjustment (CanvasTranslationsToBackendAdjustmentAmount).
-func (s *Service) moveDevice(id, canvasX, canvasY int) {
+// moveDevice moves a device on the canvas by a drag of (dx, dy) canvas
+// units, and returns it where it now is.
+func (s *Service) moveDevice(id, dx, dy int) *device {
 	s.mu.Lock()
 	d := s.devices[id]
 	s.mu.Unlock()
 	if d == nil {
-		return
+		return nil
 	}
-	dx := int32(float64(canvasX-d.CanvasTranslationX) * canvasScale)
-	dy := int32(float64(canvasY-d.CanvasTranslationY) * -canvasScale)
-	x, y := d.XAdjustment+dx, d.YAdjustment+dy
+	x := d.XAdjustment + int32(float64(dx)*canvasScale)
+	y := d.YAdjustment + int32(float64(dy)*-canvasScale)
 	s.db.Exec(`INSERT OR REPLACE INTO device_coordinate_adjustments (device_id, x_adjustment, y_adjustment) VALUES (?, ?, ?)`, id, x, y)
 	s.refreshDevices()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.devices[id]
 }
 
 // presetRow is configuration_types.Preset.
@@ -370,4 +378,21 @@ func (s *Service) presets() []presetRow {
 		out = append(out, p)
 	}
 	return out
+}
+
+// setIdleTime sets how long the current configuration waits without input
+// before its idle layer shows (publicapi.SetIdleTimePayload).
+func (s *Service) setIdleTime(body []byte) {
+	var p struct {
+		IdleTimeMs int `json:"idleTimeMs"`
+	}
+	if json.Unmarshal(body, &p) != nil {
+		return
+	}
+	if c := s.currentConfig(); c != nil {
+		c.Data.IdleTimeMs = p.IdleTimeMs
+		if s.saveConfig(c) == nil {
+			s.sendPreviews(c)
+		}
+	}
 }

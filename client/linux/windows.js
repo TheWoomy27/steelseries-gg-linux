@@ -41,7 +41,15 @@ class BrowserWindow extends electron.BrowserWindow {
     super(withPatchedPreload(options));
     // The client marks its main window through the preload arguments.
     const args = options.webPreferences?.additionalArguments || [];
-    if (!args.includes('isMainWindow=true') && this.isResizable()) this.#lockUntilMapped();
+    if (!args.includes('isMainWindow=true') && this.isResizable()) {
+      this.#lockUntilMapped();
+      // GG hides a secondary window when it is closed and shows it again
+      // later; each show maps a new toplevel, which the compositor places
+      // afresh.
+      this.on('hide', () => {
+        if (!this.isDestroyed() && !this.#unlock && this.isResizable()) this.#lockUntilMapped();
+      });
+    }
   }
 
   #lockUntilMapped() {

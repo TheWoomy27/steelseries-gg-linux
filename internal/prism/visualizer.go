@@ -28,19 +28,36 @@ var avProfiles = map[string]avProfile{
 	"AUDIOVISUALIZER_COLOR_PROFILE_DARK_DEUTERANOPIA":  {{3, 188, 255}, {255, 212, 0}, {255, 0, 255}, {32, 32, 32}},
 }
 
-// profileOf reads a configuration's colour profile (Light by default).
+// avProfileIDs are the profiles by the number GG sends (0 Light, 1
+// Dark, 2 and 3 their deuteranopia versions).
+var avProfileIDs = []string{
+	"AUDIOVISUALIZER_COLOR_PROFILE_LIGHT",
+	"AUDIOVISUALIZER_COLOR_PROFILE_DARK",
+	"AUDIOVISUALIZER_COLOR_PROFILE_LIGHT_DEUTERANOPIA",
+	"AUDIOVISUALIZER_COLOR_PROFILE_DARK_DEUTERANOPIA",
+}
+
+// profileOf reads a configuration's colour profile (Light by default):
+// GG sends its number, the names are accepted too.
 func profileOf(s *Single) avProfile {
 	var d struct {
 		AudioVisualizerData *struct {
-			ColorProfileID string `json:"colorProfileId"`
+			ColorProfileID any `json:"colorProfileId"`
 		} `json:"audioVisualizerData"`
 	}
 	if json.Unmarshal(s.UniqueEffectData, &d) == nil && d.AudioVisualizerData != nil {
-		if p, ok := avProfiles[d.AudioVisualizerData.ColorProfileID]; ok {
-			return p
+		switch id := d.AudioVisualizerData.ColorProfileID.(type) {
+		case float64:
+			if i := int(id); i >= 0 && i < len(avProfileIDs) {
+				return avProfiles[avProfileIDs[i]]
+			}
+		case string:
+			if p, ok := avProfiles[id]; ok {
+				return p
+			}
 		}
 	}
-	return avProfiles["AUDIOVISUALIZER_COLOR_PROFILE_LIGHT"]
+	return avProfiles[avProfileIDs[0]]
 }
 
 // Which colour a zone shows (processing.WhichColor).

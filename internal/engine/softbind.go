@@ -296,23 +296,38 @@ func (e *Engine) rewatchSoft() {
 		for _, d := range l.decls() {
 			for _, node := range e.hid.Devices(uint16(d.ID & 0xffff)) {
 				desc := node.Desc
-				if len(desc.Keys) == 0 && len(desc.Buttons) == 0 {
+				if len(desc.Keys) == 0 && len(desc.Buttons) == 0 && len(desc.Extra) == 0 {
 					continue
 				}
-				keyIDs, buttonIDs := map[uint8]bool{}, map[uint8]bool{}
+				keyIDs, buttonIDs, extraIDs := map[uint8]bool{}, map[uint8]bool{}, map[uint8]bool{}
 				for _, f := range desc.Keys {
 					keyIDs[f.ReportID] = true
 				}
 				for _, f := range desc.Buttons {
 					buttonIDs[f.ReportID] = true
 				}
-				heldKeys, heldButtons := map[uint8]map[uint8]bool{}, map[uint8]map[uint8]bool{}
+				for _, f := range desc.Extra {
+					extraIDs[f.ReportID] = true
+				}
+				heldKeys, heldButtons, heldExtra := map[uint8]map[uint8]bool{}, map[uint8]map[uint8]bool{}, map[uint8]map[uint8]bool{}
 				binds := binds
+				name := l.cat.Name
+				logged := false
 				removers = append(removers, node.Listen(func(r []byte) {
 					if len(r) == 0 {
 						return
 					}
 					id := r[0]
+					if extraIDs[id] {
+						now := set(desc.ExtraButtons(r))
+						if len(now) > 0 && !logged {
+							// Once, to confirm where the device reports them.
+							slog.Info("extra mouse buttons in the pointer report", "device", name, "report", fmt.Sprintf("% x", r))
+							logged = true
+						}
+						edges(heldExtra[id], now, func(bit uint8, down bool) { e.extraEdge(binds, bit, down) })
+						heldExtra[id] = now
+					}
 					if keyIDs[id] {
 						now := set(desc.PressedKeys(r))
 						edges(heldKeys[id], now, func(u uint8, down bool) { e.keyEdge(binds, u, down) })
@@ -357,6 +372,17 @@ func edges(before, now map[uint8]bool, fn func(uint8, bool)) {
 func (e *Engine) keyEdge(binds []*softBinding, usage uint8, down bool) {
 	for _, b := range binds {
 		if b.spare != 0 && b.spare == usage || b.trig.Type == 2 && b.trig.Page == 1 && b.trig.HIDCode == uint16(usage) {
+			e.trigger(b, down)
+		}
+	}
+}
+
+// extraEdge runs the bindings of a mouse's extra button (trigger type
+// 13, by its bit). GG switches such a button's own output off when it is
+// bound, and the mouse reports it in its vendor byte only.
+func (e *Engine) extraEdge(binds []*softBinding, bit uint8, down bool) {
+	for _, b := range binds {
+		if b.trig.Type == 13 && b.trig.HIDCode == uint16(bit) {
 			e.trigger(b, down)
 		}
 	}
