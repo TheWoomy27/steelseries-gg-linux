@@ -169,6 +169,7 @@ func (s *Service) applyChannel(c channel) {
 			s.audio.setControls(c, append(channelParams(c, data, s.mixFactor(c, vols), s.floor.get()), mixes...))
 			if c.capture {
 				s.followNoiseFloor(data)
+				s.audio.setAEC(dataBool(data, "acousticEchoCancelingState"))
 			}
 		}
 	} else if stream {

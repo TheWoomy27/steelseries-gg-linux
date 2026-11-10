@@ -48,6 +48,9 @@ func New(token string) (*Service, error) {
 	s := &Service{srv: httpx.NewServer("sonar", token), ws: events.NewHub("sonar", ""), db: d, floor: newNoiseFloor()}
 	s.audio.onRunning = s.applyChannel
 	s.audio.onCopyRunning = s.applyMicCopy
+	s.audio.onAEC = func(available bool) {
+		s.ws.Broadcast("SONAR_EVENT_FEATURE_UPDATED", map[string]any{"id": featureAEC, "isEnabled": available, "data": nil})
+	}
 	s.floor.changed = func() { s.applyVAD(vadChatCapture) }
 	s.upgradeConfigs()
 	s.routes()
@@ -239,10 +242,14 @@ func (s *Service) routes() {
 		// BuiltInEq's data lists the devices with their own EQ that Sonar
 		// plays to (the "double EQ" warning).
 		var data any
-		if strings.EqualFold(r.PathValue("feature"), "BuiltInEq") {
+		on := false
+		switch {
+		case strings.EqualFold(r.PathValue("feature"), "BuiltInEq"):
 			data = []any{}
+		case strings.EqualFold(r.PathValue("feature"), featureAEC):
+			on = s.aecAvailable()
 		}
-		httpx.JSON(w, map[string]any{"id": r.PathValue("feature"), "isEnabled": false, "data": data})
+		httpx.JSON(w, map[string]any{"id": r.PathValue("feature"), "isEnabled": on, "data": data})
 	})
 	s.statusRoutes()
 	s.redirectionRoutes()

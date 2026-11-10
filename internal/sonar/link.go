@@ -113,7 +113,7 @@ func (a *audio) relink() {
 	for k, v := range a.targets {
 		targets[k] = v
 	}
-	stream, micSample, monitor, extra := a.stream, a.micSample, a.monitor, a.extra
+	stream, micSample, monitor, extra, aecOn := a.stream, a.micSample, a.monitor, a.extra, a.aec
 	a.mu.Unlock()
 	if running == nil {
 		return
@@ -123,6 +123,16 @@ func (a *audio) relink() {
 		slog.Warn("sonar: reading the audio graph", "err", err)
 		return
 	}
+	// Echo canceling runs while it is on and Sonar plays to speakers.
+	speakers := ""
+	if objs, err := pwDump(); err == nil {
+		speakers = aecSpeakers(targets, objs)
+	}
+	aecSrc, ok1 := nodes[aecSource]
+	aecIn, ok2 := nodes[aecCapture]
+	aecRef, ok3 := nodes[aecReference]
+	spk, ok4 := nodes[speakers]
+	aecRun := aecOn && ok1 && ok2 && ok3 && ok4 && speakers != ""
 	device := func(target string) (int, bool) {
 		id, ok := nodes[targets[target]]
 		return id, ok && targets[target] != ""
@@ -156,6 +166,9 @@ func (a *audio) relink() {
 			pairs := pairPorts(mon, portsOf(ports, dev, false))
 			if c.capture {
 				pairs = pairPorts(sourcePorts(ports, dev), own)
+				if aecRun {
+					pairs = pairPorts(portsOf(ports, aecSrc, true), own)
+				}
 			}
 			for _, p := range pairs {
 				want[p] = true
@@ -200,6 +213,18 @@ func (a *audio) relink() {
 		for _, p := range pairs {
 			want[p] = true
 		}
+	}
+	if dev, ok := device("Mic"); ok && aecRun {
+		// The microphone into the echo canceller, and the speakers'
+		// monitor as what to remove.
+		add(pairPorts(sourcePorts(ports, dev), portsOf(ports, aecIn, false)))
+		var monitors []pwPort
+		for _, p := range ports {
+			if p.node == spk && p.output && p.monitor {
+				monitors = append(monitors, p)
+			}
+		}
+		add(pairPorts(monitors, portsOf(ports, aecRef, false)))
 	}
 	mic, haveMic := nodes["sonar_mic"]
 	if dev, ok := device("Chat"); ok && monitor && haveMic {
@@ -250,8 +275,13 @@ func (a *audio) relink() {
 		copyStarted = copyOn && !a.copyOn
 		a.linked, a.active, a.extra, a.copyOn = linked, active, extra, copyOn
 	}
-	onRunning, onCopyRunning := a.onRunning, a.onCopyRunning
+	aecChanged := (a.speakers != "") != (speakers != "")
+	a.speakers = speakers
+	onRunning, onCopyRunning, onAEC := a.onRunning, a.onCopyRunning, a.onAEC
 	a.mu.Unlock()
+	if aecChanged && onAEC != nil {
+		onAEC(speakers != "")
+	}
 	for _, c := range started {
 		if onRunning != nil {
 			onRunning(c)

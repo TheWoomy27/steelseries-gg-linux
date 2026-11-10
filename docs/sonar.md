@@ -81,6 +81,7 @@ devices, as on Windows. Turning Sonar off restores the previous defaults.
 | Reverb ("Performance" to "Immersion") | convolution with a generated small-room response (0.5 s), fed from the downmix |
 | ChatMix | Game and Chat channel gains, on Sonar's curve; a headset's dial (Arctis Nova 7) sets it through Engine |
 | Per-app routing | `target.object` metadata on the app's stream, remembered by WirePlumber |
+| Acoustic echo canceling (SonarCiaran) | PipeWire's echo canceller with WebRTC, echo canceling only, in the graph all the time and linked in when on: microphone → canceller → microphone channel, with the monitor of the speakers Sonar plays to as what to remove. Offered while a channel plays to speakers (not a headset or headphones, by form factor or else name), where Windows needs Arena speakers |
 | Samples, recording | pw-play, looping; pw-record of the raw microphone, played back through the microphone channel |
 | Fallback devices | a one-second watch of PipeWire's devices; Engine's headset link for the wireless trigger |
 | Link All | copies one output channel's device and priority lists to the others; while linked the client sets all output channels at once |

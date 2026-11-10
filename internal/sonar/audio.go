@@ -341,6 +341,9 @@ context.modules = [
 `)
 	for _, c := range chs {
 		b.WriteString(c.moduleConf(stream))
+		if c.capture {
+			b.WriteString(aecConf())
+		}
 	}
 	if stream {
 		b.WriteString(micCopyConf())
@@ -466,11 +469,25 @@ type audio struct {
 	monitor   bool            // play the processed microphone on the chat device
 	extra     map[[2]int]bool // links ggd made between other nodes (see relinkExtras)
 	copyOn    bool            // the microphone copy is running
+	aec       bool            // echo canceling is on in the microphone's config
+	speakers  string          // the speakers echo canceling would cancel (aec.go)
+	onAEC     func(available bool)
 
 	// onRunning is called when a channel starts running, to reapply its
 	// settings, and onCopyRunning when the microphone copy does.
 	onRunning     func(c channel)
 	onCopyRunning func()
+}
+
+// setAEC routes the microphone through the echo canceller, or not.
+func (a *audio) setAEC(on bool) {
+	a.mu.Lock()
+	changed := a.aec != on
+	a.aec = on
+	a.mu.Unlock()
+	if changed {
+		go a.relink()
+	}
 }
 
 // setMicSample feeds a player into the microphone channel, beside the

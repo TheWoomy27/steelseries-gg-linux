@@ -106,7 +106,9 @@ In progress / not done:
   (virtual 7.1 for headphones or speakers, with reverb); see
   docs/sonar.md. The effects need DeepFilterNet's LADSPA plugin and LSP
   plugins, and spatial audio PipeWire's SOFA plugin and libmysofa's HRTF
-  set; without them they are left out. Echo canceling is not done.
+  set; without them they are left out. Echo canceling (WebRTC, through
+  PipeWire's echo canceller) is offered while Sonar plays to speakers,
+  any brand, where Windows offers it for SteelSeries Arena speakers only.
 - QuickSet (GG's game profiles) has a sidebar entry. A profile bound to a
   game is deployed while the game runs (Steam games by their app id,
   others by install folder; a running game counts as in front, since
