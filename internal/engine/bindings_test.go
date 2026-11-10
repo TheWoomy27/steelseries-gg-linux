@@ -104,3 +104,19 @@ func TestTransparentEvents(t *testing.T) {
 		t.Errorf("B held: %+v", ev)
 	}
 }
+
+// A wireless mouse connected through its dongle is known by the mouse's
+// own product id; plugging the mouse in by cable still connects it.
+func TestPhysicalConnected(t *testing.T) {
+	const dongle, mouse = 0x10381852, 0x10381854
+	e := &Engine{live: map[int]*liveDevice{237: {dbID: 237, cat: &catalogDevice{ProductID: mouse & 0xffffffff}, physical: map[uint32]*devicert.Decl{dongle: {}}}}}
+	if !e.physicalConnected(dongle) {
+		t.Error("the dongle is not connected")
+	}
+	if e.physicalConnected(mouse) {
+		t.Error("the cabled mouse counts as connected through its dongle")
+	}
+	if e.liveByProduct(mouse) == nil {
+		t.Error("the device is not found by its product")
+	}
+}

@@ -125,7 +125,7 @@ func (e *Engine) onHotplug(added, removed []hid.Info) {
 	present := e.hid.Products()
 	for pid := range present {
 		phys := uint32(hid.SteelSeriesVID)<<16 | uint32(pid)
-		if e.liveByProduct(phys) != nil {
+		if e.physicalConnected(phys) {
 			continue
 		}
 		e.connectPhysical(phys)
@@ -157,6 +157,25 @@ func (e *Engine) onHotplug(added, removed []hid.Info) {
 	if len(unplugged) > 0 {
 		e.prismDevicesChanged(unplugged)
 	}
+}
+
+// physicalConnected reports whether a physical device (one USB product)
+// is already part of a connected device. A device's catalog product can
+// be one of its physical devices that isn't connected (a wireless mouse
+// known by the mouse's own id, connected through its dongle), so only
+// the physical devices count.
+func (e *Engine) physicalConnected(phys uint32) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for _, l := range e.live {
+		l.mu.Lock()
+		_, ok := l.physical[phys]
+		l.mu.Unlock()
+		if ok {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *Engine) connectPhysical(phys uint32) {
