@@ -47,6 +47,9 @@ func TestGameSenseInfo(t *testing.T) {
 	if info.Remap[0x65] != 0xF0 {
 		t.Errorf("remap %v", info.Remap)
 	}
+	if info.ScreenSizes["one"] != [2]int{128, 40} || info.ScreenLines["one"] != 2 || info.ScreenZones["one"] != 0 {
+		t.Errorf("screen %v %v %v", info.ScreenZones, info.ScreenSizes, info.ScreenLines)
+	}
 	aerox, err := rt.Device(0x10381852)
 	if err != nil {
 		t.Fatal(err)

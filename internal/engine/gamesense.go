@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"ggl/internal/devicert"
 	"ggl/internal/gamesense"
 	"ggl/internal/httpx"
 )
@@ -295,23 +296,45 @@ func (e *Engine) GameIntegrationGames() any {
 func (e *Engine) GameIntegrationDevices() any {
 	out := []map[string]any{}
 	details := e.gameSense.state.Details()
+	// The devices GameSense lights (Prism's), and those with a screen.
+	type gsDev struct {
+		id       int
+		pid      uint32
+		typ      int
+		name, fn string
+		info     *devicert.GameSenseInfo
+	}
+	var devs []gsDev
+	seen := map[int]bool{}
 	for _, pd := range e.PrismSyncDevices() {
-		info := pd.GameSense
-		if info == nil {
-			continue
+		if pd.GameSense != nil {
+			devs = append(devs, gsDev{pd.ID, pd.ProductID, pd.Type, pd.Name, pd.FullName, pd.GameSense})
+			seen[pd.ID] = true
 		}
+	}
+	for _, od := range e.oledDevices() {
+		if !seen[od.id] {
+			if l := e.liveByID(od.id); l != nil {
+				devs = append(devs, gsDev{od.id, od.decl.ID, l.cat.Type, l.cat.Name, l.cat.FullName, e.gameSenseInfo(od.decl)})
+			}
+		}
+	}
+	for _, d := range devs {
+		info := d.info
 		var types []string
 		base, zonesCount := "", 0
+		screened := false
 		for _, t := range info.Types {
-			if t == "tactile" || strings.HasPrefix(t, "screened") {
+			if t == "tactile" {
 				continue
 			}
 			types = append(types, t)
 			if t == "rgb-per-key-zones" || t == "rgb-composite-zones" || zonedType(t) {
 				base = t
 			}
+			screened = screened || t == "screened"
 		}
-		if base == "" {
+		if base == "" && !screened {
 			continue
 		}
 		for z, codes := range info.Zones {
@@ -322,7 +345,18 @@ func (e *Engine) GameIntegrationDevices() any {
 		if base != "rgb-per-key-zones" {
 			zonesCount = len(info.Zones["all"])
 		}
-		dev := &gamesense.Device{ProductID: pd.ProductID, Types: info.Types, Zones: info.Zones}
+		dev := &gamesense.Device{ProductID: d.pid, Types: info.Types, Zones: info.Zones}
+		screenZones, screenSizes, screenLines := map[string]any{}, map[string]any{}, map[string]any{}
+		for z, n := range info.ScreenZones {
+			screenZones[z] = []int{n}
+		}
+		for z, wh := range info.ScreenSizes {
+			screenSizes[z] = []int{wh[0], wh[1]}
+			dev.ScreenW, dev.ScreenH = wh[0], wh[1]
+		}
+		for z, n := range info.ScreenLines {
+			screenLines[z] = n
+		}
 		var games []map[string]any
 		for _, gd := range details {
 			var events []map[string]any
@@ -340,14 +374,21 @@ func (e *Engine) GameIntegrationDevices() any {
 				// "handler" is what the event shows on the device: the
 				// user's handler, else the game's.
 				user := def
-				if h := ev.User[pd.ProductID]; h != nil {
+				if h := ev.User[d.pid]; h != nil {
 					user = h.Raw
+				}
+				screen := json.RawMessage("{}")
+				for _, h := range ev.Screens {
+					if h.Applies(dev) {
+						screen = h.Raw
+						break
+					}
 				}
 				events = append(events, map[string]any{"event": ev.Name, "min_value": ev.Info.Min, "max_value": ev.Info.Max,
 					"icon_id": ev.Info.IconID, "value_optional": ev.Info.ValueOptional, "zones_by_specifier": bySpecifier,
 					"illumination_handler": map[string]string{"handler": string(user), "default_handler": string(def)},
 					"vibration_handler":    map[string]string{"handler": "{}", "default_handler": "{}"},
-					"screen_handler":       map[string]string{"handler": "{}", "default_handler": "{}"}})
+					"screen_handler":       map[string]string{"handler": string(screen), "default_handler": string(screen)}})
 			}
 			name := gd.DisplayName
 			if name == "" {
@@ -359,11 +400,11 @@ func (e *Engine) GameIntegrationDevices() any {
 		if games == nil {
 			games = []map[string]any{}
 		}
-		out = append(out, map[string]any{"id": pd.ID, "main_device_product_id": pd.ProductID, "name": pd.Name, "full_name": pd.FullName,
-			"type": pd.Type, "zone_to_custom_zone_keys_lookup": info.Zones, "screen_dimensions": map[string]any{},
-			"tactile_zone_to_custom_zone_keys_lookup": map[string]any{}, "screen_zone_to_custom_zone_keys_lookup": map[string]any{},
-			"screen_zone_to_max_lines_lookup": map[string]any{}, "device_file_base_lighting_type": base,
-			"number_of_lighting_zones": zonesCount, "number_of_tactile_zones": 0, "number_of_screen_zones": 0,
+		out = append(out, map[string]any{"id": d.id, "main_device_product_id": d.pid, "name": d.name, "full_name": d.fn,
+			"type": d.typ, "zone_to_custom_zone_keys_lookup": info.Zones, "screen_dimensions": screenSizes,
+			"tactile_zone_to_custom_zone_keys_lookup": map[string]any{}, "screen_zone_to_custom_zone_keys_lookup": screenZones,
+			"screen_zone_to_max_lines_lookup": screenLines, "device_file_base_lighting_type": base,
+			"number_of_lighting_zones": zonesCount, "number_of_tactile_zones": 0, "number_of_screen_zones": len(screenZones),
 			"device_file_device_types": types, "game_event_handlers": games})
 	}
 	return out

@@ -14,6 +14,12 @@ type GameSenseInfo struct {
 	Types []string
 	Zones map[string][]int
 	Remap map[int]int
+
+	// Screens, for devices with one (the Apex OLED): each screen zone's
+	// number, size and how many lines of text it takes.
+	ScreenZones map[string]int
+	ScreenSizes map[string][2]int
+	ScreenLines map[string]int
 }
 
 // GameSense evaluates the device's (device-type) and its interface's
@@ -43,6 +49,35 @@ func (d *Decl) GameSense() (*GameSenseInfo, error) {
 			}
 		}
 		info.Zones[strings.TrimSuffix(k, ":")] = codes
+	}
+	screened := false
+	for _, t := range info.Types {
+		screened = screened || t == "screened"
+	}
+	if screened {
+		info.ScreenZones, info.ScreenSizes, info.ScreenLines = map[string]int{}, map[string][2]int{}, map[string]int{}
+		slot := func(name string) map[string]*golisp.Data {
+			v, err := d.rt.eval(golisp.Cons(golisp.Intern(name), golisp.Cons(iface, nil)), d.Env)
+			if err != nil || !golisp.FrameP(v) {
+				return nil
+			}
+			return golisp.FrameValue(v).Data
+		}
+		for k, v := range slot("screen-zones:") {
+			if golisp.IntegerP(v) {
+				info.ScreenZones[strings.TrimSuffix(k, ":")] = int(golisp.IntegerValue(v))
+			}
+		}
+		for k, v := range slot("screen-dimensions:") {
+			if wh := golisp.ToArray(v); len(wh) == 2 && golisp.IntegerP(wh[0]) && golisp.IntegerP(wh[1]) {
+				info.ScreenSizes[strings.TrimSuffix(k, ":")] = [2]int{int(golisp.IntegerValue(wh[0])), int(golisp.IntegerValue(wh[1]))}
+			}
+		}
+		for k, v := range slot("max-lines-supported-per-screen-zone:") {
+			if golisp.IntegerP(v) {
+				info.ScreenLines[strings.TrimSuffix(k, ":")] = int(golisp.IntegerValue(v))
+			}
+		}
 	}
 	maps, err := d.rt.eval(golisp.Cons(golisp.Intern("hidcode-maps:"), golisp.Cons(iface, nil)), d.Env)
 	if err == nil {

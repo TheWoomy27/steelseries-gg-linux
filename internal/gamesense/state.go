@@ -633,6 +633,7 @@ type EventDetail struct {
 	Name     string
 	Info     EventInfo
 	Handlers []*Handler          // the game's lighting handlers
+	Screens  []*ScreenHandler    // the game's screen handlers
 	User     map[uint32]*Handler // the user's, by device
 }
 
@@ -656,6 +657,9 @@ func (s *State) Details() []GameDetail {
 			ed := EventDetail{Name: n, Info: EventInfo{Min: e.min, Max: e.max, ValueOptional: e.valueOptional, IconID: e.iconID}, User: map[uint32]*Handler{}}
 			for _, b := range e.handlers {
 				ed.Handlers = append(ed.Handlers, b.h)
+			}
+			for _, b := range e.screens {
+				ed.Screens = append(ed.Screens, b.h)
 			}
 			for pid, b := range e.user {
 				ed.User[pid] = b.h

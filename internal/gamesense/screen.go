@@ -247,6 +247,9 @@ func (b *screenBinding) current(now time.Time) *screenFrame {
 	return nil
 }
 
+// Applies reports whether a screen handler shows on a device.
+func (h *ScreenHandler) Applies(d *Device) bool { return h.applies(d) }
+
 func (h *ScreenHandler) applies(d *Device) bool {
 	if d.ScreenW == 0 {
 		return false
