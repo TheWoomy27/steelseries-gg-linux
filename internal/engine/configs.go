@@ -85,11 +85,22 @@ func (e *Engine) configsForDevice(deviceID int) ([]*config, error) {
 		out = append(out, c)
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	for _, c := range out {
+		e.withBindings(c)
+	}
+	return out, nil
 }
 
 func (e *Engine) configByID(id string) (*config, error) {
-	return scanConfig(e.db.QueryRow(`SELECT `+configCols+` FROM configurations WHERE id = ?`, id))
+	c, err := scanConfig(e.db.QueryRow(`SELECT `+configCols+` FROM configurations WHERE id = ?`, id))
+	if err != nil {
+		return nil, err
+	}
+	return e.withBindings(c), nil
 }
 
 // activeConfig returns the device's current configuration, the one last

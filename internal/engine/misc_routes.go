@@ -3,6 +3,7 @@ package engine
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"sync"
 
 	"ggl/internal/httpx"
@@ -10,47 +11,62 @@ import (
 
 func (e *Engine) macroRoutes() {
 	s := e.srv
-	macros := func() []map[string]any {
-		return e.queryRows(`SELECT id, name, events, recording_options, is_new FROM macros WHERE user_id = ? AND is_deleted = 0`, e.userID)
-	}
-	s.Handle("GET /macros", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, map[string]any{"macros": macros()}) })
+	// Macros are domains.Macro: events and recording options are JSON text.
+	macroCols := `id, coalesce(name, '') AS name, coalesce(events, '[]') AS events, coalesce(recording_options, '') AS recordingOptions,
+		cloud_last_updated_at, is_deleted`
+	s.Handle("GET /macros", func(w http.ResponseWriter, r *http.Request) {
+		httpx.JSON(w, map[string]any{"macros": e.queryRows(`SELECT `+macroCols+` FROM macros WHERE user_id = ? AND is_deleted = 0`, e.userID)})
+	})
 	s.Handle("GET /macros/new", func(w http.ResponseWriter, r *http.Request) {
-		httpx.JSON(w, map[string]any{"macros": e.queryRows(`SELECT id, name FROM macros WHERE user_id = ? AND is_new = 1 AND is_deleted = 0`, e.userID)})
+		httpx.JSON(w, map[string]any{"macros": e.queryRows(`SELECT `+macroCols+` FROM macros WHERE user_id = ? AND is_new = 1 AND is_deleted = 0`, e.userID)})
 	})
 	s.Handle("POST /macros/clearNew", func(w http.ResponseWriter, r *http.Request) {
 		e.db.Exec(`UPDATE macros SET is_new = 0 WHERE user_id = ?`, e.userID)
 		httpx.OK(w)
 	})
 	s.Handle("POST /macro", func(w http.ResponseWriter, r *http.Request) {
-		var p map[string]any
+		var p macroPayload
 		httpx.Decode(r, &p)
 		id := newUUID()
-		e.db.Exec(`INSERT INTO macros (id, name, events, user_id, recording_options, is_new) VALUES (?, ?, ?, ?, ?, 1)`,
-			id, p["name"], jsonText(p["events"]), e.userID, jsonText(p["recording_options"]))
-		p["id"] = id
-		e.emit("macro_added", p)
-		httpx.JSON(w, map[string]any{"macro": p})
+		if _, err := e.db.Exec(`INSERT INTO macros (id, name, events, user_id, recording_options, is_new) VALUES (?, ?, ?, ?, ?, 1)`,
+			id, p.Name, p.events(), e.userID, p.options()); err != nil {
+			httpx.Error(w, 500, err.Error())
+			return
+		}
+		httpx.JSON(w, map[string]any{"macro_id": id})
 	})
 	s.Handle("PUT /macro/{mid}", func(w http.ResponseWriter, r *http.Request) {
-		var p map[string]any
+		var p macroPayload
 		httpx.Decode(r, &p)
-		e.db.Exec(`UPDATE macros SET name = ?, events = ?, recording_options = ? WHERE id = ?`,
-			p["name"], jsonText(p["events"]), jsonText(p["recording_options"]), r.PathValue("mid"))
-		httpx.JSON(w, map[string]any{"macro": p})
+		e.db.Exec(`UPDATE macros SET name = ?, events = ?, recording_options = ? WHERE id = ?`, p.Name, p.events(), p.options(), r.PathValue("mid"))
+		httpx.OK(w)
 	})
 	s.Handle("DELETE /macro/{mid}", func(w http.ResponseWriter, r *http.Request) {
 		e.db.Exec(`UPDATE macros SET is_deleted = 1 WHERE id = ?`, r.PathValue("mid"))
 		httpx.OK(w)
 	})
 	s.Handle("GET /macro/{mid}", func(w http.ResponseWriter, r *http.Request) {
-		rows := e.queryRows(`SELECT id, name, events, recording_options FROM macros WHERE id = ?`, r.PathValue("mid"))
+		rows := e.queryRows(`SELECT `+macroCols+` FROM macros WHERE id = ?`, r.PathValue("mid"))
 		if len(rows) == 0 {
 			httpx.Error(w, 404, "no such macro")
 			return
 		}
 		httpx.JSON(w, map[string]any{"macro": rows[0]})
 	})
-	s.Handle("POST /macro/validate", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, map[string]any{"valid": true}) })
+	s.Handle("POST /macro/validate", func(w http.ResponseWriter, r *http.Request) {
+		var p macroPayload
+		httpx.Decode(r, &p)
+		problems := []string{}
+		var taken int
+		switch {
+		case strings.TrimSpace(p.Name) == "":
+			problems = append(problems, "nameRequired")
+		case e.db.QueryRow(`SELECT count(*) FROM macros WHERE user_id = ? AND is_deleted = 0 AND name = ? AND id != ?`, e.userID, p.Name, p.ID).Scan(&taken) == nil && taken > 0:
+			problems = append(problems, "nameTaken")
+		}
+		httpx.JSON(w, map[string]any{"macroValidation": map[string]any{"nameValidations": problems}})
+	})
+	e.macroConfigRoutes()
 
 	s.Handle("GET /sseCommands", func(w http.ResponseWriter, r *http.Request) {
 		httpx.JSON(w, map[string]any{"sseCommands": e.queryRows(`SELECT id, command_type, display_name, path, image_path, params FROM sse_commands WHERE user_id = ?`, e.userID)})
@@ -261,4 +277,22 @@ func (e *Engine) gameSenseRoutes() {
 		path := p
 		g.Handle("POST "+path, func(w http.ResponseWriter, r *http.Request) { gs.handle(w, r, path) })
 	}
+}
+
+// macroPayload is a macro as GG's macro editor sends it.
+type macroPayload struct {
+	ID                  string `json:"id"`
+	Name                string `json:"name"`
+	Events              any    `json:"events"`
+	RecordingOptions    any    `json:"recordingOptions"`
+	RecordingOptionsOld any    `json:"recording_options"`
+}
+
+func (p *macroPayload) events() string { return orEmpty(jsonText(p.Events), "[]") }
+
+func (p *macroPayload) options() string {
+	if o := jsonText(p.RecordingOptions); o != "" {
+		return o
+	}
+	return jsonText(p.RecordingOptionsOld)
 }

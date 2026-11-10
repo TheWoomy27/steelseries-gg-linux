@@ -28,6 +28,8 @@ type configPayload struct {
 	DeviceID           int    `json:"device_id"`
 	Active             any    `json:"active"`
 	ExtraProperties    any    `json:"extra_properties"`
+	// Bindings are the configuration's bindings (absent: unchanged).
+	Bindings json.RawMessage `json:"bindings"`
 }
 
 func jsonText(v any) string {
@@ -174,6 +176,8 @@ func (e *Engine) routes() {
 		if cat, err := e.catalogByID(c.DeviceID); err == nil {
 			c.Settings = cat.Settings
 			e.saveConfig(c)
+			e.db.Exec(`DELETE FROM bindings WHERE config_id = ?`, c.ID)
+			e.withBindings(c)
 		}
 		httpx.JSON(w, map[string]any{"configuration": c})
 	})
@@ -449,6 +453,12 @@ func (e *Engine) handleCreateConfig(w http.ResponseWriter, r *http.Request, depl
 		httpx.Error(w, 500, err.Error())
 		return
 	}
+	if len(p.Bindings) > 0 && string(p.Bindings) != "null" {
+		if err := e.setBindings(c.ID, p.Bindings); err != nil {
+			slog.Warn("configuration bindings", "config", c.Name, "err", err)
+		}
+		e.withBindings(c)
+	}
 	if deploy {
 		e.deployConfig(c, false)
 		e.configSelected(c)
@@ -483,6 +493,12 @@ func (e *Engine) handleSaveConfig(w http.ResponseWriter, r *http.Request, deploy
 	if err := e.saveConfig(c); err != nil {
 		httpx.Error(w, 500, err.Error())
 		return
+	}
+	if len(p.Bindings) > 0 && string(p.Bindings) != "null" {
+		if err := e.setBindings(c.ID, p.Bindings); err != nil {
+			slog.Warn("configuration bindings", "config", c.Name, "err", err)
+		}
+		e.withBindings(c)
 	}
 	if deploy {
 		if err := e.deployConfig(c, false); err != nil {

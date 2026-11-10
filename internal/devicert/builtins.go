@@ -735,10 +735,10 @@ func registerMiscBuiltins() {
 		return nil, nil
 	})
 	// (convert-onboard-macro-bindings pid config mappings triggers size fn)
-	// gives (mappings macro-data): Engine points the keys bound to macros at
-	// onboard macro function fn and packs those macros into size bytes.
-	// gg-linux has no macro bindings yet, so every key keeps its mapping and
-	// the macro area stays empty (zeros, like the unused part of Engine's).
+	// gives (mappings macro-data): the keys bound to macros in the
+	// configuration (config, or the device's current one when "") point at
+	// onboard macro function fn, and those macros are packed into size
+	// bytes (see macros.go). The configuration "NONE" has no macros.
 	pf("convert-onboard-macro-bindings", "6", func(a []*golisp.Data, _ *golisp.SymbolTableFrame) (*golisp.Data, error) {
 		mappings, triggers := a[2], a[3]
 		if !golisp.ListP(mappings) || !golisp.ListP(triggers) {
@@ -747,10 +747,42 @@ func registerMiscBuiltins() {
 		if golisp.Length(mappings) != golisp.Length(triggers) {
 			return nil, fmt.Errorf("convert-onboard-macro-bindings: %d mappings for %d triggers", golisp.Length(mappings), golisp.Length(triggers))
 		}
-		if !golisp.NumberP(a[4]) || golisp.IntegerValue(a[4]) < 0 {
-			return nil, fmt.Errorf("convert-onboard-macro-bindings expects a macro data size, got %s", golisp.String(a[4]))
+		if !golisp.IntegerP(a[4]) || golisp.IntegerValue(a[4]) < 0 || !golisp.IntegerP(a[5]) {
+			return nil, fmt.Errorf("convert-onboard-macro-bindings expects a macro data size and function, got %s %s", golisp.String(a[4]), golisp.String(a[5]))
 		}
-		return golisp.InternalMakeList(mappings, bytesObj(make([]byte, golisp.IntegerValue(a[4])))), nil
+		size, fn := int(golisp.IntegerValue(a[4])), uint8(golisp.IntegerValue(a[5]))
+		config := ""
+		if golisp.StringP(a[1]) {
+			config = golisp.StringValue(a[1])
+		}
+		var bindings []MacroBinding
+		if src, ok := instance.hooks.(MacroSource); ok && golisp.IntegerP(a[0]) && config != "NONE" {
+			bindings = src.MacroBindings(uint32(golisp.IntegerValue(a[0])), config)
+		}
+		if len(bindings) == 0 {
+			return golisp.InternalMakeList(mappings, bytesObj(make([]byte, size))), nil
+		}
+		maps, err := keyMappings(mappings)
+		if err != nil {
+			return nil, fmt.Errorf("convert-onboard-macro-bindings: %w", err)
+		}
+		trigs, err := bindingTriggers(triggers)
+		if err != nil {
+			return nil, fmt.Errorf("convert-onboard-macro-bindings: %w", err)
+		}
+		out, data, skipped := ConvertOnboardMacros(maps, trigs, bindings, size, fn)
+		for _, e := range skipped {
+			slog.Warn("onboard macro left out", "err", e)
+		}
+		list := make([]*golisp.Data, len(out))
+		for i, m := range out {
+			list[i] = toLisp(map[string]any{
+				"hid_code":  int64(m.HIDCode),
+				"function":  int64(m.Function),
+				"key_codes": []any{int64(m.KeyCodes[0]), int64(m.KeyCodes[1]), int64(m.KeyCodes[2]), int64(m.KeyCodes[3])},
+			})
+		}
+		return golisp.InternalMakeList(golisp.ArrayToList(list), bytesObj(data)), nil
 	})
 	pf("if-deploying", "1", func(a []*golisp.Data, _ *golisp.SymbolTableFrame) (*golisp.Data, error) {
 		return lispBool(golisp.IntegerP(a[0]) && instance.hooks.Deploying(uint32(golisp.IntegerValue(a[0])))), nil

@@ -13,6 +13,7 @@ import (
 	"ggl/internal/engine"
 	"ggl/internal/events"
 	"ggl/internal/httpx"
+	"ggl/internal/inputrec"
 	"ggl/internal/paths"
 	"ggl/internal/store"
 )
@@ -36,6 +37,7 @@ type Core struct {
 	gameWatchers []gameWatcher
 	playing      string
 	shortcuts    shortcutStore
+	recorder     inputrec.Recorder
 }
 
 // OnSubAppToggle registers the in-process service behind a sub-app so it
@@ -100,6 +102,7 @@ func (c *Core) Run(ctx context.Context) {
 	c.eng.OnConfigSelected(c.selectedOutsideQuickset)
 	go c.watchGames(ctx)
 	<-ctx.Done()
+	c.recorder.Stop()
 }
 
 func (c *Core) routes() {
@@ -122,6 +125,7 @@ func (c *Core) routes() {
 	c.gameRoutes()
 	c.ggezRoutes()
 	c.taskbarRoutes()
+	c.recordingRoutes()
 	c.miscRoutes()
 }
 

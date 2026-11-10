@@ -78,8 +78,17 @@ In progress / not done:
   re-applied on connect; settings a wireless mouse misses while asleep
   are written when it wakes. gg-linux does not write to a device until
   you change a setting in GG.
-  Onboard macros are not converted yet: keys keep their mappings and the
-  macro area is written empty.
+- Key bindings: a configuration keeps its keys bound to macros, OS
+  shortcuts (copy, paste...) and other keys. Devices with onboard macro
+  memory (the Apex 7, Apex Pro and Apex 9 keyboards, the Prime mice) play
+  them themselves: they are written with the key mappings, in the format
+  Windows GG uses. Devices without onboard macros would need ggd to play their
+  macros, and bindings to Engine commands (launching an app, switching
+  configurations) need ggd to run them; both are kept but not run yet.
+- Macro recording: GG's macro editor, its Quick Record fields and its
+  shortcut settings record from every keyboard and mouse through
+  /dev/input, so your user has to be in the `input` group. ggd only reads
+  while GG records, and never grabs the devices.
 - Sonar: setup, mixer and settings pages, and classic mode audio on
   PipeWire (channels, EQ, volumes, ChatMix, device routing, default
   devices), per-app routing, samples, fallback devices, the Arctis Nova
@@ -130,8 +139,7 @@ In progress / not done:
   lighting dims or goes off while the monitors sleep, as each
   configuration's "When Monitor Sleeps" says. Not done yet: Audio
   visualizer, Reflect (screen colours) and image sync.
-- Macro recording, GameSense lighting effects and keyboard binding
-  conversion are not implemented.
+- GameSense lighting effects are not implemented.
 - A device whose battery runs low (5%, as its spec says) gets a desktop
   notification where Windows GG shows an overlay, following GG's overlay,
   notification and low battery sound switches.
