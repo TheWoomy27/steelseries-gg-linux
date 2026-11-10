@@ -84,7 +84,8 @@ In progress / not done:
   them themselves: they are written with the key mappings, in the format
   Windows GG uses. ggd runs the rest: macros on devices without macro
   memory (most mice), launching an application (the picker offers the
-  desktop's applications, .desktop files and AppImages), switching
+  desktop's applications, .desktop files, AppImages and shell scripts),
+  switching
   configurations, text macros (pasted from the clipboard with
   wl-copy, as Windows GG pastes them), GameSense game events and
   switching Engine apps (PrismSync, ImageSync and GameSense games) on,
@@ -135,9 +136,10 @@ In progress / not done:
   while capture is on, except keys your configuration already uses; on
   other desktops, bind a key to `ggctl moments clip`. Sharing to
   YouTube (Windows GG uploads through SteelSeries' cloud) exports the
-  edited clip into the Shared Clips folder, puts the file on the
-  clipboard and opens YouTube's upload page, to paste or drag it in; the
-  other services open their site to drag the clip onto, as on Windows.
+  edited clip into the Shared Clips folder, shows it in the file manager
+  with its path on the clipboard, and opens YouTube's upload page, to drag
+  it in or pick it with the page's file dialog (Ctrl+L, Ctrl+V); the
+  other services encode the clip to drag onto their site, as on Windows.
   Toggling the microphone restarts the recording, which empties the
   buffer.
 - Prism (PrismSync V2, the Engine page's Prism tab): configurations,

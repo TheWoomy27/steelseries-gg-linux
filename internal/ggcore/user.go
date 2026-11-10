@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os/user"
+	"strings"
 	"time"
 
 	"ggl/internal/httpx"
@@ -133,7 +134,7 @@ func (c *Core) userRoutes() {
 		for _, a := range [][2]string{{"youtube", "YouTube"}, {"discord", "Discord"}, {"reddit", "Reddit"}, {"tiktok", "TikTok"}, {"twitter", "Twitter"}, {"facebook", "Facebook"}} {
 			acc := account{Key: a[0], DisplayName: a[1], AuthenticationRequired: true}
 			if a[0] == "youtube" {
-				acc = account{Key: a[0], DisplayName: a[1], AuthenticationAvailable: true, Authenticated: true, AuthenticatedName: "your browser"}
+				acc = account{Key: a[0], DisplayName: a[1], AuthenticationAvailable: true, Authenticated: true, AuthenticatedName: localName()}
 			}
 			out = append(out, acc)
 		}
@@ -145,4 +146,16 @@ func (c *Core) userRoutes() {
 	s.Handle("GET /user/avatars", func(w http.ResponseWriter, r *http.Request) {
 		httpx.JSON(w, map[string]any{"avatars": []any{}})
 	})
+}
+
+// localName is the desktop user's name, which Moments shows for YouTube
+// ("Upload as ...").
+func localName() string {
+	if u, err := user.Current(); err == nil {
+		if name := strings.TrimSpace(strings.Split(u.Name, ",")[0]); name != "" {
+			return name
+		}
+		return u.Username
+	}
+	return "you"
 }

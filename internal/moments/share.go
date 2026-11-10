@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"ggl/internal/notify"
+
+	"github.com/godbus/dbus/v5"
 )
 
 // uploadPages are where each service takes a video in the browser.
@@ -28,18 +30,30 @@ var uploadPages = map[string]string{
 
 var serviceNames = map[string]string{"youtube": "YouTube", "tiktok": "TikTok", "reddit": "Reddit", "twitter": "X", "facebook": "Facebook", "discord": "Discord"}
 
-// Hand-off steps, replaceable in tests.
+// Hand-off steps, replaceable in tests. Browsers' upload pages take a
+// video dragged in or picked with their file dialog, not pasted, so the
+// clip is shown selected in the file manager, and its path goes on the
+// clipboard for the dialog's location field (Ctrl+L, Ctrl+V).
 var (
 	clipFile = func(path string) error {
-		u := (&url.URL{Scheme: "file", Path: path}).String()
 		var cmd *exec.Cmd
 		if os.Getenv("WAYLAND_DISPLAY") != "" {
-			cmd = exec.Command("wl-copy", "--type", "text/uri-list", "--", u+"\r\n")
+			cmd = exec.Command("wl-copy", "--", path)
 		} else {
-			cmd = exec.Command("xclip", "-selection", "clipboard", "-t", "text/uri-list")
-			cmd.Stdin = strings.NewReader(u + "\r\n")
+			cmd = exec.Command("xclip", "-selection", "clipboard")
+			cmd.Stdin = strings.NewReader(path)
 		}
 		return cmd.Run()
+	}
+	showFile = func(path string) error {
+		conn, err := dbus.ConnectSessionBus()
+		if err != nil {
+			return err
+		}
+		defer conn.Close()
+		u := (&url.URL{Scheme: "file", Path: path}).String()
+		return conn.Object("org.freedesktop.FileManager1", "/org/freedesktop/FileManager1").
+			Call("org.freedesktop.FileManager1.ShowItems", 0, []string{u}, "").Err
 	}
 	openURL  = func(u string) error { return exec.Command("xdg-open", u).Start() }
 	tellUser = func(summary, body string) { notify.Send("moments-share", summary, body, "") }
@@ -107,12 +121,15 @@ func (s *Service) upload(ctx context.Context, clipID, service, title string, tex
 	if err := clipFile(path); err != nil {
 		slog.Warn("moments share: clipboard", "err", err)
 	}
+	if err := showFile(path); err != nil {
+		slog.Warn("moments share: file manager", "err", err)
+	}
 	if page := uploadPages[service]; page != "" {
 		if err := openURL(page); err != nil {
 			slog.Warn("moments share: browser", "err", err)
 		}
 	}
-	tellUser("Clip ready for "+display, fmt.Sprintf("%s is on the clipboard: paste or drag it into %s.", filepath.Base(path), display))
+	tellUser("Clip ready for "+display, fmt.Sprintf("Drag %s from the folder into %s, or pick it with its file dialog: the path is on the clipboard (Ctrl+L, Ctrl+V).", filepath.Base(path), display))
 	slog.Info("moments share: clip handed over", "clip", clipID, "service", service, "file", path)
 
 	if c, err = s.lib.clip(clipID); err == nil {

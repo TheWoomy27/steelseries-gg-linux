@@ -262,7 +262,9 @@ func (s *Service) routes() {
 			fail(w, err)
 			return
 		}
-		c.Path = out
+		// The share dialogs (Discord...) offer the exported file to drag
+		// from trimmed_clip_path.
+		c.Path, c.TrimmedClipPath = out, out
 		httpx.JSON(w, map[string]any{"clip": c})
 	})
 	sv.Handle("POST /moments/clips/screenshot", func(w http.ResponseWriter, r *http.Request) {

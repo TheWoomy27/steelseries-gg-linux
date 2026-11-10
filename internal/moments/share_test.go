@@ -10,8 +10,8 @@ import (
 )
 
 // TestUploadHandsOver exports a clip for YouTube into the shared clips
-// folder, puts it on the clipboard, opens the upload page and marks the
-// clip shared.
+// folder, shows it in the file manager with its path on the clipboard,
+// opens the upload page and marks the clip shared.
 func TestUploadHandsOver(t *testing.T) {
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
 		t.Skip("needs ffmpeg")
@@ -35,8 +35,9 @@ func TestUploadHandsOver(t *testing.T) {
 		t.Fatalf("clips: %+v", clips)
 	}
 
-	var clipped, opened, told string
+	var clipped, shown, opened, told string
 	clipFile = func(p string) error { clipped = p; return nil }
+	showFile = func(p string) error { shown = p; return nil }
 	openURL = func(u string) error { opened = u; return nil }
 	tellUser = func(summary, body string) { told = summary + ": " + body }
 	url, err := s.upload(context.Background(), clips[0].ID, "youtube", "Big jump", nil)
@@ -44,8 +45,8 @@ func TestUploadHandsOver(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := filepath.Join(capture, "Shared Clips", "Big jump.mp4")
-	if clipped != want || url != "file://"+strings.ReplaceAll(want, " ", "%20") {
-		t.Errorf("clipboard %q, url %q, want %q", clipped, url, want)
+	if clipped != want || shown != want || url != "file://"+strings.ReplaceAll(want, " ", "%20") {
+		t.Errorf("clipboard %q, shown %q, url %q, want %q", clipped, shown, url, want)
 	}
 	if info, err := probe(context.Background(), want); err != nil || info.Duration < 1.5 {
 		t.Errorf("exported file: %+v %v", info, err)

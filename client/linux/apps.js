@@ -2,11 +2,12 @@
 
 // "Launch Application" bindings on Linux. GG's application picker (the
 // device window's key bindings) offers .exe and .bin files from Program
-// Files, and drops a pick with any other extension. On Linux it offers
-// the desktop's applications (.desktop files) and AppImages; a pick the
-// page would drop is handed to it as a small launcher script without an
-// extension (in <data>/launchers, named after the application), which ggd
-// runs when the key is pressed.
+// Files, and drops a pick unless the text after the last "." anywhere in
+// its path is one of those extensions (or .bat, .cmd). On Linux it offers
+// the desktop's applications (.desktop files), AppImages and shell
+// scripts, and hands each to the page as a small launcher script named
+// "<application>.bin" (in <data>/launchers), which ggd runs when the key
+// is pressed. GG shows the name without the extension.
 
 const fs = require('fs');
 const path = require('path');
@@ -14,7 +15,7 @@ const { dialog, BrowserWindow } = require('electron');
 const env = require('./env');
 
 const CHANNEL = 'DIALOG:SHOW_OPEN_DIALOG';
-const ACCEPTED = new Set(['', '.exe', '.bin']);
+const ACCEPTED = new Set(['.exe', '.bin', '.bat', '.cmd']);
 
 // isAppPicker reports whether a dialog is GG's application picker in a
 // device window (the QuickSet and Moments game pickers stay as they are).
@@ -39,27 +40,32 @@ function desktopName(file) {
 
 const quote = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
 
-// launcherFor turns a pick the page would drop into a launcher script.
+// launcherFor turns a pick into something the page keeps: the file
+// itself when it ends in an extension GG accepts, else a launcher script.
 function launcherFor(file) {
   const ext = path.extname(file);
   if (ACCEPTED.has(ext.toLowerCase())) return file;
   let name = ext === '.desktop' ? desktopName(file) : '';
   if (!name) name = path.basename(file, ext);
   name = name.replace(/[^A-Za-z0-9 _+-]/g, '').trim() || 'Application';
+  let executable = false;
+  try {
+    fs.accessSync(file, fs.constants.X_OK);
+    executable = true;
+  } catch {}
+  const dir = quote(path.dirname(file));
   let cmd;
   if (ext === '.desktop') {
     cmd = `exec gio launch ${quote(file)}`;
+  } else if (executable) {
+    cmd = `cd ${dir} && exec ${quote(file)}`;
+  } else if (ext === '.sh') {
+    cmd = `cd ${dir} && exec sh ${quote(file)}`;
   } else {
-    let executable = false;
-    try {
-      fs.accessSync(file, fs.constants.X_OK);
-      executable = true;
-    } catch {}
-    cmd = executable ? `cd ${quote(path.dirname(file))} && exec ${quote(file)}` : `exec xdg-open ${quote(file)}`;
+    cmd = `exec xdg-open ${quote(file)}`;
   }
-  const dir = path.join(env.dataDir, 'launchers');
-  fs.mkdirSync(dir, { recursive: true });
-  const out = path.join(dir, name);
+  const out = path.join(env.dataDir, 'launchers', `${name}.bin`);
+  fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, `#!/bin/sh\n# Launches ${file} for a SteelSeries GG binding.\n${cmd}\n`, { mode: 0o755 });
   fs.chmodSync(out, 0o755);
   return out;
@@ -73,7 +79,7 @@ function install(ipc) {
         ...opts,
         defaultPath: fs.existsSync('/usr/share/applications') ? '/usr/share/applications' : undefined,
         filters: [
-          { name: 'Applications', extensions: ['desktop', 'AppImage', 'appimage'] },
+          { name: 'Applications', extensions: ['desktop', 'AppImage', 'appimage', 'sh'] },
           { name: 'All Files', extensions: ['*'] },
         ],
       };
