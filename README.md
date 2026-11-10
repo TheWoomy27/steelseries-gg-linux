@@ -20,7 +20,32 @@ provide, and recovers the device-spec key from your copy of
 
 ## Setup
 
-Needs Go, 7z and electron37 or newer.
+    ./setup.sh
+
+`setup.sh` does the whole install for your user. It:
+
+1. Checks what gg-linux needs and, on Arch-based systems, offers to install
+   what is missing with pacman.
+2. Downloads SteelSeries GG's Windows installer from
+   <https://steelseries.com/gg/downloads/gg/latest/windows> into
+   `~/.cache/gg-linux` (about 430 MB). `--installer PATH` uses one you
+   already have instead.
+3. Builds gg-linux, imports the installer and runs `packaging/install.sh`.
+4. Offers to install the udev rule for device access (sudo), then enables
+   and starts ggd.
+
+Run it again to update: it fetches a newer GG when there is one, and
+imports only when the installer changed. `--yes` answers its questions,
+and `--no-udev` / `--no-service` skip the last steps.
+
+Needed: Go, gcc and readline headers (for golisp), 7z, curl, and Electron
+37 or newer (`GG_LINUX_ELECTRON` picks one that is not on your PATH).
+Recommended: PipeWire with WirePlumber and `pactl` (Sonar, Prism audio
+effects, Moments audio), ffmpeg and gpu-screen-recorder (Moments),
+wl-clipboard (text macros, clip sharing), xdg-utils, and wayland headers
+(dragging clips out of GG on Wayland).
+
+To do the same by hand:
 
     go build -o bin/ ./cmd/...
     bin/gg-setup SteelSeriesGG<version>Setup.exe      # import into ~/.local/share/steelseries-gg
@@ -140,6 +165,10 @@ In progress / not done:
   with its path on the clipboard, and opens YouTube's upload page, to drag
   it in or pick it with the page's file dialog (Ctrl+L, Ctrl+V); the
   other services encode the clip to drag onto their site, as on Windows.
+  On Wayland, Electron offers dragged files but cannot hand them over
+  (Chromium sends nothing for `text/uri-list`), so the launcher preloads
+  a small library, `packaging/dragfix.c`, that answers for it; `install.sh`
+  builds it when gcc and the wayland headers are there.
   Toggling the microphone restarts the recording, which empties the
   buffer.
 - Prism (PrismSync V2, the Engine page's Prism tab): configurations,

@@ -45,6 +45,8 @@ else
     echo "No imported installer in $data yet: run gg-setup, then this script again." >&2
 fi
 
+# setup.sh does the rest itself.
+[ -n "${GG_LINUX_SETUP:-}" ] && exit 0
 if [ ! -f /etc/udev/rules.d/70-steelseries-gg.rules ]; then
     echo "For device access, as root:" >&2
     echo "  cp $repo/packaging/70-steelseries-gg.rules /etc/udev/rules.d/ && udevadm control --reload && udevadm trigger" >&2
