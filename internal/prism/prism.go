@@ -50,6 +50,8 @@ type Service struct {
 	watching  bool
 	lastInput time.Time
 	reactions []reaction
+
+	audio audioCapture // for the Audio Visualizer
 }
 
 func New(dbPath, migrations string, eng Engine, emit func(string, any)) (*Service, error) {

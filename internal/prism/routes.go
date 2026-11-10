@@ -301,7 +301,8 @@ func (s *Service) routes() {
 	})
 	r.Handle("POST /loadouts/presets/{id}/create", func(w http.ResponseWriter, req *http.Request) { httpx.JSON(w, map[string]any{"configId": ""}) })
 	r.Handle("PUT /loadouts/presets/{id}/createAndDeploy", func(w http.ResponseWriter, req *http.Request) { httpx.OK(w) })
-	r.Handle("GET /multimediaDevices", func(w http.ResponseWriter, req *http.Request) { httpx.JSON(w, []any{}) })
+	// The outputs the Audio Visualizer can listen to.
+	r.Handle("GET /multimediaDevices", func(w http.ResponseWriter, req *http.Request) { httpx.JSON(w, outputs()) })
 }
 
 // notify tells the client about a change, on Prism's socket and GG's.

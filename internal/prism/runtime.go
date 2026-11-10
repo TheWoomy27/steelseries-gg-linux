@@ -84,13 +84,18 @@ func (s *Service) reconcile() {
 
 // renderZones renders the base layer of a configuration at time t for
 // the devices given.
+// (Audio Visualizer zones show made-up sound, as in GG's previews.)
 func renderZones(c *ConfigData, devs []*device, t int64) map[string]Color {
-	return renderZonesAsleep(c, devs, t, false)
+	var av *avFrame
+	if usesVisualizer(&c.Base) {
+		av = previewFrame(gridWidths(devs), t)
+	}
+	return renderZonesAsleep(c, devs, t, false, av)
 }
 
 // renderZonesAsleep renders, dimmed as each configuration says when the
-// monitors are asleep.
-func renderZonesAsleep(c *ConfigData, devs []*device, t int64, asleep bool) map[string]Color {
+// monitors are asleep; Audio Visualizer zones show av.
+func renderZonesAsleep(c *ConfigData, devs []*device, t int64, asleep bool, av *avFrame) map[string]Color {
 	out := make(map[string]Color, 128)
 	ready := map[*Single]*compiled{}
 	for _, d := range devs {
@@ -102,7 +107,15 @@ func renderZonesAsleep(c *ConfigData, devs []*device, t int64, asleep bool) map[
 				r = compile(cfg, waveOrigin(cfg, c, devs))
 				ready[cfg] = r
 			}
-			col := r.color(z.pos(), t)
+			var col Color
+			if cfg.UniqueEffectType == effectAudioVisualizer {
+				if av == nil {
+					av = &avFrame{}
+				}
+				col = avColor(av, z, profileOf(cfg))
+			} else {
+				col = r.color(z.pos(), t)
+			}
 			if asleep && r.dim > 0 {
 				col = scale(col, 255-r.dim)
 			}
@@ -156,6 +169,7 @@ func (s *Service) renderLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			s.audio.need(false, "")
 			s.releaseAll()
 			return
 		case <-tick.C:
@@ -195,12 +209,21 @@ func (s *Service) renderLoop(ctx context.Context) {
 		}
 		if cur == nil || len(active) == 0 {
 			s.watchInput(false)
+			s.audio.need(false, "")
 			continue
 		}
 		s.watchInput(usesInput(&cur.Data))
 		layer := ConfigData{Base: *s.layerFor(&cur.Data, lastInput)}
 		asleep := usesDimming(&layer.Base) && monitorsAsleep()
-		colors := renderZonesAsleep(&layer, active, time.Since(started).Milliseconds(), asleep)
+		var av *avFrame
+		if usesVisualizer(&layer.Base) {
+			scalar, output := s.visualizerSettings()
+			s.audio.need(true, output)
+			av = s.audio.frame(gridWidths(active), scalar)
+		} else {
+			s.audio.need(false, "")
+		}
+		colors := renderZonesAsleep(&layer, active, time.Since(started).Milliseconds(), asleep, av)
 		s.react(colors, active)
 		for _, d := range active {
 			w := writers[d.ID]
@@ -374,6 +397,9 @@ func (s *Service) preview(c *configRow, mode string, devs []*device) preview {
 
 // animated reports whether a layer has a moving graphic.
 func animated(g *Group) bool {
+	if usesVisualizer(g) {
+		return true
+	}
 	moving := func(s *Single) bool {
 		gr := s.graphic(s.Foundation.GraphicID)
 		return gr != nil && (gr.HasForeground && gr.Foreground.Duration > 0 && len(gr.Foreground.Gradient.Colors) > 1 || gr.HasAperture)

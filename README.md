@@ -144,8 +144,12 @@ In progress / not done:
   themselves; ggd reads their key reports only while the configuration
   uses one of those layers, and only to light the keys. On Hyprland the
   lighting dims or goes off while the monitors sleep, as each
-  configuration's "When Monitor Sleeps" says. Not done yet: Audio
-  visualizer, Reflect (screen colours) and image sync.
+  configuration's "When Monitor Sleeps" says. The Audio Visualizer
+  listens to the default output (or the one picked in its audio source
+  menu) through PipeWire while a configuration uses it, and lights the
+  keyboard's columns as frequency bands with Prism's colour profiles and
+  amplitude settings; GG's previews of it show made-up sound. Not done
+  yet: Reflect (screen colours) and image sync.
 - GameSense lighting effects are not implemented.
 - A device whose battery runs low (5%, as its spec says) gets a desktop
   notification where Windows GG shows an overlay, following GG's overlay,
