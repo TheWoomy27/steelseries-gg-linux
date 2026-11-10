@@ -168,9 +168,25 @@ func (e *Engine) setImageSync(on bool) {
 func (e *Engine) appRoutes() {
 	s := e.srv
 	e.imageSync = &imageSync{e: e}
+	// GG's PrismSync tile (and the old PrismSync settings it opens) reads
+	// getPrismSyncInfo. Only "enabled" means anything on Linux: Prism's
+	// own pages hold its lighting.
 	s.Handle("GET /prismSync", func(w http.ResponseWriter, r *http.Request) {
 		on := e.PrismLightingEnabled()
-		httpx.JSON(w, map[string]any{"prismSync": map[string]any{"enabled": on}, "enabled": on})
+		effect := func() map[string]any {
+			return map[string]any{"sections": []any{map[string]any{"red": 255, "green": 102, "blue": 0, "length": 255, "randomized": 0}}}
+		}
+		httpx.JSON(w, map[string]any{"enabled": on, "getPrismSyncInfo": map[string]any{
+			"enabled":       on,
+			"inactive_mode": map[string]any{"enabled": false},
+			"left_handed":   false,
+			"device_types": map[string]bool{"keyboard": true, "mouse": true, "headset": true, "mousepad": true,
+				"motherboard": true, "monitor": true, "speakers": true, "other_rgb": true},
+			"trigger_modes":    map[string]bool{"keyboard_input": true, "mouse_input": true},
+			"base_effect":      effect(),
+			"triggered_effect": effect(),
+			"idle_info":        map[string]any{"idle_time": 0, "effect": effect()},
+		}})
 	})
 	s.Handle("POST /prismSync/enable", func(w http.ResponseWriter, r *http.Request) { e.setPrismLighting(true); httpx.OK(w) })
 	s.Handle("POST /prismSync/disable", func(w http.ResponseWriter, r *http.Request) { e.setPrismLighting(false); httpx.OK(w) })

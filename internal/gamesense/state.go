@@ -19,6 +19,9 @@ type Device struct {
 	Types     []string
 	Zones     map[string][]int
 	Grid      []int
+
+	// A screen's size (0 without one).
+	ScreenW, ScreenH int
 }
 
 func (d *Device) has(t string) bool {
@@ -103,6 +106,7 @@ type game struct {
 	events                       map[string]*event
 	active                       bool
 	last                         time.Time
+	priority                     int
 }
 
 type event struct {
@@ -111,6 +115,7 @@ type event struct {
 	iconID        int
 	handlers      []*binding
 	user          map[uint32]*binding // the user's handler for a device, in place of the game's
+	screens       []*screenBinding
 }
 
 // binding is a handler and the last value it showed.
@@ -186,13 +191,15 @@ func (s *State) Bind(gameName, eventName string, info EventInfo, handlers []json
 	defer s.mu.Unlock()
 	e := s.game(gameName).event(eventName)
 	e.min, e.max, e.valueOptional, e.iconID = info.Min, info.Max, info.ValueOptional, info.IconID
-	e.handlers = nil
+	e.handlers, e.screens = nil, nil
 	for _, raw := range handlers {
 		if h, ok := ParseHandler(raw); ok {
 			e.handlers = append(e.handlers, &binding{h: h})
+		} else if sh, ok := parseScreenHandler(raw); ok {
+			e.screens = append(e.screens, &screenBinding{h: sh})
 		}
 	}
-	return len(e.handlers)
+	return len(e.handlers) + len(e.screens)
 }
 
 // RemoveEvent is remove_game_event.
@@ -243,6 +250,9 @@ func (g *game) deactivate() {
 	g.active = false
 	for _, e := range g.events {
 		for _, b := range e.all() {
+			b.set, b.frame = false, nil
+		}
+		for _, b := range e.screens {
 			b.set, b.frame = false, nil
 		}
 	}
@@ -347,6 +357,13 @@ func (s *State) Event(gameName, eventName string, data json.RawMessage) {
 			s.seq++
 			*b = binding{h: b.h, set: true, value: v, frame: d.Frame, color: b.h.color(v, opt),
 				half: b.h.freq(v), repeat: b.h.repeat(v), start: now, seq: s.seq}
+		}
+		for _, b := range e.screens {
+			if b.set && b.value == v && d.Value != nil && !e.valueOptional {
+				continue
+			}
+			s.seq++
+			b.update(v, d.Frame, now, s.seq)
 		}
 	}
 	s.mu.Unlock()

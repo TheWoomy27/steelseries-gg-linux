@@ -42,6 +42,7 @@ type Engine struct {
 	soft       softState
 	gameSense  *gameSense
 	imageSync  *imageSync
+	oled       oledState
 	userID     int
 	appSet     map[string]any
 
@@ -180,6 +181,8 @@ func (e *Engine) SubAppEvent(event string, data any) { e.hub.Broadcast(event, da
 func (e *Engine) Run(ctx context.Context) {
 	go e.eventLoop(ctx)
 	e.imageSync.start(ctx)
+	go e.runOLED(ctx)
+	go e.runOLEDApps(ctx)
 	e.hid.Scan()
 	t := time.NewTicker(time.Second)
 	defer t.Stop()

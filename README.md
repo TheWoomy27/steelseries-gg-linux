@@ -184,9 +184,15 @@ In progress / not done:
   into every prefix it finds: Steam's in each library (new ones as soon
   as Proton makes them), `~/.wine`, Lutris and umu prefixes in `~/Games`,
   Heroic's and Bottles'. The Engine and GameSense keep their ports across
-  restarts, so those copies stay right. Not done yet: saving effect
-  changes made on that page (ggd applies them, but the page does not
-  send them), GameSense screens (OLED) and vibration.
+  restarts, so those copies stay right. Effects changed on GG's GameSense
+  page replace the game's on that device. Games' screen handlers show on
+  device screens (the Apex OLED): text lines, progress bars, the event
+  icons (read from the imported GG data) and pictures, timed and repeated
+  as the Windows Engine times them, and the device's own picture comes
+  back when they end. The Engine's own screen apps are in Engine > Apps:
+  Now Playing (the media playing, from MPRIS players; on at first),
+  System Stats (CPU and memory) and Clock; games' screens go over them.
+  Not done yet: GameSense vibration.
 - Cooldown timers are a lighting effect of GG's older per-key lighting
   editor (Apex M750/M800, Apex 3 and MSI keyboards); they are not
   implemented, and GG does not offer them for the Apex 7 or the Aerox
