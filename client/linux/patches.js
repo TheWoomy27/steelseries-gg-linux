@@ -37,11 +37,13 @@ const PATCHES = [
   },
   {
     file: 'main/index.js',
-    name: 'drag out log',
-    // Moments' share dialogs drag a clip out with webContents.startDrag;
-    // log each drag, as Chromium does not say when one fails to start.
+    name: 'drag out',
+    // Moments' share dialogs drag a clip out with webContents.startDrag.
+    // Chromium cannot deliver the file to the app it is dropped on under
+    // Wayland; the drag fix (packaging/dragfix.c, preloaded by the
+    // launcher) delivers it, from this note of which file is dragged.
     find: /e\.sender\.startDrag\(\{file:n,icon:i\}\)/,
-    replace: 'console.log("[gg-linux] drag out",n,"icon",t,i.isEmpty()?"(empty)":JSON.stringify(i.getSize())),e.sender.startDrag({file:n,icon:i})',
+    replace: '(global.ggLinuxDragOut&&global.ggLinuxDragOut(n)),e.sender.startDrag({file:n,icon:i})',
   },
   {
     file: 'main/preload.js',

@@ -81,6 +81,13 @@ if [ "$drivers" -gt 1 ] && [ -z "${__EGL_VENDOR_LIBRARY_FILENAMES:-}" ] && gpu=$
 fi
 
 # $gpu_args is unquoted so that it vanishes when empty.
+# Files dragged out of GG drop into other apps on Wayland only with the drag
+# fix (packaging/dragfix.c), installed beside the launcher's lib directory.
+dragfix="$(dirname "$(readlink -f "$0")")/../lib/steelseries-gg/libgg-dragfix.so"
+if [ -f "$dragfix" ]; then
+    export LD_PRELOAD="$dragfix${LD_PRELOAD:+:$LD_PRELOAD}"
+fi
+
 # Chromium's messages (to stderr, which ggd keeps in Logs/client.log) include
 # its Wayland drag and drop sessions.
 log_args="--enable-logging=stderr --vmodule=wayland_data_drag_controller=1,wayland_data_source=1,desktop_drag_drop_client_ozone=1"

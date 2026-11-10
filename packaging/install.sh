@@ -21,6 +21,12 @@ cd "$repo"
 go build -o bin/ ./cmd/...
 install -Dm755 -t "$bindir" bin/ggd bin/ggctl bin/gg-setup
 install -Dm755 packaging/steelseries-gg "$bindir/steelseries-gg"
+# Dragging files (Moments clips) out of GG on Wayland: see packaging/dragfix.c.
+if command -v cc >/dev/null 2>&1 && cc -shared -fPIC -O2 -o bin/libgg-dragfix.so packaging/dragfix.c -ldl -lwayland-client 2>/dev/null; then
+    install -Dm755 bin/libgg-dragfix.so "$prefix/lib/steelseries-gg/libgg-dragfix.so"
+else
+    echo "Could not build the drag fix (needs a C compiler and wayland headers): dragging clips out of GG will not drop on Wayland." >&2
+fi
 
 mkdir -p "$datahome/applications" "$confighome/systemd/user"
 sed "s|@BINDIR@|$bindir|g" packaging/steelseries-gg.desktop > "$datahome/applications/steelseries-gg.desktop"
