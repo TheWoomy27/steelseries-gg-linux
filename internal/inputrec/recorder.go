@@ -224,7 +224,7 @@ func translate(e raw) []Event {
 		if u, ok := consumerKeys[e.code]; ok {
 			return []Event{{Type: typeKey, Page: 12, Code: u, ExtraData: down}}
 		}
-		if u, ok := keyUsage[e.code]; ok {
+		if u, ok := keyUsage(e.code); ok {
 			return []Event{{Type: typeKey, Page: 1, Code: uint16(u), ExtraData: down}}
 		}
 	case evRel:

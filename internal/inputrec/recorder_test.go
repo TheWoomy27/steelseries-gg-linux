@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"ggl/internal/hidkeys"
 )
 
 func TestParseDevices(t *testing.T) {
@@ -59,11 +61,11 @@ func TestTranslate(t *testing.T) {
 		}
 	}
 	// Every key the kernel maps from a keyboard usage maps back to one.
-	for usage, key := range hidKeyboard {
+	for usage, key := range hidkeys.Keyboard {
 		if key == 0 {
 			continue
 		}
-		if u, ok := keyUsage[key]; !ok || hidKeyboard[u] != key {
+		if u, ok := keyUsage(key); !ok || hidkeys.Keyboard[u] != key {
 			t.Errorf("key %d (usage %#x) maps back to %#x", key, usage, u)
 		}
 	}

@@ -82,9 +82,16 @@ In progress / not done:
   shortcuts (copy, paste...) and other keys. Devices with onboard macro
   memory (the Apex 7, Apex Pro and Apex 9 keyboards, the Prime mice) play
   them themselves: they are written with the key mappings, in the format
-  Windows GG uses. Devices without onboard macros would need ggd to play their
-  macros, and bindings to Engine commands (launching an app, switching
-  configurations) need ggd to run them; both are kept but not run yet.
+  Windows GG uses. ggd runs the rest: macros on devices without macro
+  memory (most mice), launching an application, switching
+  configurations and text macros (pasted from the clipboard with
+  wl-copy, as Windows GG pastes them). A key or button bound that way is
+  remapped to send a spare key code the desktop has no use for (an
+  unknown key), unless the binding is set to pass the input through;
+  ggd reads the device's reports and plays macros through a virtual
+  keyboard and mouse (/dev/uinput; the udev rules give the logged-in
+  user access to it). Cooldown timers, game events and the record and engine
+  app toggles are not run yet.
 - Macro recording: GG's macro editor, its Quick Record fields and its
   shortcut settings record from every keyboard and mouse through
   /dev/input, so your user has to be in the `input` group. ggd only reads

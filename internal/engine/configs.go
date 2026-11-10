@@ -315,6 +315,7 @@ func (e *Engine) deploy(l *liveDevice, settings map[string]any, force, saveToFla
 		e.deploying[d.ID]--
 		e.mu.Unlock()
 	}()
+	settings = e.applySoftBindings(l, settings)
 	keys := make([]string, 0, len(settings))
 	for k := range settings {
 		keys = append(keys, k)

@@ -154,6 +154,7 @@ func (e *Engine) prismDevicesChanged(gone []uint32) {
 		go fn()
 	}
 	go e.rewatchPrismInput()
+	go e.rewatchSoft()
 }
 
 // PrismInput is input PrismSync's reactive and idle layers follow: the

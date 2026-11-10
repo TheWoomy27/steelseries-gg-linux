@@ -39,10 +39,12 @@ func (e *Engine) macroRoutes() {
 		var p macroPayload
 		httpx.Decode(r, &p)
 		e.db.Exec(`UPDATE macros SET name = ?, events = ?, recording_options = ? WHERE id = ?`, p.Name, p.events(), p.options(), r.PathValue("mid"))
+		e.refreshSoftBindings()
 		httpx.OK(w)
 	})
 	s.Handle("DELETE /macro/{mid}", func(w http.ResponseWriter, r *http.Request) {
 		e.db.Exec(`UPDATE macros SET is_deleted = 1 WHERE id = ?`, r.PathValue("mid"))
+		e.refreshSoftBindings()
 		httpx.OK(w)
 	})
 	s.Handle("GET /macro/{mid}", func(w http.ResponseWriter, r *http.Request) {
@@ -68,35 +70,41 @@ func (e *Engine) macroRoutes() {
 	})
 	e.macroConfigRoutes()
 
+	// Engine commands are domains.SseCommand (display_name is "name").
+	sseCols := `CAST(id AS TEXT) AS id, local_id, user_id, command_type, display_name AS name, path, params, linked_application_id`
 	s.Handle("GET /sseCommands", func(w http.ResponseWriter, r *http.Request) {
-		httpx.JSON(w, map[string]any{"sseCommands": e.queryRows(`SELECT id, command_type, display_name, path, image_path, params FROM sse_commands WHERE user_id = ?`, e.userID)})
+		httpx.JSON(w, map[string]any{"sse_commands": e.queryRows(`SELECT `+sseCols+` FROM sse_commands WHERE user_id = ?`, e.userID)})
 	})
 	s.Handle("POST /sseCommand", func(w http.ResponseWriter, r *http.Request) {
-		var p map[string]any
+		var p ssePayload
 		httpx.Decode(r, &p)
 		id := newUUID()
-		e.db.Exec(`INSERT INTO sse_commands (id, user_id, command_type, display_name, path, image_path, params) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			id, e.userID, p["command_type"], p["display_name"], p["path"], p["image_path"], jsonText(p["params"]))
-		p["id"] = id
-		httpx.JSON(w, map[string]any{"sseCommand": p})
+		if _, err := e.db.Exec(`INSERT INTO sse_commands (id, user_id, command_type, display_name, path, image_path, params) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			id, e.userID, p.CommandType, p.name(), p.Path, p.ImagePath, jsonText(p.Params)); err != nil {
+			httpx.Error(w, 500, err.Error())
+			return
+		}
+		httpx.JSON(w, map[string]any{"sse_command_id": id})
 	})
 	s.Handle("GET /sseCommand/{sid}", func(w http.ResponseWriter, r *http.Request) {
-		rows := e.queryRows(`SELECT id, command_type, display_name, path, image_path, params FROM sse_commands WHERE id = ?`, r.PathValue("sid"))
+		rows := e.queryRows(`SELECT `+sseCols+` FROM sse_commands WHERE id = ?`, r.PathValue("sid"))
 		if len(rows) == 0 {
 			httpx.Error(w, 404, "no such command")
 			return
 		}
-		httpx.JSON(w, map[string]any{"sseCommand": rows[0]})
+		httpx.JSON(w, map[string]any{"sse_command": rows[0]})
 	})
 	s.Handle("PUT /sseCommand/{sid}", func(w http.ResponseWriter, r *http.Request) {
-		var p map[string]any
+		var p ssePayload
 		httpx.Decode(r, &p)
 		e.db.Exec(`UPDATE sse_commands SET command_type = ?, display_name = ?, path = ?, image_path = ?, params = ? WHERE id = ?`,
-			p["command_type"], p["display_name"], p["path"], p["image_path"], jsonText(p["params"]), r.PathValue("sid"))
-		httpx.JSON(w, map[string]any{"sseCommand": p})
+			p.CommandType, p.name(), p.Path, p.ImagePath, jsonText(p.Params), r.PathValue("sid"))
+		e.refreshSoftBindings()
+		httpx.OK(w)
 	})
 	s.Handle("DELETE /sseCommand/{sid}", func(w http.ResponseWriter, r *http.Request) {
 		e.db.Exec(`DELETE FROM sse_commands WHERE id = ?`, r.PathValue("sid"))
+		e.refreshSoftBindings()
 		httpx.OK(w)
 	})
 }
@@ -296,3 +304,15 @@ func (p *macroPayload) options() string {
 	}
 	return jsonText(p.RecordingOptionsOld)
 }
+
+// ssePayload is an Engine command as GG sends it.
+type ssePayload struct {
+	CommandType string `json:"command_type"`
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name"`
+	Path        string `json:"path"`
+	ImagePath   string `json:"image_path"`
+	Params      any    `json:"params"`
+}
+
+func (p *ssePayload) name() string { return orEmpty(p.Name, p.DisplayName) }

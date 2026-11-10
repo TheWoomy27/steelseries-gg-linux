@@ -39,6 +39,7 @@ type Engine struct {
 	live       map[int]*liveDevice // by catalog device id
 	prism      prismState
 	prismInput prismInputState
+	soft       softState
 	userID     int
 	appSet     map[string]any
 
@@ -208,6 +209,7 @@ func (e *Engine) Shutdown() {
 			}
 		}
 	}
+	e.closeSoft()
 	e.hid.Close()
 	e.db.Close()
 }

@@ -19,6 +19,18 @@ type Descriptor struct {
 	Feature map[uint8]int
 	// Keys are the input fields carrying keyboard keys (usage page 7).
 	Keys []KeyField
+	// Buttons are the input fields carrying buttons (usage page 9), one
+	// bit each.
+	Buttons []ButtonField
+}
+
+// ButtonField is a run of button bits in an input report: button
+// UsageMin is at BitOffset (after the report ID), the next one after it.
+type ButtonField struct {
+	ReportID  uint8
+	BitOffset int
+	Count     int
+	UsageMin  uint16
 }
 
 // KeyField is an input field of keyboard usages: an array of key codes
@@ -79,6 +91,13 @@ func ParseDescriptor(b []byte) Descriptor {
 				if tag == 0x8 && usagePage == 0x07 && val&1 == 0 && reportSize > 0 && reportCount > 0 {
 					d.Keys = append(d.Keys, KeyField{ReportID: reportID, BitOffset: bits["in"][reportID], Size: reportSize, Count: reportCount,
 						UsageMin: usageMin, UsageMax: usageMax, Array: val&2 == 0})
+				}
+				if tag == 0x8 && usagePage == 0x09 && val&1 == 0 && val&2 != 0 && reportSize == 1 && reportCount > 0 {
+					first := usageMin
+					if first == 0 {
+						first = 1
+					}
+					d.Buttons = append(d.Buttons, ButtonField{ReportID: reportID, BitOffset: bits["in"][reportID], Count: reportCount, UsageMin: first})
 				}
 				bits[key][reportID] += reportSize * reportCount
 			case 0xa: // collection
@@ -179,6 +198,31 @@ func (d Descriptor) PressedKeys(r []byte) []uint8 {
 			} else if f.Size == 1 && bit(off) {
 				if u := int(f.UsageMin) + i; u > 3 && u <= 0xff {
 					out = append(out, uint8(u))
+				}
+			}
+		}
+	}
+	return out
+}
+
+// PressedButtons decodes the buttons held down in an input report
+// (report ID first, 0 for unnumbered reports), by number (1 is the left
+// button).
+func (d Descriptor) PressedButtons(r []byte) []uint8 {
+	if len(r) == 0 {
+		return nil
+	}
+	id, data := r[0], r[1:]
+	var out []uint8
+	for _, f := range d.Buttons {
+		if f.ReportID != id {
+			continue
+		}
+		for i := 0; i < f.Count; i++ {
+			off := f.BitOffset + i
+			if off/8 < len(data) && data[off/8]&(1<<(off%8)) != 0 {
+				if n := int(f.UsageMin) + i; n <= 0xff {
+					out = append(out, uint8(n))
 				}
 			}
 		}
