@@ -3,7 +3,6 @@ package engine
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"log/slog"
 	"path/filepath"
 	"strings"
@@ -51,22 +50,16 @@ func (e *Engine) oledDevices() []oledDevice {
 		ready := l.ready
 		l.mu.Unlock()
 		d := l.primary()
-		if !ready || d == nil || d.Api("gamesense_oled_display") == nil || d.Api("disable_gamesense_oled") == nil {
+		if !ready || d == nil {
 			continue
 		}
 		info := e.gameSenseInfo(d)
-		if info == nil {
+		if info == nil || len(info.ScreenSizes) == 0 {
 			continue
 		}
 		dev := gamesense.Device{ProductID: d.ID, Types: info.Types, Zones: info.Zones}
-		for _, t := range info.Types {
-			var w, h int
-			if n, _ := fmt.Sscanf(t, "screened-%dx%d", &w, &h); n == 2 {
-				dev.ScreenW, dev.ScreenH = w, h
-			}
-		}
-		if dev.ScreenW == 0 {
-			continue
+		for _, wh := range info.ScreenSizes {
+			dev.ScreenW, dev.ScreenH = wh[0], wh[1]
 		}
 		out = append(out, oledDevice{id: l.dbID, name: l.cat.Name, decl: d, gs: dev})
 	}
@@ -90,7 +83,7 @@ func (e *Engine) runOLED(ctx context.Context) {
 		case <-ctx.Done():
 			for _, d := range e.oledDevices() {
 				if st := states[d.id]; st != nil && st.showing {
-					d.decl.WriteApi("disable_gamesense_oled", map[string]any{})
+					screenReset(d)
 				}
 			}
 			return
@@ -110,7 +103,7 @@ func (e *Engine) runOLED(ctx context.Context) {
 			sc := e.gameSense.state.Screen(&d.gs)
 			if sc == nil {
 				if st.showing {
-					if err := d.decl.WriteApi("disable_gamesense_oled", map[string]any{}); err != nil {
+					if err := screenReset(d); err != nil {
 						slog.Warn("oled: back to the device's picture", "device", d.name, "err", err)
 						st.failed = time.Now()
 						continue
@@ -130,7 +123,7 @@ func (e *Engine) runOLED(ctx context.Context) {
 			if bytes.Equal(pic, st.last) && time.Since(st.written) < 10*time.Second {
 				continue
 			}
-			if err := d.decl.WriteApi("gamesense_oled_display", map[string]any{"data": pic}); err != nil {
+			if err := screenWrite(d, pic); err != nil {
 				slog.Warn("oled: write", "device", d.name, "err", err)
 				st.failed = time.Now()
 				continue
@@ -155,6 +148,25 @@ func (e *Engine) runOLED(ctx context.Context) {
 		e.oled.mu.Unlock()
 	}
 }
+
+// screenWrite shows a picture (packed by rows) as the device's spec says
+// to (the 2024 Apex keyboards take it packed by column).
+func screenWrite(d oledDevice, pic []byte) error {
+	cmds, err := d.decl.ScreenWrite("one", pic)
+	if err != nil {
+		return err
+	}
+	for name, vals := range cmds {
+		m, _ := vals.(map[string]any)
+		if err := d.decl.WriteApi(name, m); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// screenReset gives the screen back to the device's own picture.
+func screenReset(d oledDevice) error { return d.decl.ScreenReset("one") }
 
 // OLEDActive reports whether GameSense controls a device's screen, and
 // for which app (GG shows it on the device's screen settings).

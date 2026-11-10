@@ -1,6 +1,7 @@
 package devicert
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/steelseries/golisp"
@@ -88,4 +89,31 @@ func (d *Decl) GameSense() (*GameSenseInfo, error) {
 		}
 	}
 	return info, nil
+}
+
+// ScreenWrite asks the device's spec how to show a picture on a screen
+// zone: the commands (api name to values) its interface's
+// get-screen-write-command-frame makes from the picture packed row by
+// row, eight pixels a byte. Devices pack differently (the 2024 Apex
+// keyboards by column), and the spec knows how.
+func (d *Decl) ScreenWrite(zone string, packed []byte) (map[string]any, error) {
+	fn := golisp.ArrayToList([]*golisp.Data{golisp.Intern("get-screen-write-command-frame:"), golisp.ArrayToList([]*golisp.Data{golisp.Intern("interface")})})
+	form := golisp.ArrayToList([]*golisp.Data{fn, golisp.Intern(zone + ":"), bytesObj(packed)})
+	v, err := d.rt.eval(form, d.Env)
+	if err != nil {
+		return nil, err
+	}
+	m, _ := fromLisp(v).(map[string]any)
+	if len(m) == 0 {
+		return nil, fmt.Errorf("%s makes no screen write for %d bytes", d.Name, len(packed))
+	}
+	return m, nil
+}
+
+// ScreenReset hands a screen zone back to the device's own picture
+// (its interface's reset-zone-to-background-image).
+func (d *Decl) ScreenReset(zone string) error {
+	fn := golisp.ArrayToList([]*golisp.Data{golisp.Intern("reset-zone-to-background-image:"), golisp.ArrayToList([]*golisp.Data{golisp.Intern("interface")})})
+	_, err := d.rt.eval(golisp.ArrayToList([]*golisp.Data{fn, golisp.Intern(zone + ":")}), d.Env)
+	return err
 }

@@ -586,9 +586,36 @@ func registerByteBuiltins() {
 			return bytesObj(columnPack(px, w, h, lsb, flipY)), nil
 		}
 	}
-	pf("convert-to-column-packed-byte-format", "3", columnPacked(false, false))
+	pf("convert-to-column-packed-byte-format", "3", func(a []*golisp.Data, _ *golisp.SymbolTableFrame) (*golisp.Data, error) {
+		px, w, h := bytesOf(a[0]), int(golisp.IntegerValue(a[1])), int(golisp.IntegerValue(a[2]))
+		return bytesObj(pagePack(px, w, h)), nil
+	})
 	pf("convert-to-column-packed-byte-format-with-LSB", "3", columnPacked(true, false))
 	pf("convert-to-column-packed-byte-format-with-LSB-y-flipped", "3", columnPacked(true, true))
+}
+
+// pagePack is the Engine's convert-to-column-packed-byte-format (the 2024
+// Apex screens): a picture packed by rows, eight pixels a byte with the
+// leftmost in the high bit, repacked by pages of eight rows: byte
+// (y/8)*w+x, the top pixel in the low bit. A picture of a byte a pixel
+// is taken too.
+func pagePack(px []byte, w, h int) []byte {
+	out := make([]byte, w*((h+7)/8))
+	on := func(x, y int) bool {
+		i := y*w + x
+		if len(px) >= w*h {
+			return px[i] != 0
+		}
+		return i>>3 < len(px) && px[i>>3]&(0x80>>uint(i&7)) != 0
+	}
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			if on(x, y) {
+				out[(y/8)*w+x] |= 1 << uint(y%8)
+			}
+		}
+	}
+	return out
 }
 
 // columnPack converts a 1-byte-per-pixel monochrome bitmap into the

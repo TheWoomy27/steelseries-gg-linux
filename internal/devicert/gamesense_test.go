@@ -62,3 +62,36 @@ func TestGameSenseInfo(t *testing.T) {
 		t.Errorf("Aerox 5 Wireless: %+v", info)
 	}
 }
+
+// TestScreenWrite asks the Apex 7 and the 2024 Apex 7 specs how to show a
+// picture: the first takes it as it is, the second packs it by column.
+func TestScreenWrite(t *testing.T) {
+	data := os.Getenv("GG_LINUX_DATA")
+	if data == "" {
+		t.Skip("GG_LINUX_DATA not set")
+	}
+	rt, err := New(filepath.Join(data, "engine", "deviceSpecifications"), filepath.Join(data, "engine"), nullTransport{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pic := make([]byte, 640)
+	pic[0] = 0x80 // the top left pixel
+	for _, c := range []struct {
+		id   uint32
+		want byte // the first data byte
+	}{{0x10381612, 0x80}, {0x10381652, 0x01}} {
+		d, err := rt.Device(c.id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cmds, err := d.ScreenWrite("one", pic)
+		if err != nil {
+			t.Fatalf("%#x: %v", c.id, err)
+		}
+		vals, _ := cmds["gamesense_oled_display"].(map[string]any)
+		list, _ := vals["data"].([]any)
+		if len(list) != 640 || toInt(list[0]) != int64(c.want) {
+			t.Errorf("%#x: %d bytes, first %v, want %#x (%v)", c.id, len(list), list[:1], c.want, cmds)
+		}
+	}
+}
