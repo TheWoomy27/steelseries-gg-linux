@@ -116,9 +116,10 @@ func (c *Core) userRoutes() {
 	s.Handle("GET /user/token/refresh", func(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusUnauthorized, "no access token")
 	})
-	// Sharing services. Linking them goes through SteelSeries' cloud, so
-	// on Linux each is listed but cannot be linked; Moments' share dialog
-	// needs them listed.
+	// Sharing services. Linking them goes through SteelSeries' cloud. On
+	// Linux, Moments hands a YouTube upload to the browser (see
+	// moments.upload), so YouTube needs no link and shows as ready; the
+	// other services are listed for Moments' share dialog.
 	s.Handle("GET /user/linkedAccounts", func(w http.ResponseWriter, r *http.Request) {
 		type account struct {
 			Key                     string `json:"key"`
@@ -130,10 +131,17 @@ func (c *Core) userRoutes() {
 		}
 		out := []account{}
 		for _, a := range [][2]string{{"youtube", "YouTube"}, {"discord", "Discord"}, {"reddit", "Reddit"}, {"tiktok", "TikTok"}, {"twitter", "Twitter"}, {"facebook", "Facebook"}} {
-			out = append(out, account{Key: a[0], DisplayName: a[1], AuthenticationRequired: true})
+			acc := account{Key: a[0], DisplayName: a[1], AuthenticationRequired: true}
+			if a[0] == "youtube" {
+				acc = account{Key: a[0], DisplayName: a[1], AuthenticationAvailable: true, Authenticated: true, AuthenticatedName: "your browser"}
+			}
+			out = append(out, acc)
 		}
 		httpx.JSON(w, map[string]any{"linkedAccounts": out})
 	})
+	for _, p := range []string{"/user/linkedAccount/authenticate", "/user/linkedAccount/unauthenticate"} {
+		s.Handle("POST "+p, func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })
+	}
 	s.Handle("GET /user/avatars", func(w http.ResponseWriter, r *http.Request) {
 		httpx.JSON(w, map[string]any{"avatars": []any{}})
 	})

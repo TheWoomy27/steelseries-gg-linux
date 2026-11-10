@@ -348,12 +348,40 @@ func (s *Service) routes() {
 		httpx.JSON(w, map[string]any{"on": on})
 	})
 
-	// Sharing goes through SteelSeries' cloud and linked accounts, which
-	// the Linux port has no access to.
+	// Uploading: Windows GG uploads to YouTube through SteelSeries'
+	// cloud. Here the clip is exported with its edits into the shared
+	// clips folder and handed over: the file on the clipboard and the
+	// service's upload page in the browser, to paste or drag it into.
 	sv.Handle("POST /moments/upload", func(w http.ResponseWriter, r *http.Request) {
-		httpx.JSONStatus(w, http.StatusNotImplemented, map[string]any{"url": "", "reasonForError": "Uploading is not available on Linux", "statusCode": 501})
+		var p struct {
+			ClipID      string      `json:"clip_id"`
+			Service     string      `json:"upload_service"`
+			Title       string      `json:"title"`
+			TextBase64s []textImage `json:"textBase64s"`
+		}
+		if err := httpx.Decode(r, &p); err != nil {
+			httpx.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		url, err := s.upload(r.Context(), p.ClipID, p.Service, p.Title, p.TextBase64s)
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, context.Canceled) {
+				status = 499
+			}
+			httpx.JSONStatus(w, status, map[string]any{"uploadClip": map[string]any{"url": "", "statusCode": status, "reasonForError": err.Error()}})
+			return
+		}
+		httpx.JSON(w, map[string]any{"uploadClip": map[string]any{"url": url, "statusCode": http.StatusOK}})
 	})
-	sv.Handle("POST /moments/cancelUpload", func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })
+	sv.Handle("POST /moments/cancelUpload", func(w http.ResponseWriter, r *http.Request) {
+		p, _ := decode[struct {
+			ClipID  string `json:"clip_id"`
+			Service string `json:"upload_service"`
+		}](r)
+		s.cancelUpload(p.ClipID, p.Service)
+		httpx.OK(w)
+	})
 	sv.Handle("POST /moments/upload/clearLocalData", func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })
 
 	// Content and analytics.

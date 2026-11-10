@@ -51,6 +51,7 @@ type Service struct {
 	ws    *events.Hub
 	lib   *library
 	paths Paths
+	ups   uploads
 	host  Host
 	kick  chan struct{}
 	ctx   context.Context

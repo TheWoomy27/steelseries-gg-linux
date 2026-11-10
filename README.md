@@ -133,8 +133,11 @@ In progress / not done:
   the game sound, chat and microphone each on a track of their own.
   On Hyprland, GG's Moments shortcuts (Alt+S saves a clip) are bound
   while capture is on, except keys your configuration already uses; on
-  other desktops, bind a key to `ggctl moments clip`. Uploading to
-  sharing services is not available; drag a clip out of GG or export it.
+  other desktops, bind a key to `ggctl moments clip`. Sharing to
+  YouTube (Windows GG uploads through SteelSeries' cloud) exports the
+  edited clip into the Shared Clips folder, puts the file on the
+  clipboard and opens YouTube's upload page, to paste or drag it in; the
+  other services open their site to drag the clip onto, as on Windows.
   Toggling the microphone restarts the recording, which empties the
   buffer.
 - Prism (PrismSync V2, the Engine page's Prism tab): configurations,
