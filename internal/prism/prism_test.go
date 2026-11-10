@@ -83,6 +83,7 @@ func (f *fakeEngine) PrismWrite(id int, w []devicert.PrismWrite) error {
 	return nil
 }
 func (f *fakeEngine) PrismRelease(int)                        {}
+func (f *fakeEngine) PrismLightingEnabled() bool              { return true }
 func (f *fakeEngine) WatchPrismInput(func(engine.PrismInput)) {}
 func (f *fakeEngine) OnPrismDevicesChanged(func())            {}
 

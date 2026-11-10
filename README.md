@@ -85,8 +85,10 @@ In progress / not done:
   Windows GG uses. ggd runs the rest: macros on devices without macro
   memory (most mice), launching an application (the picker offers the
   desktop's applications, .desktop files and AppImages), switching
-  configurations and text macros (pasted from the clipboard with
-  wl-copy, as Windows GG pastes them). A key or button bound that way is
+  configurations, text macros (pasted from the clipboard with
+  wl-copy, as Windows GG pastes them), GameSense game events and
+  switching Engine apps (PrismSync, ImageSync and GameSense games) on,
+  off or over. A key or button bound that way is
   remapped to send a spare key code the desktop has no use for (an
   unknown key), unless the binding is set to pass the input through;
   ggd reads the device's reports and plays macros through a virtual
@@ -157,8 +159,11 @@ In progress / not done:
   screen changes and at most 10 times a second, and lights each zone
   with the colour of its sampling area as Windows Prism does; GG's
   previews of it use a made-up picture. The copies cost the compositor
-  some CPU (Hyprland: about 10% of a core on a 2560x1440 monitor). Not
-  done yet: image sync.
+  some CPU (Hyprland: about 10% of a core on a 2560x1440 monitor).
+  ImageSync (Engine > Apps) plays a GIF on per-key keyboards as Windows
+  GG does, through GameSense. GG's PrismSync switch turns Prism's
+  lighting off and on; while it is off, devices keep their own lighting,
+  except where a game or ImageSync lights them.
 - GameSense lighting: games that use the GameSense SDK light
   keys and zones with their bound handlers, as the Windows Engine runs
   them: static, gradient and ranged colours, flashing, percent and count

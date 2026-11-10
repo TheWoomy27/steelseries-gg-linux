@@ -279,6 +279,7 @@ func (e *Engine) routes() {
 
 	e.macroRoutes()
 	e.miscRoutes()
+	e.appRoutes()
 	e.eqPresetRoutes()
 }
 

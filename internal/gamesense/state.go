@@ -87,6 +87,7 @@ type State struct {
 	mu       sync.Mutex
 	games    map[string]*game
 	disabled map[string]bool
+	hidden   map[string]bool // the Engine's own games (ImageSync), not listed
 	seq      uint64
 
 	// Now is the clock (tests set it).
@@ -127,7 +128,7 @@ type binding struct {
 
 // New makes an empty state.
 func New() *State {
-	return &State{games: map[string]*game{}, disabled: map[string]bool{}, Now: time.Now}
+	return &State{games: map[string]*game{}, disabled: map[string]bool{}, hidden: map[string]bool{}, Now: time.Now}
 }
 
 func (s *State) game(name string) *game {
@@ -570,6 +571,9 @@ func (s *State) Games() []GameInfo {
 	defer s.mu.Unlock()
 	var out []GameInfo
 	for _, g := range s.games {
+		if s.hidden[g.name] {
+			continue
+		}
 		gi := GameInfo{Name: g.name, DisplayName: g.displayName, Developer: g.developer, Enabled: !s.disabled[g.name], Active: g.active}
 		for n := range g.events {
 			gi.Events = append(gi.Events, n)
@@ -627,6 +631,9 @@ func (s *State) Details() []GameDetail {
 	defer s.mu.Unlock()
 	var out []GameDetail
 	for _, g := range s.games {
+		if s.hidden[g.name] {
+			continue
+		}
 		gd := GameDetail{GameInfo: GameInfo{Name: g.name, DisplayName: g.displayName, Developer: g.developer, Enabled: !s.disabled[g.name], Active: g.active}}
 		for n, e := range g.events {
 			ed := EventDetail{Name: n, Info: EventInfo{Min: e.min, Max: e.max, ValueOptional: e.valueOptional, IconID: e.iconID}, User: map[uint32]*Handler{}}
@@ -654,4 +661,12 @@ func (h *Handler) Applies(d *Device) bool {
 		return d.perKey() && (h.DeviceID == d.ProductID || (h.DeviceID == 0 && d.has(h.DeviceType)))
 	}
 	return len(h.codes(d)) > 0
+}
+
+// Hide keeps one of the Engine's own games (ImageSync) out of the lists
+// GG shows.
+func (s *State) Hide(gameName string) {
+	s.mu.Lock()
+	s.hidden[strings.ToUpper(gameName)] = true
+	s.mu.Unlock()
 }

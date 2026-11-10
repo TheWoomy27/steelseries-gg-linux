@@ -30,6 +30,7 @@ type Engine interface {
 	OnPrismDevicesChanged(fn func())
 	WatchPrismInput(fn func(engine.PrismInput))
 	GameSense() *gamesense.State
+	PrismLightingEnabled() bool
 }
 
 type Service struct {

@@ -143,11 +143,6 @@ func (e *Engine) miscRoutes() {
 			httpx.OK(w)
 		})
 	}
-	s.Handle("GET /prismSync", func(w http.ResponseWriter, r *http.Request) {
-		httpx.JSON(w, map[string]any{"prismSync": map[string]any{"enabled": feats.get("prismSync", false)}, "enabled": feats.get("prismSync", false)})
-	})
-	toggle("/prismSync/enable", "prismSync", "prismSyncEnabledChanged", true)
-	toggle("/prismSync/disable", "prismSync", "prismSyncEnabledChanged", false)
 	for _, p := range []string{"/prismSync/updateBaseEffect", "/prismSync/updateTriggeredEffect", "/prismSync/updateIdleTimeAndEffect",
 		"/prismSync/updatePrismSyncDevices", "/prismSync/leftHanded/enable", "/prismSync/leftHanded/disable",
 		"/prismSync/inactiveMode/enable", "/prismSync/inactiveMode/disable", "/prismSync/updateTriggerModes",
@@ -163,14 +158,6 @@ func (e *Engine) miscRoutes() {
 		httpx.JSON(w, map[string]any{"devices": e.devicesJSON(false)})
 	})
 
-	s.Handle("GET /imageSync", func(w http.ResponseWriter, r *http.Request) {
-		httpx.JSON(w, map[string]any{"enabled": feats.get("imageSync", false)})
-	})
-	toggle("/imageSync/enable", "imageSync", "imageSyncEnabledChanged", true)
-	toggle("/imageSync/disable", "imageSync", "imageSyncEnabledChanged", false)
-	for _, p := range []string{"/imageSync/updateGif", "/imageSync/previewGif", "/imageSync/stopPreviewGif"} {
-		s.Handle("POST "+p, func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })
-	}
 	s.Handle("GET /senseiRivalProDisplay", func(w http.ResponseWriter, r *http.Request) {
 		httpx.JSON(w, map[string]any{"enabled": feats.get("shihan", false)})
 	})
@@ -195,7 +182,6 @@ func (e *Engine) miscRoutes() {
 	s.Handle("GET /loadouts/presets", func(w http.ResponseWriter, r *http.Request) {
 		httpx.JSON(w, map[string]any{"version": 1, "presets": []any{}})
 	})
-	s.Handle("GET /engineApps/supported", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, map[string]any{"engineApps": []any{}}) })
 	s.Handle("GET /applications", func(w http.ResponseWriter, r *http.Request) {
 		httpx.JSON(w, map[string]any{"applications": e.queryRows(`SELECT * FROM applications`)})
 	})

@@ -41,6 +41,7 @@ type Engine struct {
 	prismInput prismInputState
 	soft       softState
 	gameSense  *gameSense
+	imageSync  *imageSync
 	userID     int
 	appSet     map[string]any
 
@@ -178,6 +179,7 @@ func (e *Engine) SubAppEvent(event string, data any) { e.hub.Broadcast(event, da
 // Run polls for hotplug and dispatches device events until ctx ends.
 func (e *Engine) Run(ctx context.Context) {
 	go e.eventLoop(ctx)
+	e.imageSync.start(ctx)
 	e.hid.Scan()
 	t := time.NewTicker(time.Second)
 	defer t.Stop()

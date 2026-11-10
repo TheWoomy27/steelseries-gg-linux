@@ -186,6 +186,14 @@ func (s *Service) renderLoop(ctx context.Context) {
 		case <-tick.C:
 		case <-s.kick:
 		}
+		// With GG's PrismSync switch off, Prism lights a device only while
+		// a game (or ImageSync) shows something on it through GameSense.
+		on := s.eng.PrismLightingEnabled()
+		gs := s.eng.GameSense()
+		gsActive := gs != nil && gs.Active()
+		lights := func(d *device) bool {
+			return d.Enabled && (on || (gsActive && d.gs != nil && len(gs.Lights(&d.gs.dev)) > 0))
+		}
 		s.mu.Lock()
 		if s.current == nil {
 			if c := s.currentConfig(); c != nil {
@@ -198,13 +206,13 @@ func (s *Service) renderLoop(ctx context.Context) {
 		present := map[int]bool{}
 		for _, d := range s.devices {
 			present[d.ID] = true
-			if d.Enabled {
+			if lights(d) {
 				active = append(active, d)
 			}
 		}
 		var release []int
 		for id := range s.lit {
-			if d, ok := s.devices[id]; !ok || !d.Enabled {
+			if d, ok := s.devices[id]; !ok || !lights(d) {
 				release = append(release, id)
 				delete(s.lit, id)
 			}
@@ -218,12 +226,24 @@ func (s *Service) renderLoop(ctx context.Context) {
 			slog.Info("prism: giving the device its own lighting back", "device", id)
 			go s.eng.PrismRelease(id)
 		}
-		if cur == nil || len(active) == 0 {
+		if len(active) == 0 || (on && cur == nil) {
 			s.watchInput(false)
 			s.audio.need(false, "")
 			s.screen.need(false)
 			continue
 		}
+		name := "GameSense"
+		if !on {
+			s.watchInput(false)
+			s.audio.need(false, "")
+			s.screen.need(false)
+			colors := map[string]Color{}
+			drawGameSense(gs, colors, active)
+			s.writeFrames(writers, active, colors, name)
+			s.dropGone(writers, present)
+			continue
+		}
+		name = cur.Name
 		s.watchInput(usesInput(&cur.Data))
 		layer := ConfigData{Base: *s.layerFor(&cur.Data, lastInput)}
 		asleep := usesDimming(&layer.Base) && monitorsAsleep()
@@ -244,27 +264,37 @@ func (s *Service) renderLoop(ctx context.Context) {
 		}
 		colors := renderZonesAsleep(&layer, active, time.Since(started).Milliseconds(), asleep, av, rf)
 		s.react(colors, active)
-		drawGameSense(s.eng.GameSense(), colors, active)
-		for _, d := range active {
-			w := writers[d.ID]
-			if w == nil || w.dev != d {
-				if w != nil {
-					w.stop()
-				}
-				s.mu.Lock()
-				first := !s.lit[d.ID]
-				s.lit[d.ID] = true
-				s.mu.Unlock()
-				w = newFrameWriter(s.eng, d, first, cur.Name)
-				writers[d.ID] = w
-			}
-			w.offer(d.frame(colors))
-		}
-		for id, w := range writers {
-			if !present[id] {
+		drawGameSense(gs, colors, active)
+		s.writeFrames(writers, active, colors, name)
+		s.dropGone(writers, present)
+	}
+}
+
+// writeFrames hands each lit device its frame.
+func (s *Service) writeFrames(writers map[int]*frameWriter, active []*device, colors map[string]Color, config string) {
+	for _, d := range active {
+		w := writers[d.ID]
+		if w == nil || w.dev != d {
+			if w != nil {
 				w.stop()
-				delete(writers, id)
 			}
+			s.mu.Lock()
+			first := !s.lit[d.ID]
+			s.lit[d.ID] = true
+			s.mu.Unlock()
+			w = newFrameWriter(s.eng, d, first, config)
+			writers[d.ID] = w
+		}
+		w.offer(d.frame(colors))
+	}
+}
+
+// dropGone stops the writers of devices that went away.
+func (s *Service) dropGone(writers map[int]*frameWriter, present map[int]bool) {
+	for id, w := range writers {
+		if !present[id] {
+			w.stop()
+			delete(writers, id)
 		}
 	}
 }

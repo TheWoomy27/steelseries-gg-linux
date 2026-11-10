@@ -677,6 +677,10 @@ func (e *Engine) runCommand(c *sseCommand) {
 		}
 	case "text_macro":
 		e.typeText(c.Params)
+	case "game_event":
+		e.gameEvent(c.Params)
+	case "toggle_engine_apps":
+		e.toggleEngineApps(c.Params)
 	default:
 		st := &e.soft
 		st.mu.Lock()
