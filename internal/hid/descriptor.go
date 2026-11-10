@@ -23,8 +23,9 @@ type Descriptor struct {
 	// bit each.
 	Buttons []ButtonField
 	// Extra are the vendor bytes SteelSeries mice add to their pointer
-	// reports (usage page 0xffc1); the first carries the buttons GG calls
-	// extra buttons, one bit each.
+	// reports (usage page 0xffc1): the first repeats buttons 1-8, the
+	// second carries the buttons past those, which GG calls extra
+	// buttons, one bit each.
 	Extra []ButtonField
 }
 
@@ -248,10 +249,11 @@ func (d Descriptor) ExtraButtons(r []byte) []uint8 {
 	id, data := r[0], r[1:]
 	var out []uint8
 	for _, f := range d.Extra {
-		if f.ReportID != id || f.BitOffset%8 != 0 || f.BitOffset/8 >= len(data) {
+		at := f.BitOffset/8 + 1
+		if f.ReportID != id || f.BitOffset%8 != 0 || f.Count < 2 || at >= len(data) {
 			continue
 		}
-		b := data[f.BitOffset/8]
+		b := data[at]
 		for bit := uint8(1); bit != 0; bit <<= 1 {
 			if b&bit != 0 {
 				out = append(out, bit)

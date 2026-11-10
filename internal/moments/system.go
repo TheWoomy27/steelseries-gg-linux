@@ -212,9 +212,9 @@ func audioSources(ctx context.Context, s Settings) []audioSource {
 		output = defSink
 	}
 	if output != "" {
-		out = append(out, audioSource{Device: output + ".monitor", Name: trackName(names[output], "Game and system")})
+		out = append(out, audioSource{Device: output + ".monitor", Name: trackGame})
 	} else {
-		out = append(out, audioSource{Device: "@DEFAULT_MONITOR@", Name: "Game and system"})
+		out = append(out, audioSource{Device: "@DEFAULT_MONITOR@", Name: trackGame})
 	}
 	comm := s.AudioCommOutputDevice
 	if comm == "" || comm == deviceDefaultComm || names[comm] == "" {
@@ -224,28 +224,34 @@ func audioSources(ctx context.Context, s Settings) []audioSource {
 		}
 	}
 	if comm != "" && comm != output {
-		out = append(out, audioSource{Device: comm + ".monitor", Name: trackName(names[comm], "Chat")})
+		out = append(out, audioSource{Device: comm + ".monitor", Name: trackChat})
 	}
 	if !s.IsMicMuted {
 		in := s.AudioInputDevice
 		if in == "" || in == deviceDefault || names[in] == "" {
 			in = "@DEFAULT_SOURCE@"
 		}
-		out = append(out, audioSource{Device: in, Name: trackName(names[in], "Microphone")})
+		out = append(out, audioSource{Device: in, Name: trackMic})
 	}
 	return out
 }
 
-// trackName shortens Sonar's device names ("SteelSeries Sonar - Chat")
-// for the editor's track list.
-func trackName(desc, fallback string) string {
-	if desc == "" {
-		return fallback
-	}
-	if _, rest, ok := strings.Cut(desc, "Sonar - "); ok {
-		return rest
-	}
-	return desc
+// Audio track names, as Windows Moments names them: the editor names and
+// colours the tracks by them (game green, chat blue, mic orange).
+const (
+	trackGame = "Game"
+	trackChat = "Chat"
+	trackMic  = "Mic"
+)
+
+// trackNames maps the names earlier gg-linux versions gave tracks (after
+// their devices) to Moments' own.
+var trackNames = map[string]string{
+	"Game and system": trackGame,
+	"Gaming":          trackGame,
+	"Media":           trackGame,
+	"Chat":            trackChat,
+	"Microphone":      trackMic,
 }
 
 // storageInfo is moments_domains.MomentsStorageInfo.

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"ggl/internal/devicert"
+	"ggl/internal/hid"
 	"ggl/internal/hidkeys"
 	"ggl/internal/vinput"
 )
@@ -320,7 +321,7 @@ func (e *Engine) rewatchSoft() {
 					id := r[0]
 					if extraIDs[id] {
 						now := set(desc.ExtraButtons(r))
-						if len(now) > 0 && !logged {
+						if !logged && extraSet(desc, r) {
 							// Once, to confirm where the device reports them.
 							slog.Info("extra mouse buttons in the pointer report", "device", name, "report", fmt.Sprintf("% x", r))
 							logged = true
@@ -814,4 +815,21 @@ func (e *Engine) refreshSoftBindings() {
 		st.mu.Unlock()
 	}
 	go e.rewatchSoft()
+}
+
+// extraSet reports whether a pointer report has any vendor byte set past
+// the one repeating buttons 1-8 (logged once, to show where a mouse
+// reports its extra buttons).
+func extraSet(desc hid.Descriptor, r []byte) bool {
+	for _, f := range desc.Extra {
+		if f.ReportID != r[0] || f.BitOffset%8 != 0 {
+			continue
+		}
+		for i := f.BitOffset/8 + 1; i < f.BitOffset/8+f.Count && i+1 < len(r); i++ {
+			if r[i+1] != 0 {
+				return true
+			}
+		}
+	}
+	return false
 }

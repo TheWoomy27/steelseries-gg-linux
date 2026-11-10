@@ -43,9 +43,8 @@ class BrowserWindow extends electron.BrowserWindow {
     const args = options.webPreferences?.additionalArguments || [];
     if (!args.includes('isMainWindow=true') && this.isResizable()) {
       this.#lockUntilMapped();
-      // GG hides a secondary window when it is closed and shows it again
-      // later; each show maps a new toplevel, which the compositor places
-      // afresh.
+      // A window shown again after being hidden maps a new toplevel, which
+      // the compositor places afresh.
       this.on('hide', () => {
         if (!this.isDestroyed() && !this.#unlock && this.isResizable()) this.#lockUntilMapped();
       });
@@ -67,8 +66,12 @@ class BrowserWindow extends electron.BrowserWindow {
     else this.once('show', schedule);
   }
 
+  // GG maximizes a window it reopens when the window was maximized when it
+  // closed, and tiling compositors report tiled windows as maximized, so a
+  // secondary window that was ever tiled would come back tiled. While a
+  // new secondary window is being placed, that is left to the compositor.
   maximize() {
-    this.#unlock?.();
+    if (this.#unlock) return;
     super.maximize();
   }
 }

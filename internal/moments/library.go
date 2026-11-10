@@ -133,6 +133,11 @@ func (c *Clip) normalize() {
 	if c.AudioTracksProps == nil {
 		c.AudioTracksProps = []AudioTrackProps{}
 	}
+	for i := range c.AudioTracksProps {
+		if n, ok := trackNames[c.AudioTracksProps[i].Name]; ok {
+			c.AudioTracksProps[i].Name = n
+		}
+	}
 	if c.Game.LauncherExecutables == nil {
 		c.Game.LauncherExecutables = []string{}
 	}

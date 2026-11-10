@@ -302,3 +302,17 @@ func TestExportEffects(t *testing.T) {
 		}
 	}
 }
+
+// Clips recorded before tracks took Moments' own names (the editor names
+// and colours tracks by them) read with those names.
+func TestTrackNames(t *testing.T) {
+	c := Clip{AudioTracksProps: []AudioTrackProps{{Name: "Gaming"}, {Name: "Chat"}, {Name: "Microphone"}, {Name: "Track 4"}}}
+	c.normalize()
+	var got []string
+	for _, a := range c.AudioTracksProps {
+		got = append(got, a.Name)
+	}
+	if want := []string{"Game", "Chat", "Mic", "Track 4"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("tracks %v, want %v", got, want)
+	}
+}
