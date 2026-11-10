@@ -151,8 +151,14 @@ In progress / not done:
   listens to the default output (or the one picked in its audio source
   menu) through PipeWire while a configuration uses it, and lights the
   keyboard's columns as frequency bands with Prism's colour profiles and
-  amplitude settings; GG's previews of it show made-up sound. Not done
-  yet: Reflect (screen colours) and image sync.
+  amplitude settings; GG's previews of it show made-up sound. Reflect
+  copies the focused monitor through wlr-screencopy (Hyprland, sway and
+  other wlroots compositors) while a configuration uses it, when the
+  screen changes and at most 10 times a second, and lights each zone
+  with the colour of its sampling area as Windows Prism does; GG's
+  previews of it use a made-up picture. The copies cost the compositor
+  some CPU (Hyprland: about 10% of a core on a 2560x1440 monitor). Not
+  done yet: image sync.
 - GameSense lighting effects are not implemented.
 - A device whose battery runs low (5%, as its spec says) gets a desktop
   notification where Windows GG shows an overlay, following GG's overlay,
