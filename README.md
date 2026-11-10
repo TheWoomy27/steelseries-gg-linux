@@ -159,8 +159,7 @@ In progress / not done:
   previews of it use a made-up picture. The copies cost the compositor
   some CPU (Hyprland: about 10% of a core on a 2560x1440 monitor). Not
   done yet: image sync.
-- GameSense lighting: games that use the GameSense SDK (they find ggd
-  through `SteelSeries Engine 3/coreProps.json` in the data folder) light
+- GameSense lighting: games that use the GameSense SDK light
   keys and zones with their bound handlers, as the Windows Engine runs
   them: static, gradient and ranged colours, flashing, percent and count
   bars, context colours and 22x6 bitmaps, on the zones each device's
@@ -168,9 +167,16 @@ In progress / not done:
   lighting on the zones they use, until the game stops or sends nothing
   for its time-out (15 s by default). Games stay registered across
   restarts; GG's Apps page lists them with their switch and shows their
-  effects on each device. Not done yet: saving effect changes made on
-  that page (ggd applies them, but the page does not send them),
-  GameSense screens (OLED) and vibration.
+  effects on each device. Native games find ggd through
+  `SteelSeries Engine 3/coreProps.json` in the data folder. Windows games
+  under Proton or Wine read it from their prefix's
+  `C:\ProgramData\SteelSeries\SteelSeries Engine 3`, so ggd writes it
+  into every prefix it finds: Steam's in each library (new ones as soon
+  as Proton makes them), `~/.wine`, Lutris and umu prefixes in `~/Games`,
+  Heroic's and Bottles'. The Engine and GameSense keep their ports across
+  restarts, so those copies stay right. Not done yet: saving effect
+  changes made on that page (ggd applies them, but the page does not
+  send them), GameSense screens (OLED) and vibration.
 - Cooldown timers are a lighting effect of GG's older per-key lighting
   editor (Apex M750/M800, Apex 3 and MSI keyboards); they are not
   implemented, and GG does not offer them for the Apex 7 or the Aerox

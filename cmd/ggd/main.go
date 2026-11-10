@@ -29,6 +29,7 @@ import (
 	"ggl/internal/prism"
 	"ggl/internal/sonar"
 	"ggl/internal/tlsutil"
+	"ggl/internal/wineprefix"
 )
 
 func main() {
@@ -98,12 +99,15 @@ func run(verbose bool) error {
 	if err != nil {
 		return err
 	}
-	engAddr, err := serve(ctx, eng.Handler(), tlsCfg)
+	// The Engine and GameSense keep their ports across restarts where
+	// they can: games in Wine prefixes read them from a copy of
+	// coreProps.json there (see wineprefix), which then stays right.
+	engAddr, err := serveAt(ctx, eng.Handler(), tlsCfg, "engine")
 	if err != nil {
 		return err
 	}
 	// GameSense clients talk plain HTTP to "address".
-	gsAddr, err := serve(ctx, eng.GameSenseHandler(), nil)
+	gsAddr, err := serveAt(ctx, eng.GameSenseHandler(), nil, "gamesense")
 	if err != nil {
 		return err
 	}
@@ -175,6 +179,13 @@ func run(verbose bool) error {
 		return err
 	}
 	slog.Info("ggd ready", "gg", ggAddr, "engine", engAddr, "gamesense", gsAddr)
+	// Windows games in Wine and Proton prefixes find GameSense through a
+	// copy of its coreProps.json there. A ggd run on other data (tests,
+	// development) leaves the prefixes to the installed one.
+	if home, err := os.UserHomeDir(); err == nil && os.Getenv("GG_LINUX_DATA") == "" {
+		gs, _ := json.Marshal(map[string]any{"address": gsAddr, "encryptedAddress": engAddr})
+		go (&wineprefix.Keeper{Home: home, Props: gs}).Run(ctx)
+	}
 
 	go core.Run(ctx)
 	go eng.Run(ctx)
@@ -196,6 +207,38 @@ func serve(ctx context.Context, h http.Handler, cfg *tls.Config) (string, error)
 	if err != nil {
 		return "", err
 	}
+	return serveOn(ctx, ln, h, cfg), nil
+}
+
+// serveAt serves on the port the named service had last time if it is
+// free, else on a new one it remembers.
+func serveAt(ctx context.Context, h http.Handler, cfg *tls.Config, name string) (string, error) {
+	file := filepath.Join(paths.State(), "ports.json")
+	ports := map[string]int{}
+	if b, err := os.ReadFile(file); err == nil {
+		json.Unmarshal(b, &ports)
+	}
+	var ln net.Listener
+	var err error
+	if p := ports[name]; p > 0 {
+		ln, err = net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", p))
+	}
+	if ln == nil {
+		if ln, err = net.Listen("tcp", "127.0.0.1:0"); err != nil {
+			return "", err
+		}
+	}
+	if p := ln.Addr().(*net.TCPAddr).Port; p != ports[name] {
+		ports[name] = p
+		b, _ := json.Marshal(ports)
+		if err := atomicWrite(file, b, 0o644); err != nil {
+			slog.Warn("remember port", "service", name, "err", err)
+		}
+	}
+	return serveOn(ctx, ln, h, cfg), nil
+}
+
+func serveOn(ctx context.Context, ln net.Listener, h http.Handler, cfg *tls.Config) string {
 	srv := &http.Server{Handler: h, TLSConfig: cfg}
 	go func() {
 		var err error
@@ -209,7 +252,7 @@ func serve(ctx context.Context, h http.Handler, cfg *tls.Config) (string, error)
 		}
 	}()
 	go func() { <-ctx.Done(); srv.Close() }()
-	return ln.Addr().String(), nil
+	return ln.Addr().String()
 }
 
 // writeCoreProps publishes the service addresses. The GG client reads
