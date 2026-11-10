@@ -1,15 +1,19 @@
 package ggcore
 
 import (
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"syscall"
+	"time"
 
 	"ggl/internal/httpx"
+	"ggl/internal/paths"
 )
 
 func (c *Core) miscRoutes() {
@@ -112,8 +116,15 @@ func (c *Core) miscRoutes() {
 		}
 		httpx.OK(w)
 	})
+	// Whether a GameSense app has a device's screen (GG says so on the
+	// device's screen settings).
 	s.Handle("GET /game_integration/oled_active_for_device/{id}", func(w http.ResponseWriter, r *http.Request) {
-		httpx.JSON(w, map[string]any{"handleGameIntegrationOledActiveCheck": false})
+		id, _ := strconv.Atoi(r.PathValue("id"))
+		active, app := false, ""
+		if gs := c.gameSenseUI(); gs != nil {
+			active, app = gs.OLEDActive(id)
+		}
+		httpx.JSON(w, map[string]any{"handleGameIntegrationOledActiveCheck": map[string]any{"active": active, "appName": app}})
 	})
 
 	// Engine -> core notifications.
@@ -137,6 +148,18 @@ func (c *Core) StartClient() {
 	}
 	cmd := exec.Command(bin)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	// The client's own output (Electron and Chromium messages) goes to
+	// Logs/client.log, started afresh when it grows past 5 MB.
+	logPath := filepath.Join(paths.Logs(), "client.log")
+	flags := os.O_CREATE | os.O_WRONLY | os.O_APPEND
+	if st, err := os.Stat(logPath); err == nil && st.Size() > 5<<20 {
+		flags |= os.O_TRUNC
+	}
+	if f, err := os.OpenFile(logPath, flags, 0o644); err == nil {
+		fmt.Fprintf(f, "\n--- client started %s\n", time.Now().Format(time.RFC3339))
+		cmd.Stdout, cmd.Stderr = f, f
+		defer f.Close()
+	}
 	if err := cmd.Start(); err != nil {
 		slog.Error("start client", "bin", bin, "err", err)
 		return
@@ -155,6 +178,7 @@ type GameSenseUI interface {
 	GameIntegrationDevices() any
 	ToggleGame(game string, on bool)
 	SetUserHandlers(body []byte) error
+	OLEDActive(deviceID int) (bool, string)
 }
 
 // SetGameSense connects GG's GameSense pages to the Engine.

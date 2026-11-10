@@ -81,5 +81,8 @@ if [ "$drivers" -gt 1 ] && [ -z "${__EGL_VENDOR_LIBRARY_FILENAMES:-}" ] && gpu=$
 fi
 
 # $gpu_args is unquoted so that it vanishes when empty.
+# Chromium's messages (to stderr, which ggd keeps in Logs/client.log) include
+# its Wayland drag and drop sessions.
+log_args="--enable-logging=stderr --vmodule=wayland_data_drag_controller=1,wayland_data_source=1,desktop_drag_drop_client_ozone=1"
 # shellcheck disable=SC2086
-exec "$electron" "$app" $gpu_args "$@"
+exec "$electron" "$app" $gpu_args $log_args "$@"

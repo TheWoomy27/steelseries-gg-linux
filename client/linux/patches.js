@@ -36,6 +36,14 @@ const PATCHES = [
     replace: 'if(global.ggLinuxAudioMeter)return global.ggLinuxAudioMeter.CaptureAudioMeter;$&',
   },
   {
+    file: 'main/index.js',
+    name: 'drag out log',
+    // Moments' share dialogs drag a clip out with webContents.startDrag;
+    // log each drag, as Chromium does not say when one fails to start.
+    find: /e\.sender\.startDrag\(\{file:n,icon:i\}\)/,
+    replace: 'console.log("[gg-linux] drag out",n,"icon",t,i.isEmpty()?"(empty)":JSON.stringify(i.getSize())),e.sender.startDrag({file:n,icon:i})',
+  },
+  {
     file: 'main/preload.js',
     name: 'platform',
     // The pages check window.api.os.platform() for "win32" or "darwin" and
