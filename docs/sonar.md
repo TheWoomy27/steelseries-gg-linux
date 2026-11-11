@@ -75,7 +75,6 @@ devices, as on Windows. Turning Sonar off restores the previous defaults.
 | Mic noise reduction, impact noise reduction | DeepFilterNet, holding noise at most 20 dB down |
 | Noise gate, automatic noise gate | LSP Gate; the automatic gate sits 3 dB over the mic's measured noise floor |
 | Volume stabilizer (the "Compressor") | LSP Autogain, its level the target loudness (-30 to -12 LUFS) |
-| Acoustic echo canceling | not done; the client shows it only when a feature flag is unlocked |
 | Virtual surround 7.1 (spatial audio) | 7.1 virtual devices for Game, Media and Aux; PipeWire's SOFA spatializer per speaker, at its position, with libmysofa's MIT KEMAR HRTF set (or `hrtf.sofa` in GG's sonar data folder) |
 | Speaker mode (form factor) | the same, through a RACE crosstalk canceller unrolled into FIR filters |
 | Reverb ("Performance" to "Immersion") | convolution with a generated small-room response (0.5 s), fed from the downmix |
@@ -87,116 +86,137 @@ devices, as on Windows. Turning Sonar off restores the previous defaults.
 | Link All | copies one output channel's device and priority lists to the others; while linked the client sets all output channels at once |
 | Device lists | PipeWire sinks and sources; a UCM card's copies of its jacks for inactive profiles (HiFi 5+1, HiFi 7+1 beside HiFi) are left out unless in use |
 
-## Phases
+## API
 
-1. Service, database and REST API: the Sonar page loads and edits persist.
-   No audio changes. Done: configs (with Sonar's schema upgrades, checked
-   against Sonar's own code by tools/sonar-oracle), mode, onboarding,
-   classic and stream routing and the settings the setup and mixer pages
-   read. The client opens Sonar only for a signed-in account; the GG core
-   signs in a local profile. The API writes enum values in camelCase
-   (Newtonsoft with camelCase naming), as the client compares them.
-2. Classic mode audio: the four channels and the microphone with EQ,
-   volumes, ChatMix, device selection and default devices. Done and
-   tested on a private PipeWire instance; Sonar's tone controls are
-   approximations (bass and treble shelves, a presence peak for voice
-   clarity).
-3. Per-app routing, samples, fallback devices and the ChatMix dial. Done:
-   - Apps' PipeWire streams are Sonar's audio sessions (the process comes
-     from the stream or its client). Dragging an app sets its stream's
-     `target.object` to the device's `object.serial`, which WirePlumber
-     follows and remembers for the app, and a one-second watch sends the
-     session opened and closed events.
-   - Samples loop with pw-play on the channel's device (pausing starts a
-     sample over). The microphone sample is a recording of the raw
-     microphone, linked into the microphone channel beside the
-     microphone while the processed microphone is linked to the chat
-     device.
-   - Fallback lists live in Sonar's own settings keys. The same watch
-     moves channels when devices come and go, puts a device seen for the
-     first time at the top, and with the wireless trigger follows
-     Engine's link state for SteelSeries wireless headsets. With fallback
-     off, a channel keeps its device and plays to it again when it
-     returns.
-   - Engine records the audio devices headset specs register
-     (`register-mm-device-info`) and forwards `chatMixEvent`s. With Game
-     and Chat on a headset with a ChatMix dial, the dial sets ChatMix
-     (state `finiteWheel`) and the slider is read-only, as on Windows.
-   Tested on a private PipeWire with WirePlumber (TestRoutingOnPipeWire,
-   TestPhase3OnPipeWire), in the mixer, and with the Arctis Nova 7.
-4. Streamer mode. Done:
-   - Each playback channel's filter chain splits after its processing
-     into a monitoring and a streaming gain; its device stream has four
-     ports, the streaming pair named RL/RR because PipeWire drops AUX
-     channels in conversion, and ggd links them to the monitoring and
-     streaming devices.
-   - A second chain copies the processed microphone into either mix
-     (Sonar's MicCopy), and the microphone channel records from the
-     stream mode microphone.
-   - "SteelSeries Sonar - Stream" is a loopback's input side (objects the
-     helper process created itself would not reach the session's
-     PipeWire); streaming software records its monitor.
-   - Mix volumes are linear gains, as in Sonar; a mix's master scales its
-     roles and its mute is all roles muted. Stream monitoring links the
-     streaming device's monitor to the monitoring device.
-   - Entering streamer mode the first time takes the classic Game and Mic
-     devices for the monitoring and microphone devices, which Windows
-     leaves empty until chosen.
-   Tested on a private PipeWire with WirePlumber (TestStreamModeOnPipeWire
-   measures each mix) and in the mixer.
-5. Device volumes, level meters and mic effects. Done:
-   - The client's native audio meter (`audioMeter.node`, Windows endpoint
-     and session meters) is client/linux/audiometer.js. Peaks come from
-     pw-record streams in PipeWire's peak mode, 25 a second; they are
-     passive and marked `stream.monitor`, so they neither keep devices
-     running nor show up as apps. A sink is metered through its monitor,
-     and a session meter (the GUIDs the mixer builds for Sonar's streams)
-     through the Sonar channel's own device, before its volume. One
-     `pw-dump -m` follows device volumes while a meter is open; wpctl sets
-     them, on the cubic scale desktop volume controls use.
-   - Sonar's device volume routes, which the classic mixer's device
-     percentages read, give the channels' devices' volumes and send
-     `SONAR_EVENT_DEVICE_VOLUMES_UPDATE` when they change.
-   - The effects are LADSPA plugins that stay in the graph and are switched
-     by their controls: DeepFilterNet costs nothing at an attenuation limit
-     of 0 (about a quarter of a core when on), and LSP's plugins have a
-     bypass, so changing an effect never restarts the audio. Playback
-     graphs have a node per audio channel so chat can run the stereo
-     DeepFilterNet (one instance instead of two). PipeWire's builtin
-     noisegate is not used: in 1.6 its level input defaults to 0 instead
-     of following the signal, so it never opens.
-   - The automatic gate's noise floor is the 30th percentile of the raw
-     mic's 40 ms peaks over the last ten seconds of sound.
-   Tested on a private PipeWire with WirePlumber (TestMicEffectsOnPipeWire
-   measures each effect, TestDeviceVolumesOnPipeWire the volume routes)
-   and in the mixer.
-6. Spatial audio. Done:
-   - Game, Media and Aux have 7.1 virtual devices, as Sonar's are on
-     Windows; stereo apps play to the front pair (PipeWire does not upmix
-     them). With spatial audio off they are downmixed with PipeWire's own
-     coefficients, so stereo plays as before.
-   - Each speaker goes through PipeWire's SOFA spatializer at its
-     position (Sonar's angles turn counterclockwise, as SOFA's azimuths
-     do); a speaker's gain, which the distance slider sets, is its level.
-     Speaker mode adds a crosstalk canceller: RACE (the far ear's path
-     delayed 0.26 ms, 3 dB down, 250 Hz to 5 kHz), unrolled into FIR
-     filters because a filter graph cannot loop.
-   - The reverb convolves the downmix with a small room's response that
-     ggd generates; Sonar's -12 to 0 dB sits 9 dB under the direct sound.
-   - As with the effects, mixer gains switch between the downmix and the
-     virtual speakers, and the speakers' angles are controls, so nothing
-     restarts the audio. The virtualizers add well under 1% of a core.
-   Tested on a private PipeWire with WirePlumber (TestSurroundOnPipeWire
-   measures each ear for the downmix, the virtual speakers, moved and
-   closer speakers, speaker mode and the reverb's tail) and in the Game
-   page.
-7. Smart volume. Done: LSP's Autogain Stereo on Game, Media and Aux,
-   after the tone controls, holding the channel at the loudness its
-   loudness type sets (balanced, -23 LUFS, unless a config says
-   otherwise; the client has no control for it), raising quiet audio by
-   at most 18 dB and leaving silence alone. The level, "the impact of the
-   effect", mixes the leveled signal with the original; Autogain only
-   applies a gain, without latency, so the mix is a gain between none
-   and the full correction. Tested on a private PipeWire
-   (TestSmartVolumeOnPipeWire: loud and quiet noise both end up at the
-   target, and half the level gives the in-phase mix).
+The client opens Sonar only for a signed-in account, so the GG core signs
+in a local profile. Configs carry Sonar's schema versions and are brought
+up to date as Sonar's per-channel upgraders do; `tools/sonar-oracle` runs
+Sonar's own upgraders from an installer to check them. The API writes enum
+values in camelCase (Newtonsoft with camelCase naming), as the client
+compares them that way.
+
+## Per-app routing
+
+Apps' PipeWire streams are Sonar's audio sessions (the process comes from
+the stream or its client). Dragging an app sets its stream's
+`target.object` to the device's `object.serial`, which WirePlumber follows
+and remembers for the app, and a one-second watch sends the session opened
+and closed events.
+
+## Samples
+
+Samples loop with pw-play on the channel's device (pausing starts a sample
+over). The microphone sample is a recording of the raw microphone, linked
+into the microphone channel beside the microphone while the processed
+microphone is linked to the chat device.
+
+## Fallback devices and ChatMix
+
+Fallback lists live in Sonar's own settings keys. The same one-second watch
+moves channels when devices come and go, puts a device seen for the first
+time at the top, and with the wireless trigger follows Engine's link state
+for SteelSeries wireless headsets. With fallback off, a channel keeps its
+device and plays to it again when it returns.
+
+Engine records the audio devices headset specs register
+(`register-mm-device-info`) and forwards `chatMixEvent`s. With Game and
+Chat on a headset with a ChatMix dial, the dial sets ChatMix (state
+`finiteWheel`) and the slider is read-only, as on Windows.
+
+## Streamer mode
+
+- Each playback channel's filter chain splits after its processing into a
+  monitoring and a streaming gain; its device stream has four ports, the
+  streaming pair named RL/RR because PipeWire drops AUX channels in
+  conversion, and ggd links them to the monitoring and streaming devices.
+- A second chain copies the processed microphone into either mix (Sonar's
+  MicCopy), and the microphone channel records from the stream mode
+  microphone.
+- "SteelSeries Sonar - Stream" is a loopback's input side (objects the
+  helper process created itself would not reach the session's PipeWire);
+  streaming software records its monitor.
+- Mix volumes are linear gains, as in Sonar; a mix's master scales its
+  roles and its mute is all roles muted. Stream monitoring links the
+  streaming device's monitor to the monitoring device.
+- Entering streamer mode the first time takes the classic Game and Mic
+  devices for the monitoring and microphone devices, which Windows leaves
+  empty until chosen.
+
+## Level meters and device volumes
+
+The client's native audio meter (`audioMeter.node`, Windows endpoint and
+session meters) is `client/linux/audiometer.js`. Peaks come from pw-record
+streams in PipeWire's peak mode, 25 a second; they are passive and marked
+`stream.monitor`, so they neither keep devices running nor show up as apps.
+A sink is metered through its monitor, and a session meter (the GUIDs the
+mixer builds for Sonar's streams) through the Sonar channel's own device,
+before its volume. One `pw-dump -m` follows device volumes while a meter is
+open; wpctl sets them, on the cubic scale desktop volume controls use.
+
+Sonar's device volume routes, which the classic mixer's device percentages
+read, give the channels' devices' volumes and send
+`SONAR_EVENT_DEVICE_VOLUMES_UPDATE` when they change.
+
+## Effects
+
+The effects are LADSPA plugins that stay in the graph and are switched by
+their controls: DeepFilterNet costs nothing at an attenuation limit of 0
+(about a quarter of a core when on), and LSP's plugins have a bypass, so
+changing an effect never restarts the audio. Playback graphs have a node
+per audio channel so chat can run the stereo DeepFilterNet (one instance
+instead of two). PipeWire's builtin noisegate is not used: in 1.6 its level
+input defaults to 0 instead of following the signal, so it never opens.
+
+The automatic gate's noise floor is the 30th percentile of the raw mic's
+40 ms peaks over the last ten seconds of sound.
+
+## Spatial audio
+
+- Game, Media and Aux have 7.1 virtual devices, as Sonar's are on Windows;
+  stereo apps play to the front pair (PipeWire does not upmix them). With
+  spatial audio off they are downmixed with PipeWire's own coefficients,
+  so stereo plays as before.
+- Each speaker goes through PipeWire's SOFA spatializer at its position
+  (Sonar's angles turn counterclockwise, as SOFA's azimuths do); a
+  speaker's gain, which the distance slider sets, is its level. Speaker
+  mode adds a crosstalk canceller: RACE (the far ear's path delayed
+  0.26 ms, 3 dB down, 250 Hz to 5 kHz), unrolled into FIR filters because a
+  filter graph cannot loop.
+- The reverb convolves the downmix with a small room's response that ggd
+  generates; Sonar's -12 to 0 dB sits 9 dB under the direct sound.
+- As with the effects, mixer gains switch between the downmix and the
+  virtual speakers, and the speakers' angles are controls, so nothing
+  restarts the audio. The virtualizers add well under 1% of a core.
+
+## Smart volume
+
+LSP's Autogain Stereo on Game, Media and Aux, after the tone controls,
+holds the channel at the loudness its loudness type sets (balanced,
+-23 LUFS, unless a config says otherwise; the client has no control for
+it), raising quiet audio by at most 18 dB and leaving silence alone. The
+level, "the impact of the effect", mixes the leveled signal with the
+original; Autogain only applies a gain, without latency, so the mix is a
+gain between none and the full correction.
+
+## Tests
+
+The tests named `...OnPipeWire` run Sonar against a private PipeWire with
+WirePlumber, no hardware involved, and measure what reaches its null
+devices:
+
+    internal/sonar/testdata/pipewire.sh /tmp/sonar-pw
+    GG_TEST_PIPEWIRE=/tmp/sonar-pw GG_LINUX_DATA=~/.local/share/steelseries-gg \
+        go test ./internal/sonar -run OnPipeWire
+    internal/sonar/testdata/pipewire.sh /tmp/sonar-pw stop
+
+| Test | Covers |
+| --- | --- |
+| TestRoutingOnPipeWire | moving an app between outputs |
+| TestChatMixAndFallbackOnPipeWire | the ChatMix dial, fallback devices, samples |
+| TestStreamModeOnPipeWire | each streamer mode mix |
+| TestMicEffectsOnPipeWire | each mic effect |
+| TestDeviceVolumesOnPipeWire | the device volume routes |
+| TestSurroundOnPipeWire | each ear for the downmix, virtual speakers, speaker mode and the reverb's tail |
+| TestSmartVolumeOnPipeWire | loud and quiet audio both reaching the target loudness |
+| TestEchoCancelOnPipeWire | echo canceling |
+| TestLinkAllOnPipeWire | Link All |
