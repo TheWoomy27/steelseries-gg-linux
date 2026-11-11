@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install golisp's build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libreadline-dev
+      - run: go vet ./...
+      - run: go test ./...
+      - name: Test the drag fix
+        run: python3 packaging/dragfix_test.py
