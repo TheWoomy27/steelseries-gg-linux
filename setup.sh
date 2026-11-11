@@ -95,10 +95,6 @@ want ffmpeg ffmpeg "Moments clips"
 want gpu-screen-recorder gpu-screen-recorder "Moments recording"
 want wl-copy wl-clipboard "text macros, sharing clips"
 want xdg-open xdg-utils "opening links and files"
-[ -f /usr/include/wayland-client.h ] || {
-    optional="$optional wayland"
-    uses="$uses$(printf '\n      %-20s %s' wayland "dragging clips out of GG")"
-}
 
 if [ -n "$missing$optional" ]; then
     [ -n "$missing" ] && note "Needed:$missing"
@@ -112,9 +108,9 @@ if [ -n "$missing$optional" ]; then
         fi
         ;;
     *)
-        note "Install them with your package manager (readline and wayland as"
-        note "their development packages). For another Electron (37 or newer),"
-        note "set GG_LINUX_ELECTRON to its path."
+        note "Install them with your package manager (readline as its development"
+        note "package). For another Electron (37 or newer), set GG_LINUX_ELECTRON"
+        note "to its path."
         ;;
     esac
     missing=""

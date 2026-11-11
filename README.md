@@ -42,8 +42,7 @@ Needed: Go, gcc and readline headers (for golisp), 7z, curl, and Electron
 37 or newer (`GG_LINUX_ELECTRON` picks one that is not on your PATH).
 Recommended: PipeWire with WirePlumber and `pactl` (Sonar, Prism audio
 effects, Moments audio), ffmpeg and gpu-screen-recorder (Moments),
-wl-clipboard (text macros, clip sharing), xdg-utils, and wayland headers
-(dragging clips out of GG on Wayland).
+wl-clipboard (text macros, clip sharing) and xdg-utils.
 
 To do the same by hand:
 
@@ -167,8 +166,8 @@ In progress / not done:
   other services encode the clip to drag onto their site, as on Windows.
   On Wayland, Electron offers dragged files but cannot hand them over
   (Chromium sends nothing for `text/uri-list`), so the launcher preloads
-  a small library, `packaging/dragfix.c`, that answers for it; `install.sh`
-  builds it when gcc and the wayland headers are there.
+  a small library, `packaging/dragfix.c`, that answers for it on GG's
+  Wayland connection (`python3 packaging/dragfix_test.py` tests it).
   Toggling the microphone restarts the recording, which empties the
   buffer.
 - Prism (PrismSync V2, the Engine page's Prism tab): configurations,
