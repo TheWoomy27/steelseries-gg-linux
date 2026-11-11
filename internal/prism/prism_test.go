@@ -243,9 +243,10 @@ func TestReactiveAndIdle(t *testing.T) {
 // is the device where it now is (the canvas reads its new translation).
 func TestMoveDevice(t *testing.T) {
 	fe := &fakeEngine{devs: testDevices(), frames: map[int][]devicert.PrismWrite{}}
-	mig := ""
-	if _, err := os.Stat(paths.PrismDBMig()); err == nil {
-		mig = paths.PrismDBMig()
+	// Device positions live in a table Prism's migrations create.
+	mig := paths.PrismDBMig()
+	if _, err := os.Stat(mig); err != nil {
+		t.Skip("no imported Prism migrations (run gg-setup first)")
 	}
 	s, err := New(t.TempDir()+"/prism.db", mig, fe, func(string, any) {})
 	if err != nil {
