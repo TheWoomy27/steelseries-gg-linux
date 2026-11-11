@@ -34,7 +34,7 @@ if [ -z "$electron" ]; then
     done
 fi
 if [ -z "$electron" ]; then
-    echo "No Electron runtime found. Install electron37 (or set GG_LINUX_ELECTRON)." >&2
+    echo "No Electron runtime found. Install Electron 37 or newer (or set GG_LINUX_ELECTRON)." >&2
     exit 1
 fi
 
@@ -80,16 +80,14 @@ if [ "$drivers" -gt 1 ] && [ -z "${__EGL_VENDOR_LIBRARY_FILENAMES:-}" ] && gpu=$
     [ -n "$node" ] && gpu_args="--render-node-override=/dev/dri/$node"
 fi
 
-# $gpu_args is unquoted so that it vanishes when empty.
 # Files dragged out of GG drop into other apps on Wayland only with the drag
-# fix (packaging/dragfix.c), installed beside the launcher's lib directory.
+# fix (packaging/dragfix.c), which install.sh puts in ../lib/steelseries-gg.
 dragfix="$(dirname "$(readlink -f "$0")")/../lib/steelseries-gg/libgg-dragfix.so"
 if [ -f "$dragfix" ]; then
     export LD_PRELOAD="$dragfix${LD_PRELOAD:+:$LD_PRELOAD}"
 fi
 
-# Chromium's messages (to stderr, which ggd keeps in Logs/client.log) include
-# its Wayland drag and drop sessions.
-log_args="--enable-logging=stderr --vmodule=wayland_data_drag_controller=1,wayland_data_source=1,desktop_drag_drop_client_ozone=1"
+# Chromium's warnings go to stderr, which ggd keeps in Logs/client.log.
+# $gpu_args is unquoted so that it vanishes when empty.
 # shellcheck disable=SC2086
-exec "$electron" "$app" $gpu_args $log_args "$@"
+exec "$electron" "$app" $gpu_args --enable-logging=stderr "$@"
