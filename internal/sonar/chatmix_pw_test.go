@@ -41,9 +41,10 @@ func (f *fakeHeadsets) setConnected(on bool) {
 	f.mu.Unlock()
 }
 
-// TestPhase3OnPipeWire runs ChatMix, fallback devices and samples against
-// a private PipeWire instance with WirePlumber (see TestRoutingOnPipeWire).
-func TestPhase3OnPipeWire(t *testing.T) {
+// TestChatMixAndFallbackOnPipeWire runs ChatMix, fallback devices and
+// samples against a private PipeWire instance with WirePlumber (see
+// TestRoutingOnPipeWire).
+func TestChatMixAndFallbackOnPipeWire(t *testing.T) {
 	runtime, data := os.Getenv("GG_TEST_PIPEWIRE"), os.Getenv("GG_LINUX_DATA")
 	if runtime == "" || data == "" {
 		t.Skip("GG_TEST_PIPEWIRE or GG_LINUX_DATA not set")

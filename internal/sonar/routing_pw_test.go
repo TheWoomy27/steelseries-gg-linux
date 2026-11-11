@@ -17,9 +17,10 @@ import (
 )
 
 // TestRoutingOnPipeWire moves a playing app between outputs through
-// Sonar's API on a private PipeWire instance with WirePlumber. Point
-// GG_TEST_PIPEWIRE at that instance's runtime directory and GG_LINUX_DATA at
-// data imported by gg-setup (for Sonar's database migrations).
+// Sonar's API on a private PipeWire instance with WirePlumber, which
+// testdata/pipewire.sh starts. Point GG_TEST_PIPEWIRE at that instance's
+// runtime directory and GG_LINUX_DATA at data imported by gg-setup (for
+// Sonar's database migrations).
 func TestRoutingOnPipeWire(t *testing.T) {
 	runtime, data := os.Getenv("GG_TEST_PIPEWIRE"), os.Getenv("GG_LINUX_DATA")
 	if runtime == "" || data == "" {
