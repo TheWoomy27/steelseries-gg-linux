@@ -5,6 +5,8 @@ bindings, macros, Prism lighting, GameSense), Sonar, Moments and QuickSet,
 in GG's own interface. It runs **your own copy** of the official GG client
 on Linux Electron and replaces the Windows services behind it.
 
+![GG's Engine page on GNOME, listing an Apex 7, Aerox 5 Wireless, Alias and Arctis Nova 7](docs/screenshot-gnome.webp)
+
 gg-linux is an unofficial project, not affiliated with or endorsed by
 SteelSeries. Nothing from SteelSeries' installer is in this repository: the
 setup script downloads the installer from steelseries.com and unpacks it on
@@ -254,11 +256,11 @@ window is in front, so a running game counts as in front.
 
 ## Tested hardware
 
-Tested on Hyprland (CachyOS) with an Apex 7, an Aerox 5 Wireless, an Alias
-and an Arctis Nova 7 Gen 2, on Electron 37 and 39. Other devices run on the
-same device specifications as on Windows and are expected to work, but are
-untested. The Aerox 5's extra side buttons are read from where that mouse
-reports them, so other mice's extra buttons may need work.
+Tested on Hyprland and GNOME (CachyOS) with an Apex 7, an Aerox 5 Wireless,
+an Alias and an Arctis Nova 7 Gen 2, on Electron 37 and 39. Other devices
+run on the same device specifications as on Windows and are expected to
+work, but are untested. The Aerox 5's extra side buttons are read from
+where that mouse reports them, so other mice's extra buttons may need work.
 
 Reports from other devices and desktops are welcome: open an issue with
 your device and the logs below.
