@@ -36,8 +36,8 @@ your machine.
 
 `setup.sh` installs gg-linux for your user:
 
-1. Checks what gg-linux needs and, on Arch-based systems, offers to install
-   what is missing with pacman.
+1. Checks dependencies and offers to install missing packages with APT
+   (Ubuntu, Mint, Debian), DNF (Fedora), or pacman (Arch and derivatives).
 2. Downloads SteelSeries GG's Windows installer from
    <https://steelseries.com/gg/downloads/gg/latest/windows> into
    `~/.cache/gg-linux` (about 430 MB). `--installer PATH` uses one you
@@ -49,9 +49,14 @@ your machine.
 `--yes` answers its questions, and `--no-udev` / `--no-service` skip the
 last two steps. Then open SteelSeries GG from your application menu.
 
-Needed: Go, gcc and the readline headers (for golisp), 7z, curl, and
-Electron 37 or newer (`GG_LINUX_ELECTRON` picks one that is not on your
-PATH).
+Needed: Go 1.21 or newer (to download the toolchain in `go.mod`), a C
+compiler and readline development files (for golisp), 7-Zip, curl, and
+Electron 37 or newer. Electron 37 and 39 are tested.
+
+[Dependency setup](docs/install.md) gives manual commands for each distribution,
+a local Electron installation, and fixes for Go and Electron library errors.
+`./setup.sh --deps-only` checks dependencies without downloading GG.
+`GG_LINUX_ELECTRON` selects a custom Electron executable.
 
 Recommended:
 

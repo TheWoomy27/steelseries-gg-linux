@@ -1,8 +1,8 @@
 #!/bin/sh
 # One-step install of gg-linux for the current user:
 #
-#   1. checks for what it needs (and offers to install it on Arch-based
-#      systems),
+#   1. checks dependencies and offers to install packages with APT, DNF
+#      or pacman,
 #   2. downloads SteelSeries GG's Windows installer from steelseries.com
 #      (or takes one you already have),
 #   3. builds gg-linux, imports the installer and installs everything in
@@ -12,11 +12,12 @@
 # Run it again to update: it downloads a newer GG when there is one,
 # rebuilds and restarts ggd.
 #
-# Usage: ./setup.sh [--installer PATH] [--yes] [--no-udev] [--no-service]
+# Usage: ./setup.sh [--installer PATH] [--yes] [--no-udev] [--no-service] [--deps-only]
 #   --installer PATH  use this SteelSeriesGG<version>Setup.exe, no download
 #   --yes             answer yes to every question (packages, sudo)
 #   --no-udev         leave device access alone
 #   --no-service      do not enable or restart the ggd user service
+#   --deps-only       check/install dependencies without installing GG
 set -eu
 
 repo=$(cd "$(dirname "$0")" && pwd)
@@ -28,15 +29,19 @@ installer=""
 yes=0
 udev=1
 service=1
+deps_only=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
-    --installer) installer="$2"; shift 2 ;;
+    --installer)
+        [ $# -ge 2 ] && [ -n "$2" ] || { echo "--installer needs a path" >&2; exit 2; }
+        installer="$2"; shift 2 ;;
     --installer=*) installer="${1#*=}"; shift ;;
     --yes|-y) yes=1; shift ;;
     --no-udev) udev=0; shift ;;
     --no-service) service=0; shift ;;
-    -h|--help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --deps-only) deps_only=1; shift ;;
+    -h|--help) sed -n '2,/^set -eu/{ /^set -eu/d; p; }' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Unknown option: $1 (see --help)" >&2; exit 2 ;;
     esac
 done
@@ -56,68 +61,12 @@ ask() {
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
-electron_found() {
-    [ -n "${GG_LINUX_ELECTRON:-}" ] && return 0
-    for e in electron37 electron39 electron38 electron36 electron35 electron34 electron33 electron32 electron31 electron; do
-        have "$e" && return 0
-    done
-    return 1
-}
-
 [ "$(id -u)" = 0 ] && die "run this as your own user, not root (it asks for sudo when it needs it)."
 
-# --- 1. What it needs -------------------------------------------------------
-# Package names are Arch's; other distributions name some differently.
-missing=""
-optional=""
-uses=""
-check() {
-    have go || missing="$missing go"
-    have 7z || missing="$missing 7zip"
-    have curl || missing="$missing curl"
-    have cc || missing="$missing gcc"
-    [ -f /usr/include/readline/readline.h ] || missing="$missing readline"
-    # Electron 37 is what gg-linux was built on; Arch now ships 39, which works too.
-    electron_found || missing="$missing electron39"
-}
-want() { # COMMAND PACKAGE USE
-    have "$1" && return 0
-    optional="$optional $2"
-    uses="$uses$(printf '\n      %-20s %s' "$2" "$3")"
-}
-
-step "Checking what gg-linux needs"
-check
-want pw-dump pipewire "Sonar, Prism audio effects"
-want wpctl wireplumber "Sonar device volumes"
-want pactl libpulse "Moments audio"
-want ffmpeg ffmpeg "Moments clips"
-want gpu-screen-recorder gpu-screen-recorder "Moments recording"
-want wl-copy wl-clipboard "text macros, sharing clips"
-want xdg-open xdg-utils "opening links and files"
-
-if [ -n "$missing$optional" ]; then
-    [ -n "$missing" ] && note "Needed:$missing"
-    [ -n "$optional" ] && note "Recommended:$uses"
-    distro=$( (. /etc/os-release && echo "${ID:-} ${ID_LIKE:-}") 2>/dev/null || true)
-    case " $distro " in
-    *" arch "*)
-        if ask "Install$missing$optional with pacman (sudo)?"; then
-            # shellcheck disable=SC2086
-            sudo pacman -S --needed $missing $optional
-        fi
-        ;;
-    *)
-        note "Install them with your package manager (readline as its development"
-        note "package). For another Electron (37 or newer), set GG_LINUX_ELECTRON"
-        note "to its path."
-        ;;
-    esac
-    missing=""
-    check
-    [ -z "$missing" ] || die "still missing:$missing"
-fi
-note "All set."
+# --- 1. Dependencies --------------------------------------------------------
+. "$repo/packaging/dependencies.sh"
+setup_dependencies
+[ "$deps_only" = 0 ] || exit 0
 
 # --- 2. SteelSeries GG's installer -------------------------------------------
 if [ -z "$installer" ]; then

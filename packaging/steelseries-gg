@@ -26,6 +26,11 @@ if ! pgrep -x ggd >/dev/null && systemctl --user cat steelseries-ggd.service >/d
 fi
 
 electron="${GG_LINUX_ELECTRON:-}"
+# A local npm installation also works from the application menu.
+local_electron="$(dirname "$(readlink -f "$0")")/../lib/steelseries-gg/electron/node_modules/electron/dist/electron"
+if [ -z "$electron" ] && [ -x "$local_electron" ]; then
+    electron=$local_electron
+fi
 if [ -z "$electron" ]; then
     # The Windows client ships Electron 31; newer releases keep the
     # BrowserView/WebContentsView APIs it uses.
