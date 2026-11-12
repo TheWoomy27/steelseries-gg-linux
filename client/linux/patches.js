@@ -56,6 +56,20 @@ const PATCHES = [
   },
 ];
 
+// Code added to the client's preload, which runs in each of its pages.
+const PRELOAD_ADDITIONS = `
+// gg-linux: the PrismSync tile in Engine > Apps opens PrismSync's older
+// editor, which the Engine on Linux does not run. The Prism tab is its
+// editor here, so "Configure" goes there.
+window.addEventListener('click', (e) => {
+  const tile = '.app-prismSync';
+  if (!(e.target instanceof Element) || !e.target.closest(tile + ' .appConfigButton, ' + tile + ' .appHeaderClickArea')) return;
+  e.stopImmediatePropagation();
+  e.preventDefault();
+  location.hash = '#/gg/bloom';
+}, true);
+`;
+
 function apply(src, file) {
   for (const p of PATCHES) {
     if (p.file !== file) continue;
@@ -65,6 +79,7 @@ function apply(src, file) {
     }
     src = src.replace(p.find, p.replace);
   }
+  if (file === 'main/preload.js') src += PRELOAD_ADDITIONS;
   return src;
 }
 

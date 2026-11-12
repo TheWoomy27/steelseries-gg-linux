@@ -11,7 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const Module = require('module');
 const childProcess = require('child_process');
-const { app } = require('electron');
+const { app, session } = require('electron');
 
 const env = require('./env');
 const core = require('./core');
@@ -26,6 +26,15 @@ if (process.env.XDG_SESSION_TYPE === 'wayland' && !process.env.GG_LINUX_X11) {
   app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
   app.commandLine.appendSwitch('enable-features', 'WaylandWindowDecorations');
 }
+
+// The client reports its errors to SteelSeries' Sentry project. Errors
+// from a client running on gg-linux are not theirs to look into, so the
+// reports stay here.
+function keepErrorReports(ses) {
+  ses.webRequest.onBeforeRequest({ urls: ['*://*.sentry.io/*'] }, (details, done) => done({ cancel: true }));
+}
+app.on('session-created', keepErrorReports);
+app.whenReady().then(() => keepErrorReports(session.defaultSession));
 
 // The Windows client asks `tasklist` whether SteelSeriesGG.exe and
 // SteelSeriesEngine.exe are running. On Linux both live inside ggd.
