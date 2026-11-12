@@ -2,6 +2,12 @@
 
 select_package_manager() {
     manager=unknown
+    # Bazzite can include DNF, but host packages need rpm-ostree.
+    case " $1 " in
+        *" bazzite "*|*" bazzite-"*)
+            have rpm-ostree && manager=rpm-ostree
+            return 0 ;;
+    esac
     case " $1 " in
         *" debian "*|*" ubuntu "*|*" linuxmint "*) have apt-get && manager=apt ;;
         *" fedora "*) have dnf && manager=dnf ;;
@@ -29,13 +35,13 @@ package_for() {
         apt:7zip) apt_package p7zip-full 7zip ;;
         apt:pipewire) echo pipewire-bin ;;
         apt:pactl) echo pulseaudio-utils ;;
-        dnf:go) echo golang ;;
-        dnf:cc) echo gcc ;;
-        dnf:readline) echo readline-devel ;;
-        dnf:7zip) echo 7zip ;;
-        dnf:pipewire) echo pipewire-utils ;;
-        dnf:pactl) echo pulseaudio-utils ;;
-        dnf:ffmpeg) echo ffmpeg-free ;;
+        dnf:go|rpm-ostree:go) echo golang ;;
+        dnf:cc|rpm-ostree:cc) echo gcc ;;
+        dnf:readline|rpm-ostree:readline) echo readline-devel ;;
+        dnf:7zip|rpm-ostree:7zip) echo 7zip ;;
+        dnf:pipewire|rpm-ostree:pipewire) echo pipewire-utils ;;
+        dnf:pactl|rpm-ostree:pactl) echo pulseaudio-utils ;;
+        dnf:ffmpeg|rpm-ostree:ffmpeg) echo ffmpeg-free ;;
         pacman:cc) echo gcc ;;
         pacman:pactl) echo libpulse ;;
         *) echo "$1" ;;
@@ -51,6 +57,9 @@ install_packages() {
                 apt_updated=1
             fi
             sudo apt-get install -y "$@" ;;
+        rpm-ostree)
+            sudo rpm-ostree install --idempotent --allow-inactive -y "$@" || return 1
+            reboot_needed=1 ;;
         dnf) sudo dnf install -y "$@" ;;
         pacman) sudo pacman -S --needed --noconfirm "$@" ;;
         *) return 1 ;;
@@ -60,6 +69,7 @@ install_packages() {
 manual_packages() {
     case "$manager" in
         apt) note "  sudo apt-get update && sudo apt-get install $*" ;;
+        rpm-ostree) note "  sudo rpm-ostree install --idempotent --allow-inactive $*" ;;
         dnf) note "  sudo dnf install $*" ;;
         pacman) note "  sudo pacman -S --needed $*" ;;
         *) note "Install these dependencies with your package manager: $*" ;;
@@ -99,15 +109,32 @@ check_required() {
     have curl || missing="$missing curl"
     have cc || missing="$missing $(package_for cc)"
     readline_found || missing="$missing $(package_for readline)"
+    # Include npm in the same deployment to avoid a second required reboot.
+    if [ "$manager" = rpm-ostree ] && ! electron_found && ! have npm; then
+        missing="$missing npm"
+    fi
 }
 
 electron_help() {
     note "Install Electron 39 for your user, then run ./setup.sh again:"
-    manual_packages npm
+    if ! have npm; then
+        manual_packages npm
+        if [ "$manager" = rpm-ostree ]; then
+            note "After installing npm, reboot before you run the npm command below."
+        fi
+    fi
     note "  npm install --prefix \"$electron_dir\" electron@39"
     note "The launcher finds this runtime automatically. Do not run npm with sudo."
     note "For another runtime, set GG_LINUX_ELECTRON to its executable path."
     note "See docs/install.md for Electron libraries and distribution-specific steps."
+}
+
+reboot_for_dependencies() {
+    step "Reboot required"
+    note "rpm-ostree staged the packages for the next boot."
+    note "Reboot when ready, then run ./setup.sh again with the same options."
+    note "Setup stopped before the GG download, build, or service changes."
+    exit 0
 }
 
 setup_dependencies() {
@@ -115,7 +142,12 @@ setup_dependencies() {
     distro=$( (. /etc/os-release && echo "${ID:-} ${ID_LIKE:-}") 2>/dev/null || true)
     select_package_manager "$distro"
     apt_updated=0
+    reboot_needed=0
     electron_dir="${PREFIX:-$HOME/.local}/lib/steelseries-gg/electron"
+    if [ "$manager" = rpm-ostree ]; then
+        note "Bazzite stages system packages with rpm-ostree. Changes need a reboot."
+        note "Setup will stop after staging packages. It will not reboot your system."
+    fi
     check_required
     if [ -n "$missing" ]; then
         note "Required packages:$missing"
@@ -126,6 +158,8 @@ setup_dependencies() {
             if ! install_packages $missing; then
                 note "Package installation failed. Check the package manager errors above."
                 manual_packages $missing
+            elif [ "$manager" = rpm-ostree ]; then
+                reboot_for_dependencies
             fi
         fi
         check_required
@@ -189,6 +223,7 @@ setup_dependencies() {
             done
         fi
     fi
+    [ "$reboot_needed" = 0 ] || reboot_for_dependencies
     if ! have gpu-screen-recorder; then
         note "For GPU capture, install gpu-screen-recorder: https://git.dec05eba.com/gpu-screen-recorder/about/"
         note "See docs/install.md for capture alternatives and optional audio plugins."

@@ -1,8 +1,9 @@
 # Dependency setup
 
 Run `./setup.sh` as your normal user. It offers to install missing packages
-with APT on Ubuntu, Linux Mint and Debian, DNF on Fedora, or pacman on Arch
-and its derivatives. It asks before it uses sudo. `--yes` accepts these prompts.
+with APT on Ubuntu, Linux Mint and Debian, DNF on Fedora, rpm-ostree on
+Bazzite, or pacman on Arch and its derivatives. It asks before it uses sudo.
+`--yes` accepts these prompts.
 
 Run `./setup.sh --deps-only` to check dependencies without downloading or
 installing GG. Add `--yes` to accept package installation.
@@ -58,6 +59,46 @@ Fedora's [`ffmpeg-free`](https://packages.fedoraproject.org/pkgs/ffmpeg/ffmpeg-f
 need a full FFmpeg build with H.264/AAC support from your chosen codec repository.
 Setup does not add that repository or replace codec packages.
 
+## Bazzite
+
+Run setup on the Bazzite host from a desktop terminal, outside Distrobox:
+
+```sh
+./setup.sh
+```
+
+Setup detects Bazzite before Fedora, even when DNF is present. It offers to
+stage missing system packages with `rpm-ostree`. If Electron and npm are
+missing, setup includes npm in the same required package transaction.
+After a successful transaction, setup stops before the GG download or build.
+Reboot when ready, then run setup again with the same options.
+`--yes` accepts package installation but does not reboot the system.
+
+To install the build dependencies by hand:
+
+```sh
+sudo rpm-ostree install --idempotent --allow-inactive golang gcc readline-devel 7zip curl npm
+```
+
+Reboot after the command succeeds. Then install Electron for your user:
+
+```sh
+npm install --prefix "${PREFIX:-$HOME/.local}/lib/steelseries-gg/electron" electron@39
+./setup.sh
+```
+
+Most Bazzite images already include audio and desktop tools. Setup offers
+missing recommended tools separately. Successful installs also need a reboot
+before setup can continue. Unavailable optional packages do not block setup.
+Do not use the regular Fedora DNF commands on the Bazzite host.
+
+Bazzite recommends other installation methods before package layering.
+This source installer needs host build dependencies and device access.
+See [Bazzite's package layering guide](https://docs.bazzite.gg/Installing_and_Managing_Software/rpm-ostree/)
+for how layered packages affect system updates.
+The installer tests simulate Bazzite. Full application operation on Bazzite
+needs testing on a Bazzite system.
+
 ## Arch and derivatives
 
 ```sh
@@ -78,6 +119,8 @@ First install npm:
 sudo apt-get install npm
 # Fedora
 sudo dnf install npm
+# Bazzite: reboot after this command, before running npm
+sudo rpm-ostree install --idempotent --allow-inactive npm
 # Arch
 sudo pacman -S --needed npm
 ```
@@ -103,6 +146,8 @@ sudo apt-get install libgtk-3-0t64 libnss3 libasound2t64 libgbm1 libxss1 libatk-
 sudo apt-get install libgtk-3-0 libnss3 libasound2 libgbm1 libxss1 libatk-bridge2.0-0
 # Fedora
 sudo dnf install gtk3 nss alsa-lib mesa-libgbm libXScrnSaver at-spi2-atk
+# Bazzite: reboot after this command
+sudo rpm-ostree install --idempotent --allow-inactive gtk3 nss alsa-lib mesa-libgbm libXScrnSaver at-spi2-atk
 ```
 
 Electron also needs a graphical desktop session. Do not disable its sandbox

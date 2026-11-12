@@ -37,7 +37,9 @@ your machine.
 `setup.sh` installs gg-linux for your user:
 
 1. Checks dependencies and offers to install missing packages with APT
-   (Ubuntu, Mint, Debian), DNF (Fedora), or pacman (Arch and derivatives).
+   (Ubuntu, Mint, Debian), DNF (Fedora), rpm-ostree (Bazzite), or pacman
+   (Arch and derivatives). Bazzite needs a reboot after package installation.
+   Run setup again after that reboot.
 2. Downloads SteelSeries GG's Windows installer from
    <https://steelseries.com/gg/downloads/gg/latest/windows> into
    `~/.cache/gg-linux` (about 430 MB). `--installer PATH` uses one you

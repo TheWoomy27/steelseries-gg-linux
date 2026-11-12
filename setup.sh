@@ -2,7 +2,7 @@
 # One-step install of gg-linux for the current user:
 #
 #   1. checks dependencies and offers to install packages with APT, DNF
-#      or pacman,
+#      or pacman (Bazzite uses rpm-ostree and needs a reboot),
 #   2. downloads SteelSeries GG's Windows installer from steelseries.com
 #      (or takes one you already have),
 #   3. builds gg-linux, imports the installer and installs everything in

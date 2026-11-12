@@ -55,6 +55,10 @@ cc() { cat >/dev/null; [ "${CC_FAIL:-0}" = 0 ]; }
             ("ubuntu debian", "apt-get", "apt"),
             ("debian", "apt-get", "apt"),
             ("fedora", "dnf", "dnf"),
+            ("bazzite fedora", "rpm-ostree dnf", "rpm-ostree"),
+            ("bazzite-nvidia fedora", "rpm-ostree dnf", "rpm-ostree"),
+            ("bazzite fedora", "rpm-ostree", "rpm-ostree"),
+            ("bazzite fedora", "dnf", "unknown"),
             ("cachyos arch", "pacman", "pacman"),
             ("opensuse", "zypper", "unknown"),
             ("fedora", "apt-get", "unknown"),
@@ -70,6 +74,7 @@ cc() { cat >/dev/null; [ "${CC_FAIL:-0}" = 0 ]; }
             "dnf": ["golang", "gcc", "readline-devel", "7zip", "pipewire-utils", "pulseaudio-utils", "ffmpeg-free"],
             "pacman": ["go", "gcc", "readline", "7zip", "pipewire", "libpulse", "ffmpeg"],
         }
+        expected["rpm-ostree"] = expected["dnf"]
         for manager, names in expected.items():
             r = self.run_shell(f'manager={manager}; for key in go cc readline 7zip pipewire pactl ffmpeg; do package_for "$key"; done')
             self.assert_success(r)
@@ -174,6 +179,79 @@ cc() { cat >/dev/null; [ "${CC_FAIL:-0}" = 0 ]; }
         self.assertIn('npm install --prefix "', r.stdout)
         self.assertIn('electron@39', r.stdout)
         self.assertIn('Electron is missing', r.stdout)
+
+    def bazzite_run(self, commands="", **variables):
+        return self.setup_run('select_package_manager() { manager=rpm-ostree; };',
+                              commands=commands, **variables)
+
+    def test_bazzite_install_stages_packages(self):
+        r = self.run_shell('manager=rpm-ostree; reboot_needed=0; install_packages gcc readline-devel; echo "REBOOT=$reboot_needed"', "sudo")
+        self.assert_success(r)
+        self.assertIn("SUDO rpm-ostree install --idempotent --allow-inactive -y gcc readline-devel", r.stdout)
+        self.assertIn("REBOOT=1", r.stdout)
+        self.assertNotIn("--reboot", r.stdout)
+        self.assertNotIn("--apply-live", r.stdout)
+
+    def test_bazzite_install_failure_does_not_set_reboot(self):
+        r = self.run_shell('manager=rpm-ostree; reboot_needed=0; if install_packages gcc; then exit 2; fi; echo "REBOOT=$reboot_needed"', "sudo", SUDO_FAIL="1")
+        self.assert_success(r)
+        self.assertIn("REBOOT=0", r.stdout)
+
+    def test_bazzite_required_packages_stop_before_go(self):
+        r = self.bazzite_run(commands="sudo", ACCEPT="1")
+        self.assert_success(r)
+        self.assertIn("SUDO rpm-ostree install --idempotent --allow-inactive -y golang 7zip curl gcc readline-devel npm", r.stdout)
+        self.assertIn("Reboot required", r.stdout)
+        self.assertIn("same options", r.stdout)
+        self.assertNotIn("go version", r.stdout)
+        self.assertNotIn("Required dependencies are ready", r.stdout)
+        self.assertNotIn("SUDO dnf", r.stdout)
+
+    def test_bazzite_existing_electron_does_not_require_npm(self):
+        r = self.bazzite_run(commands="sudo electron39", ACCEPT="1")
+        self.assert_success(r)
+        self.assertIn("Reboot required", r.stdout)
+        self.assertNotIn("readline-devel npm", r.stdout)
+
+    def test_bazzite_declined_install_has_manual_command(self):
+        r = self.bazzite_run()
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("sudo rpm-ostree install --idempotent --allow-inactive golang", r.stdout)
+        self.assertNotIn("SUDO", r.stdout)
+        self.assertNotIn("Reboot required", r.stdout)
+
+    def test_bazzite_failed_required_install_stays_an_error(self):
+        r = self.bazzite_run(commands="sudo", ACCEPT="1", SUDO_FAIL="1")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("Package installation failed", r.stdout)
+        self.assertNotIn("Reboot required", r.stdout)
+
+    def test_bazzite_optional_packages_also_require_reboot(self):
+        r = self.bazzite_run(commands="go cc curl 7zz electron39 sudo", ACCEPT="1", FAIL_PACKAGE="wireplumber")
+        self.assert_success(r)
+        self.assertIn("Could not install wireplumber", r.stdout)
+        self.assertIn("SUDO rpm-ostree install --idempotent --allow-inactive -y ffmpeg-free", r.stdout)
+        self.assertIn("Reboot required", r.stdout)
+        self.assertNotIn("Required dependencies are ready", r.stdout)
+
+    def test_bazzite_all_optional_failures_do_not_require_reboot(self):
+        r = self.bazzite_run(commands="go cc curl 7zz electron39 sudo", ACCEPT="1", SUDO_FAIL="1")
+        self.assert_success(r)
+        self.assertNotIn("Reboot required", r.stdout)
+        self.assertIn("Required dependencies are ready", r.stdout)
+
+    def test_bazzite_after_reboot_can_continue(self):
+        r = self.bazzite_run(commands="go cc curl 7zz electron39 pw-dump wpctl pactl ffmpeg wl-copy xdg-open")
+        self.assert_success(r)
+        self.assertIn("Required dependencies are ready", r.stdout)
+        self.assertNotIn("Reboot required", r.stdout)
+        self.assertNotIn("SUDO", r.stdout)
+
+    def test_bazzite_existing_npm_does_not_get_layered(self):
+        r = self.bazzite_run(commands="sudo npm", ACCEPT="1")
+        self.assert_success(r)
+        self.assertIn("Reboot required", r.stdout)
+        self.assertNotIn("readline-devel npm", r.stdout)
 
     def test_launcher_finds_local_electron(self):
         with tempfile.TemporaryDirectory(prefix="gg launcher ") as temp:
