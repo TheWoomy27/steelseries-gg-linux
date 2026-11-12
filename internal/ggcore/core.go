@@ -38,6 +38,7 @@ type Core struct {
 	gameWatchers []gameWatcher
 	playing      string
 	shortcuts    shortcutStore
+	notify       func(tag, summary, body string) // shows a desktop notification
 	recorder     inputrec.Recorder
 }
 
@@ -121,6 +122,7 @@ func (c *Core) routes() {
 	c.loadoutRoutes()
 	c.quicksetRoutes()
 	c.alertRoutes()
+	c.overlayRoutes()
 	c.autoclipRoutes()
 	c.shortcutRoutes()
 	c.gameRoutes()

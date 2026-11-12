@@ -259,12 +259,22 @@ func (s *Service) statusRoutes() {
 
 	sv.Handle("GET /keyboardShortcuts", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, []any{}) })
 
-	// QuickSet profiles and in-game overlays come from GG features that
-	// are not available on Linux.
+	// Sonar's in-game overlays (volume, mute, device changes) are not
+	// drawn on Linux; their settings page keeps its switches.
 	sv.Handle("GET /overlays", func(w http.ResponseWriter, r *http.Request) {
-		httpx.JSON(w, map[string]any{"settings": []any{}, "subAppOverlaysEnabled": false})
+		httpx.JSON(w, map[string]any{"settings": []any{}, "subAppOverlaysEnabled": s.boolSetting("OVERLAYS_ENABLED")})
 	})
-	sv.Handle("GET /overlays/isHardwareTriggeredEnabled", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, false) })
+	sv.Handle("PUT /overlays/isEnabled/{isEnabled}", func(w http.ResponseWriter, r *http.Request) {
+		on, err := parseBool(r.PathValue("isEnabled"))
+		if err == nil {
+			err = s.setBoolSetting("OVERLAYS_ENABLED", on)
+		}
+		reply(w, on, err)
+	})
+	s.boolRoutes("/overlays/isHardwareTriggeredEnabled", "OVERLAYS_HARDWARE_TRIGGERED_ENABLED")
+	sv.Handle("PUT /overlays/position/{position}", func(w http.ResponseWriter, r *http.Request) {
+		reply(w, r.PathValue("position"), s.setSetting("OVERLAYS_POSITION", r.PathValue("position")))
+	})
 
 	// Sonar forwards these to SteelSeries' analytics; gg-linux drops them.
 	sv.Handle("POST /analytics/track", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })

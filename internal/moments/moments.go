@@ -34,8 +34,10 @@ type Host interface {
 	Games() []LibraryGame
 	// SetRecording shows in the tray whether Moments is recording.
 	SetRecording(on bool)
-	// Notify shows a desktop notification.
-	Notify(tag, summary, body string)
+	// Notify shows a desktop notification, which replaces an earlier one
+	// with the same tag, unless GG's overlay of that name ("" for none)
+	// is switched off.
+	Notify(overlay, tag, summary, body string)
 }
 
 // Paths are where Moments keeps its files.
@@ -440,7 +442,18 @@ func (s *Service) Toggle(what string) (bool, error) {
 		return false, fmt.Errorf("unknown toggle %q", what)
 	}
 	if st.DisplayNotifications {
-		s.host.Notify("moments/"+what, summary, "")
+		// GG's overlays for these: capture coming on, and desktop mode
+		// going on and off.
+		overlay := ""
+		switch {
+		case what == "capture" && on:
+			overlay = "momentsActive"
+		case what == "desktop" && on:
+			overlay = "desktopModeActivated"
+		case what == "desktop":
+			overlay = "desktopModeDeactivated"
+		}
+		s.host.Notify(overlay, "moments/"+what, summary, "")
 	}
 	return on, nil
 }
@@ -521,7 +534,7 @@ func (s *Service) Clip(trigger, triggerName string) (Clip, error) {
 	}
 	slog.Info("moments: clip saved", "path", out, "length", c.FullLength)
 	if st.DisplayNotifications {
-		s.host.Notify("moments/clip", "Clip saved", fmt.Sprintf("%s · %.0f s", gameName, c.FullLength))
+		s.host.Notify("clipCaptured", "moments/clip", "Clip saved", fmt.Sprintf("%s · %.0f s", gameName, c.FullLength))
 	}
 	return c, nil
 }

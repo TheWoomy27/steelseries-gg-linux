@@ -120,7 +120,10 @@ func (h momentsHost) Games() []moments.LibraryGame {
 
 func (h momentsHost) SetRecording(on bool) { h.core.SetRecording(on) }
 
-func (h momentsHost) Notify(tag, summary, body string) {
+func (h momentsHost) Notify(overlay, tag, summary, body string) {
+	if overlay != "" && !h.core.OverlayEnabled("Moments", overlay) {
+		return
+	}
 	if err := notify.Send(tag, summary, body, ""); err != nil {
 		slog.Warn("moments notification", "err", fmt.Sprint(err))
 	}

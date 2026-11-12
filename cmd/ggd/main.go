@@ -139,10 +139,15 @@ func run(verbose bool) error {
 		on, _ := core.Setting("autoFlattenEQEnabled").(bool)
 		return on && core.SubAppEnabled("sonar")
 	})
-	// Windows GG shows an overlay for a low battery; Linux shows a desktop
-	// notification, unless GG's overlay is switched off.
+	// Where Windows GG shows overlays, Linux shows desktop notifications,
+	// unless GG's overlay is switched off.
+	core.OnNotify(func(tag, summary, body string) {
+		if err := notify.Send(tag, summary, body, ""); err != nil {
+			slog.Warn("notification", "tag", tag, "err", err)
+		}
+	})
 	eng.OnBatteryLow(func(device string, percent int, sound bool) {
-		if core.Setting("overlayEnabled") == false {
+		if core.Setting("overlayEnabled") == false || !core.OverlayEnabled("engine", "lowBattery") {
 			return
 		}
 		name := ""

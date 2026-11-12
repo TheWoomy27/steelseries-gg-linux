@@ -173,6 +173,7 @@ func (c *Core) DeployLoadout(id string, manual bool) bool {
 	if fn := c.hooks().loadoutChanged; fn != nil {
 		fn(cfgs)
 	}
+	c.notifyLoadout(name, manual)
 	c.Broadcast("EVENT_FOREGROUND_APP_OR_LOADOUT_CHANGE", map[string]any{
 		"version":                 1,
 		"loadoutId":               id,

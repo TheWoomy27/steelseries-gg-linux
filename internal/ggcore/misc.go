@@ -1,6 +1,7 @@
 package ggcore
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -15,6 +16,17 @@ import (
 	"ggl/internal/httpx"
 	"ggl/internal/paths"
 )
+
+// importedVersion is the GG version gg-setup imported.
+func importedVersion() string {
+	var info struct {
+		Version string `json:"ggVersion"`
+	}
+	if b, err := os.ReadFile(filepath.Join(paths.Data(), "import.json")); err == nil {
+		json.Unmarshal(b, &info)
+	}
+	return info.Version
+}
 
 func (c *Core) miscRoutes() {
 	s := c.srv
@@ -36,7 +48,7 @@ func (c *Core) miscRoutes() {
 		s.Handle("POST "+p, func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })
 	}
 	s.Handle("GET /applicationMetadata", func(w http.ResponseWriter, r *http.Request) {
-		httpx.JSON(w, map[string]any{"applicationMetadata": map[string]any{}})
+		httpx.JSON(w, map[string]any{"applicationMetadata": map[string]any{"ggVersion": importedVersion()}})
 	})
 
 	// Updates come from the distribution / gg-setup, not an in-app updater.
@@ -71,12 +83,11 @@ func (c *Core) miscRoutes() {
 	})
 	s.Handle("POST /cvGamesense/stop", func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })
 
-	// GameSense and overlay registries: the Windows handlers wrap each
-	// result in a key named after the operation.
-	for path, key := range map[string]string{"/overlays": "get_overlay_settings", "/known_games": "known_games"} {
-		k := key
-		s.Handle("GET "+path, func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, map[string]any{k: []any{}}) })
-	}
+	// The Windows handlers wrap each result in a key named after the
+	// operation.
+	s.Handle("GET /known_games", func(w http.ResponseWriter, r *http.Request) {
+		httpx.JSON(w, map[string]any{"known_games": []any{}})
+	})
 	// GameSense: the games lighting devices and their handlers.
 	s.Handle("GET /game_integration_games", func(w http.ResponseWriter, r *http.Request) {
 		var games any = []any{}

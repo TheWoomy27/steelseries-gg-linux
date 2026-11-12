@@ -31,7 +31,7 @@ func (h *fakeHost) states() []bool {
 	defer h.mu.Unlock()
 	return append([]bool(nil), h.recording...)
 }
-func (h *fakeHost) Notify(tag, summary, body string) {}
+func (h *fakeHost) Notify(overlay, tag, summary, body string) {}
 
 func TestSettingsApply(t *testing.T) {
 	d := defaultSettings()
