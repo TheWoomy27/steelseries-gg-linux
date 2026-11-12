@@ -19,6 +19,8 @@ jobs:
       - name: Test installer dependencies
         run: |
           for script in setup.sh packaging/dependencies.sh packaging/install.sh packaging/steelseries-gg; do sh -n "$script"; done
-          python3 packaging/dependencies_test.py
+          for test_shell in dash bash; do
+            GG_TEST_SHELL="$test_shell" python3 packaging/dependencies_test.py
+          done
       - name: Test the drag fix
         run: python3 packaging/dragfix_test.py

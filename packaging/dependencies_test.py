@@ -15,6 +15,20 @@ class DependenciesTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="gg-deps-") as home:
             env = dict(os.environ, HOME=home, PREFIX=f"{home}/prefix", COMMANDS=commands)
             env.update(variables)
+            # Dash requires portable function names. Mock hyphenated commands
+            # with executables instead of shell functions.
+            mock_bin = Path(home) / "bin"
+            mock_bin.mkdir()
+            apt_cache = mock_bin / "apt-cache"
+            apt_cache.write_text(r'''#!/bin/sh
+candidate=${APT_CANDIDATE:-1.0}
+if [ "${APT_ONLY_7ZIP:-0}" = 1 ] && [ "$2" != 7zip ]; then
+    candidate="(none)"
+fi
+printf '  Candidate: %s\n' "$candidate"
+''')
+            apt_cache.chmod(0o755)
+            env["PATH"] = str(mock_bin) + os.pathsep + env["PATH"]
             harness = r'''
 set -eu
 repo=$REPO
@@ -24,7 +38,6 @@ note() { printf '%s\n' "$*"; }
 step() { note "$*"; }
 die() { note "$*"; exit 1; }
 ask() { [ "${ACCEPT:-0}" = 1 ]; }
-apt-cache() { printf '  Candidate: %s\n' "${APT_CANDIDATE:-1.0}"; }
 sudo() {
     printf 'SUDO %s\n' "$*"
     case " $* " in *" ${FAIL_PACKAGE:-NO_FAILURE} "*) return 1;; esac
@@ -84,7 +97,7 @@ cc() { cat >/dev/null; [ "${CC_FAIL:-0}" = 0 ]; }
         r = self.run_shell('manager=apt; package_for 7zip', APT_CANDIDATE="(none)")
         self.assert_success(r)
         self.assertEqual(r.stdout.strip(), "p7zip-full")
-        r = self.run_shell('apt-cache() { case "$2" in 7zip) echo "Candidate: 1";; *) echo "Candidate: (none)";; esac; }; manager=apt; package_for 7zip')
+        r = self.run_shell('manager=apt; package_for 7zip', APT_ONLY_7ZIP="1")
         self.assert_success(r)
         self.assertEqual(r.stdout.strip(), "7zip")
 
