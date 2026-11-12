@@ -174,8 +174,10 @@ setup_dependencies() {
     if ! printf '%s\n' "$go_version" | awk '{split($3,v,"."); sub(/^go/,"",v[1]); exit !(v[1]>1 || (v[1]==1 && v[2]>=21))}'; then
         die "Go 1.21 or newer is required to select the toolchain in go.mod. Install Go from https://go.dev/doc/install, then run ./setup.sh again."
     fi
-    if ! (cd "$repo" && go version); then
-        die "Go cannot load the toolchain in go.mod. Check network access and GOTOOLCHAIN (normally auto). See docs/install.md."
+    # go version can succeed with GOTOOLCHAIN=local even if go.mod needs
+    # a newer version. Load the module before the installer download.
+    if ! (cd "$repo" && go list -m >/dev/null && go version); then
+        die "Go cannot load the toolchain in go.mod. Try: GOTOOLCHAIN=auto ./setup.sh. Check network access. See docs/install.md."
     fi
     [ "$(cd "$repo" && go env CGO_ENABLED)" = 1 ] || die "CGO is disabled. Run: CGO_ENABLED=1 ./setup.sh"
 

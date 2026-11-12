@@ -156,9 +156,26 @@ for download errors.
 
 ## Go version and compiler errors
 
-Go 1.21 or newer can download the toolchain specified in `go.mod`. The
-build needs network access for that toolchain and the Go modules.
-If setup reports an older Go version, install a current Go release with the
+The project needs Go 1.26 or newer. Bazzite's Go 1.26.10 meets this requirement.
+An earlier `go.mod` required 1.27.3. If you see that error, update the checkout:
+
+```sh
+git pull
+./setup.sh
+```
+
+Fedora and Bazzite can use `GOTOOLCHAIN=local` by default, which disables
+automatic toolchain downloads. See the [Fedora Go notes](https://developer.fedoraproject.org/tech/languages/go/go-installation.html).
+Go 1.21 or newer can download a newer toolchain when you allow it:
+
+```sh
+GOTOOLCHAIN=auto ./setup.sh
+```
+
+This setting applies only to that setup run. It does not change your system Go
+or saved Go settings. Toolchain downloads need network access and checksum
+verification. Builds also need network access for missing Go modules.
+To install a current Go release by hand, use the
 [official Go installation steps](https://go.dev/doc/install), then add
 `/usr/local/go/bin` to your PATH before the distribution's Go:
 
@@ -168,12 +185,8 @@ export PATH="/usr/local/go/bin:$PATH"
 ```
 
 If Go cannot select the required toolchain, check your network connection.
-If you deliberately disabled automatic toolchain downloads, install the version
-in `go.mod` yourself, or allow downloads for this setup run:
-
-```sh
-GOTOOLCHAIN=auto ./setup.sh
-```
+If automatic toolchain downloads are disabled, use `GOTOOLCHAIN=auto` as shown
+above, or install the version in `go.mod` yourself.
 
 The build also needs C support. If you disabled CGO, run:
 

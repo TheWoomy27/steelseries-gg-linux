@@ -51,7 +51,7 @@ your machine.
 `--yes` answers its questions, and `--no-udev` / `--no-service` skip the
 last two steps. Then open SteelSeries GG from your application menu.
 
-Needed: Go 1.21 or newer (to download the toolchain in `go.mod`), a C
+Needed: Go 1.26 or newer (or Go 1.21+ with automatic toolchain downloads), a C
 compiler and readline development files (for golisp), 7-Zip, curl, and
 Electron 37 or newer. Electron 37 and 39 are tested.
 

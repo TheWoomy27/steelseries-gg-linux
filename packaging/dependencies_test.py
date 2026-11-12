@@ -47,6 +47,7 @@ go() {
     case "$*" in
         version) [ "${GO_FAIL:-0}" = 0 ] || return 1
                  echo "go version go${GO_VERSION:-1.27.3} linux/amd64" ;;
+        'list -m') [ "${GO_MODULE_FAIL:-0}" = 0 ] ;;
         'env CGO_ENABLED') echo "${CGO_VALUE:-1}" ;;
     esac
 }
@@ -177,7 +178,7 @@ cc() { cat >/dev/null; [ "${CC_FAIL:-0}" = 0 ]; }
         self.assertIn("https://go.dev/doc/install", r.stdout)
 
     def test_go_toolchain_failure(self):
-        r = self.setup_run('go() { if [ "${GOTOOLCHAIN:-}" = local ]; then echo "go version go1.21.0 linux/amd64"; else return 1; fi; };', commands="go cc curl 7zz")
+        r = self.setup_run('go() { if [ "$*" = version ] && [ "${GOTOOLCHAIN:-}" = local ]; then echo "go version go1.21.0 linux/amd64"; else return 1; fi; };', commands="go cc curl 7zz")
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("Go cannot load the toolchain", r.stdout)
 
@@ -185,6 +186,19 @@ cc() { cat >/dev/null; [ "${CC_FAIL:-0}" = 0 ]; }
         r = self.setup_run(commands="go cc curl 7zz", CGO_VALUE="0")
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("CGO_ENABLED=1 ./setup.sh", r.stdout)
+
+    def test_bazzite_go_126_with_local_toolchain(self):
+        r = self.bazzite_run(commands="go cc curl 7zz electron39", GO_VERSION="1.26.10", GOTOOLCHAIN="local")
+        self.assert_success(r)
+        self.assertIn("go version go1.26.10", r.stdout)
+        self.assertIn("Required dependencies are ready", r.stdout)
+
+    def test_module_requirement_failure_stops_before_download(self):
+        r = self.setup_run(commands="go cc curl 7zz electron39", GO_MODULE_FAIL="1", GOTOOLCHAIN="local")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("Go cannot load the toolchain", r.stdout)
+        self.assertIn("GOTOOLCHAIN=auto ./setup.sh", r.stdout)
+        self.assertNotIn("Required dependencies are ready", r.stdout)
 
     def test_missing_electron_prints_local_install_command(self):
         r = self.setup_run(commands="go cc curl 7zz", GG_LINUX_ELECTRON="")
