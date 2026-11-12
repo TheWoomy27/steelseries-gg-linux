@@ -117,8 +117,7 @@ Wine and Proton prefixes, under
   headset EQ that stacks on Sonar's and flattens it when you ask.
 - A wireless mouse plugged in by cable while its dongle is in.
 - Battery levels, and a desktop notification when a device's battery runs
-  low (where Windows GG shows an overlay), following GG's notification and
-  low battery sound switches.
+  low, with GG's low battery sound.
 - The tray icon: open GG, switch each connected device's configuration,
   sub-apps' menus, and Exit, which stops ggd and the client.
 
@@ -244,15 +243,26 @@ window is in front, so a running game counts as in front.
 - On machines with two kinds of GPU (an Intel iGPU and an NVIDIA card, say)
   the launcher points Chromium at the GPU driving the displays.
 - GG's Auto-run setting enables or disables the ggd user service.
+- Where Windows GG draws an overlay over the game, gg-linux shows a
+  desktop notification: a low battery, a QuickSet profile switching, a
+  Moments clip saved, capture or desktop capture going on. Each follows
+  its switch in GG's "Overlays and Notifications" settings.
+- The client's error reports to SteelSeries (Sentry) are blocked: errors
+  from a client running on gg-linux are not theirs to look into.
 
 ## Not supported
 
 - SteelSeries account sign-in. GG runs signed in to a local profile (your
-  Linux user), so Sonar and Moments open offline.
+  Linux user), so Sonar and Moments open offline. Log Out works as in GG
+  (it also switches Sonar off); "I don't have a SteelSeries account",
+  "Skip this step" and "Continue anyway" sign the local profile back in.
 - Firmware updates, on purpose: gg-linux never flashes a device.
 - GameSense vibration, cooldown timers (an effect of GG's older per-key
   lighting editor, for the Apex M750/M800, Apex 3 and MSI keyboards) and
   the Moments record toggle as a key binding.
+- Sonar's keyboard shortcuts and its overlays (their settings pages are
+  there, and empty or without effect), and PrismSync's older editor:
+  "Configure" on the PrismSync app opens the Prism tab instead.
 
 ## Tested hardware
 
