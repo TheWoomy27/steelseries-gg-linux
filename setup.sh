@@ -149,9 +149,7 @@ cd "$repo"
 go build -o bin/ ./cmd/...
 
 name=$(basename "$installer")
-imported=""
-[ -f "$data/import.json" ] && imported=$(sed -n 's/.*"installer": *"\([^"]*\)".*/\1/p' "$data/import.json")
-if [ "$imported" = "$name" ] && [ -f "$data/client/app/package.json" ]; then
+if GG_LINUX_DATA="$data" bin/gg-setup --current "$installer"; then
     step "SteelSeries GG ($name) is already imported"
 else
     step "Importing $name"

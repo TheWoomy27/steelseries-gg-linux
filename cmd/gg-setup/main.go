@@ -23,7 +23,14 @@ func main() {
 	firmware := flag.Bool("with-firmware", false, "also import device firmware images (needed for firmware updates)")
 	keep := flag.Bool("keep-temp", false, "keep the temporary unpack directory")
 	bootstrap := flag.Bool("bootstrap", false, "only reinstall the Linux bootstrap into the imported client (after updating gg-linux)")
+	current := flag.String("current", "", "exit 0 if this installer is already imported in full, 1 if it needs importing")
 	flag.Parse()
+	if *current != "" {
+		if !imported(*current) {
+			os.Exit(1)
+		}
+		return
+	}
 	if *bootstrap {
 		if err := InstallBootstrap(filepath.Join(paths.Client(), "app")); err != nil {
 			fmt.Fprintln(os.Stderr, "gg-setup:", err)
@@ -42,6 +49,26 @@ func main() {
 		fmt.Fprintln(os.Stderr, "gg-setup:", err)
 		os.Exit(1)
 	}
+}
+
+// importVersion counts what gg-setup takes from an installer; it goes up
+// when a release imports more, so that data imported by an older gg-setup
+// is imported again.
+const importVersion = 2
+
+// imported reports whether the data directory holds everything this
+// gg-setup imports from the installer.
+func imported(installer string) bool {
+	var m struct {
+		Installer string `json:"installer"`
+		Import    int    `json:"import"`
+	}
+	b, err := os.ReadFile(filepath.Join(paths.Data(), "import.json"))
+	if err != nil || json.Unmarshal(b, &m) != nil {
+		return false
+	}
+	_, err = os.Stat(filepath.Join(paths.Client(), "app", "package.json"))
+	return err == nil && m.Installer == filepath.Base(installer) && m.Import == importVersion
 }
 
 func run(installer string, withFirmware, keep bool) error {
@@ -89,6 +116,9 @@ func run(installer string, withFirmware, keep bool) error {
 		{"resources/overlays", filepath.Join(paths.Assets(), "overlays")},
 		{"apps/moments/sounds", filepath.Join(paths.Assets(), "moments", "sounds")},
 		{"apps/sonar/db-migrations", paths.SonarDBMig()},
+		// ImageSync's preset GIFs: the client loads them from GG's
+		// install folder, which the bootstrap puts in the data directory.
+		{"apps/engine/engineApps/imagesync/presets", filepath.Join(paths.Data(), "SteelSeries", "GG", "apps", "engine", "engineApps", "imageSync", "presets")},
 		// The NSIS "$_153_" bundle carries the loadout device images and
 		// Sonar audio samples.
 		{"$_153_/apps/engine/assets", filepath.Join(paths.EngineRoot(), "assets")},
@@ -132,6 +162,7 @@ func run(installer string, withFirmware, keep bool) error {
 	}
 	manifest := map[string]any{
 		"ggVersion":  version,
+		"import":     importVersion,
 		"installer":  filepath.Base(installer),
 		"importedAt": time.Now().UTC().Format(time.RFC3339),
 		"firmware":   withFirmware,

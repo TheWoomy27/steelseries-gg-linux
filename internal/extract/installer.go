@@ -24,6 +24,7 @@ var installerItems = []string{
 	"apps/engine/sounds/",
 	"apps/engine/fonts/",
 	"apps/engine/prism/db/",
+	"apps/engine/engineApps/imagesync/presets/",
 	"db/",
 	"db-ggez/",
 	"localization/",
