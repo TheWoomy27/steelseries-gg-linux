@@ -185,7 +185,7 @@ func (e *Engine) appRoutes() {
 			"trigger_modes":    map[string]bool{"keyboard_input": true, "mouse_input": true},
 			"base_effect":      effect(),
 			"triggered_effect": effect(),
-			"idle_info":        map[string]any{"idle_time": 0, "effect": effect()},
+			"idle_info":        map[string]any{"time": 0, "effect": effect()},
 		}})
 	})
 	s.Handle("POST /prismSync/enable", func(w http.ResponseWriter, r *http.Request) { e.setPrismLighting(true); httpx.OK(w) })

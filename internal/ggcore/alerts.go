@@ -37,11 +37,11 @@ func (c *Core) alert(key string) snoozableAlert {
 func (c *Core) alertRoutes() {
 	s := c.srv
 	s.Handle("GET /v1/alerts/{id}", func(w http.ResponseWriter, r *http.Request) {
-		httpx.JSON(w, c.alert(r.PathValue("id")))
+		httpx.JSON(w, map[string]any{"alert": c.alert(r.PathValue("id"))})
 	})
 	snooze := func(w http.ResponseWriter, r *http.Request) {
 		p, _ := decode[struct {
-			Days *int `json:"snoozeFor"`
+			Days *int `json:"customDuration"`
 		}](r)
 		days := defaultSnoozeDays
 		if p.Days != nil && *p.Days > 0 {
@@ -52,7 +52,7 @@ func (c *Core) alertRoutes() {
 		c.db.Get("alerts", &snoozed)
 		snoozed[key] = snoozableAlert{Key: key, SnoozedAt: &now, SnoozedFor: &days}
 		c.db.Set("alerts", snoozed)
-		httpx.JSON(w, c.alert(key))
+		httpx.JSON(w, map[string]any{"alert": c.alert(key)})
 	}
 	s.Handle("PUT /v1/alerts/{id}", snooze)
 	s.Handle("POST /v1/alerts/{id}", snooze)

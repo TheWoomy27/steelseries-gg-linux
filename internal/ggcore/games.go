@@ -177,7 +177,8 @@ func scanLutris() []ScannedGame {
 }
 
 func (c *Core) scanGames() []ScannedGame {
-	var games []ScannedGame
+	// Never nil: the client takes the list as it comes.
+	games := []ScannedGame{}
 	games = append(games, scanSteam()...)
 	games = append(games, scanHeroic()...)
 	games = append(games, scanLutris()...)
@@ -230,8 +231,8 @@ func (c *Core) gameRoutes() {
 		httpx.JSON(w, map[string]any{"scannedGames": c.cachedGames()})
 	})
 	s.Handle("POST /v1/scanForApplications", func(w http.ResponseWriter, r *http.Request) {
-		games := c.scanGames()
-		c.Broadcast("EVENT_APPLICATIONS_SCANNED", map[string]any{"count": len(games)})
+		// The client replaces its list of games with the event's.
+		c.Broadcast("EVENT_APPLICATIONS_SCANNED", map[string]any{"applications": c.scanGames()})
 		httpx.OK(w)
 	})
 	s.Handle("GET /v1/applicationScannerInfo", func(w http.ResponseWriter, r *http.Request) {
