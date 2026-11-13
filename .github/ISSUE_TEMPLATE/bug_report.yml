@@ -1,0 +1,32 @@
+name: Bug report
+description: Something in GG doesn't work, or works differently than on Windows.
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what GG did instead. Screenshots help.
+    validations:
+      required: true
+  - type: input
+    id: devices
+    attributes:
+      label: Devices involved
+      placeholder: e.g. Sensei Pro, Arctis GameBuds X
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Distribution and desktop
+      placeholder: e.g. Fedora 43, GNOME on Wayland
+  - type: textarea
+    id: report
+    attributes:
+      label: Report
+      description: |
+        Run `ggctl report` and drag the file it writes here. For device problems, turn on debug logging first:
+        `systemctl --user set-environment GG_LINUX_DEBUG=1 && systemctl --user restart steelseries-ggd`,
+        then do the thing that fails, then run `ggctl report`.
+    validations:
+      required: true

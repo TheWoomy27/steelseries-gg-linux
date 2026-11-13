@@ -287,13 +287,27 @@ work, but are untested. The Aerox 5's extra side buttons are read from
 where that mouse reports them, so other mice's extra buttons may need work.
 
 Reports from other devices and desktops are welcome: open an issue with
-your device and the logs below.
+your device and a report from `ggctl report` (see below).
 
 ## Troubleshooting
 
+- **Reporting a problem:** run `ggctl report`. It writes
+  `gg-linux-report-<date>.txt` in the current folder, with your system, your
+  SteelSeries devices, whether GG can reach them, and the end of each log.
+  Your home folder, user and host names and e-mail addresses are replaced.
+  Read it, then attach it to your issue.
+- **More detail for a device problem:** turn on debug logging, do the thing
+  that fails, then run `ggctl report`:
+
+  ```sh
+  systemctl --user set-environment GG_LINUX_DEBUG=1
+  systemctl --user restart steelseries-ggd
+  ```
+
+  Turn it off again with `systemctl --user unset-environment GG_LINUX_DEBUG`
+  and another restart.
 - ggd's log: `journalctl --user -u steelseries-ggd`, also in
-  `~/.local/share/steelseries-gg/Logs/ggd.log`. `GG_LINUX_DEBUG=1` (or
-  `ggd -v`) logs more.
+  `~/.local/share/steelseries-gg/Logs/ggd.log`.
 - The client's log: `~/.local/share/steelseries-gg/Logs/client.log`.
 - GG does not see a device: check the udev rule is installed, then replug
   the device.
