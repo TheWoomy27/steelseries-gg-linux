@@ -391,7 +391,13 @@ func registerServiceBuiltins() {
 		return jsonString(instance.hooks.ActiveConfigSettings(d.ID))
 	})
 	devFlag("get-factory-settings", func(d *Decl, _ []*golisp.Data) *golisp.Data { return jsonString(map[string]any{}) })
-	devFlag("optimized-child-device-by-name", func(d *Decl, _ []*golisp.Data) *golisp.Data { return lispBool(false) })
+	pf("optimized-child-device-by-name", "2", func(a []*golisp.Data, _ *golisp.SymbolTableFrame) (*golisp.Data, error) {
+		h, ok := instance.hooks.(ChildDevices)
+		if !ok || !golisp.IntegerP(a[0]) || !golisp.StringP(a[1]) {
+			return lispBool(false), nil
+		}
+		return lispBool(h.OptimizeForChild(uint32(golisp.IntegerValue(a[0])), golisp.StringValue(a[1]))), nil
+	})
 	devFlag("set-onboard-profile-config", func(d *Decl, _ []*golisp.Data) *golisp.Data { return nil })
 	devFlag("get-onboard-profile-config", func(d *Decl, _ []*golisp.Data) *golisp.Data { return golisp.StringWithValue("") })
 	for _, name := range []string{"register-mm-device-info", "register-mm-device-info-and-send"} {

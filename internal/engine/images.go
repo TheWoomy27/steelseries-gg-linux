@@ -1,9 +1,11 @@
 package engine
 
 import (
+	_ "embed"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -11,13 +13,28 @@ import (
 	"ggl/internal/paths"
 )
 
-// Device pictures for QuickSet's tiles and device onboarding: the Engine's
-// loadoutImages, imported by gg-setup and served at /assets/loadoutImages
-// as on Windows. Windows picks a picture with a hand-written switch over
-// device names; gg-linux looks for the connected variant's picture, the
-// device's, then its model's (the longest picture name the device's name
-// starts with: aerox_5 for aerox_5_wireless), then a generic one for its
-// type.
+// Device pictures for the home page, QuickSet's tiles and device
+// onboarding: the Engine's loadoutImages, imported by gg-setup and served
+// at /assets/loadoutImages as on Windows. Windows picks a picture with a
+// hand-written table of device names (device_images.tsv), by the variant
+// the device is set to, else its own name. gg-linux does the same; for a
+// name the table doesn't have it looks for a picture of that name, then
+// the model's (the longest picture name the device's name starts with:
+// aerox_5 for aerox_5_wireless), then a generic one for its type.
+
+//go:embed device_images.tsv
+var windowsImagesTSV string
+
+var windowsImages = func() map[string]string {
+	m := map[string]string{}
+	for _, line := range strings.Split(windowsImagesTSV, "\n") {
+		name, pic, ok := strings.Cut(line, "\t")
+		if ok && !strings.HasPrefix(line, "#") {
+			m[name] = strings.TrimSpace(pic)
+		}
+	}
+	return m
+}()
 
 func loadoutImagesDir() string { return filepath.Join(paths.EngineRoot(), "assets", "loadoutImages") }
 
@@ -43,6 +60,11 @@ func deviceImageNames() []string {
 // name, as a path under loadoutImages; "" if there is none.
 func deviceImage(names []string, deviceType int) string {
 	pictures := deviceImageNames()
+	for _, n := range names {
+		if p, ok := windowsImages[n]; ok && slices.Contains(pictures, p) {
+			return "devices/" + p + ".webp"
+		}
+	}
 	for _, n := range names {
 		for _, p := range pictures {
 			if n == p {

@@ -53,6 +53,12 @@ type Hooks interface {
 	Deploying(devID uint32) bool
 }
 
+// ChildDevices lets a spec say which variant (colour, edition) a device
+// is: (optimized-child-device-by-name PID NAME), true if that changed it.
+type ChildDevices interface {
+	OptimizeForChild(devID uint32, name string) bool
+}
+
 type nopHooks struct{}
 
 func (nopHooks) DeviceEvent(uint32, string, map[string]any) {}

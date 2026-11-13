@@ -87,6 +87,20 @@ func (e *Engine) handleDeviceEvent(ev deviceEvent) {
 			fn()
 		}
 	}
+	if cs, ok := ev.data["colorSpinUpdate"].(map[string]any); ok {
+		// The device says which colour or edition it is (Sensei and Rival
+		// Pro, GameBuds): GG shows that variant's picture and name.
+		name, _ := cs["colorSpin"].(string)
+		force, _ := cs["forceUpdate"].(bool)
+		if e.optimizeForChild(l, name, force) {
+			l.mu.Lock()
+			ready := l.ready
+			l.mu.Unlock()
+			if ready {
+				e.emit("deviceConnected", e.deviceJSON(l.cat, l))
+			}
+		}
+	}
 	if w, ok := ev.data["wirelessDevConnStatusEvent"].(map[string]any); ok {
 		e.emit("EVENT_WIRELESS_DEVICE_CONNECTION_STATUS", map[string]any{"deviceId": l.dbID, "isConnected": w["isConnected"], "physicalId": w["physicalId"]})
 	}

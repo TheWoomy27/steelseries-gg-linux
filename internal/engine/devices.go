@@ -446,6 +446,15 @@ func (e *Engine) PrismDevices() []map[string]any {
 func (e *Engine) loadoutDevicesJSON(connectedOnly bool) []map[string]any {
 	out := []map[string]any{}
 	for _, d := range e.devicesJSON(!connectedOnly) {
+		child := ""
+		if id, _ := d["optimized_for"].(int); id != 0 {
+			children, _ := d["child_devices"].([]childRow)
+			for _, c := range children {
+				if c.ID == id {
+					child = c.Name
+				}
+			}
+		}
 		meta := []map[string]any{}
 		for _, c := range d["configuration_metadata"].([]map[string]any) {
 			meta = append(meta, map[string]any{
@@ -459,7 +468,7 @@ func (e *Engine) loadoutDevicesJSON(connectedOnly bool) []map[string]any {
 			"displayName": d["display_name"], "type": d["type"], "deviceTypeName": d["deviceTypeName"],
 			"connected": d["connected"], "configurationMetadata": meta, "imageUrl": d["imageUrl"],
 			"hideDeviceCard": d["hide_device_card"], "hideDeviceConfigLink": false, "needsFirmwareUpdate": false,
-			"childDeviceName": "", "firstConnectionTime": d["firstConnectionTime"],
+			"childDeviceName": child, "firstConnectionTime": d["firstConnectionTime"],
 			"prismSyncV2Whitelisted": d["prismsync_v2_whitelisted"],
 		})
 	}

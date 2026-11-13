@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 )
 
 // catalogDevice is a row of the Engine's devices table (seeded by the
@@ -209,6 +210,39 @@ func (e *Engine) userDevice(deviceID int, create bool) userDevice {
 	}
 	u.Hidden, u.FirstPlugin = hidden != 0, first != 0
 	return u
+}
+
+// optimizeForChild makes a device show as its variant (child device)
+// called name, as the Windows Engine does when a device reports its colour:
+// a variant the user picked stays unless force says otherwise. It reports
+// whether anything changed.
+func (e *Engine) optimizeForChild(l *liveDevice, name string, force bool) bool {
+	if l == nil || name == "" {
+		return false
+	}
+	for _, c := range e.childDevices(l.cat.ID) {
+		if c.Name != name {
+			continue
+		}
+		ud := e.userDevice(l.cat.ID, true)
+		if ud.OptimizedFor == c.ID || (ud.OptimizedFor != 0 && !force) {
+			return false
+		}
+		if _, err := e.db.Exec(`UPDATE users_devices SET optimized_for = ? WHERE user_id = ? AND device_id = ?`, c.ID, e.userID, l.cat.ID); err != nil {
+			slog.Warn("device variant", "device", l.cat.Name, "variant", name, "err", err)
+			return false
+		}
+		slog.Info("device variant", "device", l.cat.Name, "variant", name)
+		return true
+	}
+	slog.Debug("device variant not in catalog", "device", l.cat.Name, "variant", name)
+	return false
+}
+
+// OptimizeForChild implements devicert.ChildDevices for a spec's
+// (optimized-child-device-by-name PID NAME).
+func (e *Engine) OptimizeForChild(pid uint32, name string) bool {
+	return e.optimizeForChild(e.liveByProduct(pid), name, false)
 }
 
 func jsonOrEmpty(s string) json.RawMessage {
