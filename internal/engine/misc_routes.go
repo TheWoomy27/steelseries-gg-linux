@@ -200,7 +200,7 @@ func (e *Engine) miscRoutes() {
 				settings = cat.GlobalSettings
 			}
 		}
-		httpx.JSON(w, map[string]any{"globalDeviceSettings": jsonOrEmpty(settings)})
+		httpx.JSON(w, map[string]any{"global_device_settings": jsonOrEmpty(settings)})
 	})
 	s.Handle("POST /device/{id}/globalDeviceSettings", func(w http.ResponseWriter, r *http.Request) {
 		var p any
