@@ -87,7 +87,13 @@ func (e *Engine) routes() {
 		httpx.JSON(w, map[string]any{"isSyncDevice": false, "isSynced": true})
 	})
 	s.Handle("POST /device/{id}/displayedCounterfeitMessage", func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })
-	s.Handle("POST /device/{id}/updateCachedProperties", func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })
+	s.Handle("POST /device/{id}/updateCachedProperties", func(w http.ResponseWriter, r *http.Request) {
+		id, _ := strconv.Atoi(r.PathValue("id"))
+		if l := e.liveByID(id); l != nil {
+			e.refreshPrismData(l)
+		}
+		httpx.OK(w)
+	})
 	s.Handle("POST /device/{id}/lock", func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })
 	s.Handle("DELETE /device/{id}/lock", func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })
 	s.Handle("POST /device/{id}/disableAppDeploy", func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })

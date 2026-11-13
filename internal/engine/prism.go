@@ -176,6 +176,20 @@ func (e *Engine) OnPrismDevicesChanged(fn func()) {
 	e.prism.mu.Unlock()
 }
 
+// refreshPrismData reads a device's PrismSync and GameSense layouts again
+// (after a region change) and has Prism take them up.
+func (e *Engine) refreshPrismData(l *liveDevice) {
+	ps := &e.prism
+	ps.mu.Lock()
+	for _, d := range l.decls() {
+		delete(ps.data, d.ID)
+		delete(ps.gs, d.ID)
+	}
+	ps.mu.Unlock()
+	slog.Info("prism: device layout read again", "device", l.cat.Name)
+	e.prismDevicesChanged(nil)
+}
+
 func (e *Engine) prismDevicesChanged(gone []uint32) {
 	ps := &e.prism
 	ps.mu.Lock()

@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"strconv"
 )
 
@@ -87,6 +88,15 @@ func (e *Engine) handleDeviceEvent(ev deviceEvent) {
 			fn()
 		}
 	}
+	if ev.kind&evSyncData != 0 && len(ev.data) > 0 {
+		// Settings the device reports, such as an Apex keyboard's region
+		// at start or a headset's EQ: kept in the active configuration
+		// (GG's region picker reads it there), not written back.
+		if d := l.primary(); d != nil {
+			b, _ := json.Marshal(ev.data)
+			e.applyDeviceSettings(l, d, string(b))
+		}
+	}
 	if cs, ok := ev.data["colorSpinUpdate"].(map[string]any); ok {
 		// The device says which colour or edition it is (Sensei and Rival
 		// Pro, GameBuds): GG shows that variant's picture and name.
@@ -100,6 +110,11 @@ func (e *Engine) handleDeviceEvent(ev deviceEvent) {
 				e.emit("deviceConnected", e.deviceJSON(l.cat, l))
 			}
 		}
+	}
+	if _, ok := ev.data["updateCachedProperties"]; ok {
+		// A keyboard's region changed (write_region_id): its key layout
+		// for Prism and GameSense is read again.
+		e.refreshPrismData(l)
 	}
 	if w, ok := ev.data["wirelessDevConnStatusEvent"].(map[string]any); ok {
 		e.emit("EVENT_WIRELESS_DEVICE_CONNECTION_STATUS", map[string]any{"deviceId": l.dbID, "isConnected": w["isConnected"], "physicalId": w["physicalId"]})
