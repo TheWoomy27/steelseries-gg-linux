@@ -12,6 +12,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"ggl/internal/engine"
@@ -244,8 +246,24 @@ func serveAt(ctx context.Context, h http.Handler, cfg *tls.Config, name string) 
 	return serveOn(ctx, ln, h, cfg), nil
 }
 
+// httpErrors logs the HTTP servers' errors. Chromium rejects ggd's own
+// certificate on some connections before the client's certificate check
+// lets it through, and each leaves a handshake error; those are debug
+// detail, not problems.
+type httpErrors struct{}
+
+func (httpErrors) Write(p []byte) (int, error) {
+	msg := strings.TrimSpace(string(p))
+	if strings.Contains(msg, "TLS handshake error") {
+		slog.Debug(msg)
+	} else {
+		slog.Info(msg)
+	}
+	return len(p), nil
+}
+
 func serveOn(ctx context.Context, ln net.Listener, h http.Handler, cfg *tls.Config) string {
-	srv := &http.Server{Handler: h, TLSConfig: cfg}
+	srv := &http.Server{Handler: h, TLSConfig: cfg, ErrorLog: log.New(httpErrors{}, "", 0)}
 	go func() {
 		var err error
 		if cfg != nil {

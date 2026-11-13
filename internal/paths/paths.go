@@ -58,7 +58,10 @@ func GameSenseCoreProps() string {
 
 // EnsureRuntimeDirs creates the writable directories the daemon needs.
 func EnsureRuntimeDirs() error {
-	for _, d := range []string{State(), Logs(), TLSDir(), filepath.Dir(GameSenseCoreProps())} {
+	// The client lists ImageSync's GIF history from apps/engine/imageSync
+	// (under the data folder, its ProgramData) and fails when it is missing.
+	imageSyncHistory := filepath.Join(Data(), "apps", "engine", "imageSync", "history")
+	for _, d := range []string{State(), Logs(), TLSDir(), filepath.Dir(GameSenseCoreProps()), imageSyncHistory} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			return err
 		}
