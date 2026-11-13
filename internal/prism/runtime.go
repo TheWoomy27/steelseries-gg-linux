@@ -319,9 +319,10 @@ func newFrameWriter(eng Engine, d *device, first bool, config string) *frameWrit
 		var last []byte
 		var sent time.Time
 		logged := !first
-		failed := false
-		var backoff time.Duration
-		var retry time.Time
+		fails := 0 // frames not written in a row
+		warned := false
+		var lastWarn, retry time.Time
+		step := time.Duration(max(d.stepMs, 1)) * time.Millisecond
 		for {
 			var f []devicert.PrismWrite
 			select {
@@ -337,20 +338,21 @@ func newFrameWriter(eng Engine, d *device, first bool, config string) *frameWrit
 				continue
 			}
 			if err := eng.PrismWrite(d.ID, f); err != nil {
-				if !failed {
+				fails++
+				if time.Since(lastWarn) >= time.Minute {
 					slog.Warn("prism: frame not written", "device", d.FullName, "err", err)
-					failed = true
+					lastWarn, warned = time.Now(), true
 				}
-				// A device not answering (a wireless mouse asleep) is
-				// left alone for a while rather than waited on per frame.
-				backoff = min(max(backoff*2, 2*time.Second), 15*time.Second)
-				retry = time.Now().Add(backoff)
+				// As the Windows Engine does, the nth failure in a row
+				// waits n²+1 steps: a lost frame costs a step or two, and
+				// a device not answering is left alone for longer.
+				retry = time.Now().Add(min(time.Duration(fails*fails+1)*step, 15*time.Second))
 				continue
 			}
-			if failed {
+			if fails > 0 && warned {
 				slog.Info("prism: device takes frames again", "device", d.FullName)
 			}
-			failed, backoff = false, 0
+			fails, warned = 0, false
 			last, sent = flat, time.Now()
 			if !logged {
 				slog.Info("prism: lighting device", "device", d.FullName, "config", config)

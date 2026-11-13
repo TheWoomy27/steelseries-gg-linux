@@ -269,6 +269,18 @@ func (d *Device) write(data []byte, size int) error {
 // differs from the report the interface was repeating just before the
 // request. Repeats of that background report are passed to OnEvent.
 func (d *Device) Exchange(data []byte, size int, timeout time.Duration) ([]byte, error) {
+	return d.exchange(data, size, timeout, d.write)
+}
+
+// ExchangeFeature sends a feature report and waits for the input report
+// that answers it, as Exchange does for output reports. Listening starts
+// before the report goes out: a reply that came back while the feature
+// request was still returning would otherwise be missed.
+func (d *Device) ExchangeFeature(data []byte, size int, timeout time.Duration) ([]byte, error) {
+	return d.exchange(data, size, timeout, d.setFeature)
+}
+
+func (d *Device) exchange(data []byte, size int, timeout time.Duration, send func([]byte, int) error) ([]byte, error) {
 	d.reqMu.Lock()
 	defer d.reqMu.Unlock()
 	// Right after opening, give a streaming interface a moment so its
@@ -294,7 +306,7 @@ func (d *Device) Exchange(data []byte, size int, timeout time.Duration) ([]byte,
 		}
 		d.mu.Unlock()
 	}()
-	if err := d.write(data, size); err != nil {
+	if err := send(data, size); err != nil {
 		return nil, err
 	}
 	if timeout <= 0 {
@@ -377,8 +389,16 @@ func (d *Device) ioctl(req uintptr, buf []byte) (int, error) {
 	return int(n), nil
 }
 
-// SetFeature sends a feature report (buf[0] = report ID).
+// SetFeature sends a feature report (buf[0] = report ID). Like Write, it
+// waits for an exchange in progress.
 func (d *Device) SetFeature(data []byte, size int) error {
+	d.reqMu.Lock()
+	defer d.reqMu.Unlock()
+	d.sent = time.Now()
+	return d.setFeature(data, size)
+}
+
+func (d *Device) setFeature(data []byte, size int) error {
 	b := pad(data, size)
 	b = b[:min(len(b), d.featureLen(b[0], len(b)))]
 	_, err := d.ioctl(iocRW(0x06, uintptr(len(b))), b)

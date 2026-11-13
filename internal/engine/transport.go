@@ -40,6 +40,9 @@ func (t hidTransport) Chunk(tg devicert.Target, kind, size int, data []byte, rea
 	if kind == devicert.HIDIO || kind == devicert.HIDIONoFail {
 		return d.Exchange(data, size, timeout)
 	}
+	if kind == devicert.HIDFeatureOutInputIn {
+		return d.ExchangeFeature(data, size, timeout)
+	}
 	// Like DeviceLib's read: send the chunk's outgoing report, then fetch
 	// the reply the way its chunk type says. DeviceLib waits the time
 	// between commands before the fetch, which devices such as the legacy
@@ -53,7 +56,7 @@ func (t hidTransport) Chunk(tg devicert.Target, kind, size int, data []byte, rea
 		reportID = data[0]
 	}
 	switch kind {
-	case devicert.HIDReadOnly, devicert.HIDFeatureOutInputIn:
+	case devicert.HIDReadOnly:
 		return d.ReadInput(timeout)
 	case devicert.HIDNow:
 		time.Sleep(gap)
