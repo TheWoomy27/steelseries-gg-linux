@@ -53,6 +53,13 @@ type Hooks interface {
 	Deploying(devID uint32) bool
 }
 
+// DriverHooks carries out the commands specs send GG's Windows driver
+// that ggd does itself.
+type DriverHooks interface {
+	// MouseRotation turns a mouse's motion by degrees (MOUSEROTATION).
+	MouseRotation(devID uint32, enabled bool, degrees float64)
+}
+
 // ChildDevices lets a spec say which variant (colour, edition) a device
 // is: (optimized-child-device-by-name PID NAME), true if that changed it.
 type ChildDevices interface {

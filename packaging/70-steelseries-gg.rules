@@ -3,5 +3,9 @@
 #   sudo udevadm control --reload && sudo udevadm trigger
 KERNEL=="hidraw*", ATTRS{idVendor}=="1038", TAG+="uaccess"
 SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", TAG+="uaccess"
-# The virtual keyboard and mouse ggd plays macros through.
+# SteelSeries mice's input, which ggd takes to turn their motion when
+# their rotation setting is on (GG's Windows driver does that).
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{idVendor}=="1038", ENV{ID_INPUT_MOUSE}=="1", TAG+="uaccess"
+# The virtual keyboard and mouse ggd plays macros (and turned motion)
+# through.
 KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess"

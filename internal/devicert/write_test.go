@@ -143,3 +143,59 @@ func TestRewriteCachedValues(t *testing.T) {
 		t.Errorf("rewriting an api never written sent %v (%v %v)", tr.sent, golisp.String(v), err)
 	}
 }
+
+type rotationHooks struct {
+	nopHooks
+	dev     uint32
+	on      bool
+	degrees float64
+}
+
+func (h *rotationHooks) MouseRotation(dev uint32, on bool, degrees float64) {
+	h.dev, h.on, h.degrees = dev, on, degrees
+}
+
+// The Sensei Pro's engine_settings sends its rotation to GG's driver
+// (an SSE chunk) and to the mouse; ggd gets the driver's part.
+func TestMouseRotationToDriver(t *testing.T) {
+	const spec = `
+(device 0x10380002
+    (usage-page 0xffc0)
+    (usage 0x0001)
+    (struct engine_settings
+        (unaligned)
+        (field report_id uint8 (constant 0x00))
+        (field command uint8 (constant 0x17))
+        (field mouse_rotation_enabled uint8 (values 0 1))
+        (field mouse_rotation_angle float32 (range -180 180)))
+    (api engine_settings
+        (api-write SSE (chunk MOUSEROTATION 5 [
+            (extract-bytes payload 3 4)
+            (extract-byte payload 2)
+        ]))
+        (api-write HID (chunk HIDIO 65 payload))))
+`
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "test.lsp"), []byte(spec), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tr := &recordingTransport{}
+	h := &rotationHooks{}
+	rt, err := New(dir, dir, tr, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := rt.Device(0x10380002)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.WriteApi("engine_settings", map[string]any{"mouse_rotation_enabled": 1, "mouse_rotation_angle": -12.5}); err != nil {
+		t.Fatal(err)
+	}
+	if h.dev != 0x10380002 || !h.on || h.degrees != -12.5 {
+		t.Errorf("rotation: %+v", h)
+	}
+	if len(tr.sent) != 1 {
+		t.Errorf("%d HID chunks, want 1 (the mouse's copy)", len(tr.sent))
+	}
+}

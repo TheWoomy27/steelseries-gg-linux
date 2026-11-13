@@ -43,6 +43,7 @@ type Engine struct {
 	gameSense  *gameSense
 	imageSync  *imageSync
 	oled       oledState
+	rotation   rotationState
 	userID     int
 	appSet     map[string]any
 
@@ -120,6 +121,7 @@ func New(ctx context.Context) (*Engine, error) {
 		live:         map[int]*liveDevice{},
 		broadcast:    func(string, any) {},
 		deviceEvents: make(chan deviceEvent, 64),
+		rotation:     rotationState{kick: make(chan struct{}, 1)},
 		sequencer:    newSequencer(),
 	}
 	if e.state, err = store.Open(filepath.Join(paths.State(), "engine.json")); err != nil {
@@ -183,6 +185,7 @@ func (e *Engine) Run(ctx context.Context) {
 	e.imageSync.start(ctx)
 	go e.runOLED(ctx)
 	go e.runOLEDApps(ctx)
+	go e.runRotation(ctx)
 	e.hid.Scan()
 	t := time.NewTicker(time.Second)
 	defer t.Stop()

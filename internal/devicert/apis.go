@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"time"
 
 	"github.com/steelseries/golisp"
@@ -37,6 +38,7 @@ const (
 	HIDFeatureOutFeatIn   = 15
 	HIDOutputFeatureIn    = 16
 	sseCommandSleep       = 2
+	sseMouseRotation      = 43 // MOUSEROTATION: angle (float32), enabled (byte)
 	defaultTimeBetweenCmd = 10 * time.Millisecond
 )
 
@@ -372,10 +374,17 @@ func (d *Decl) execChunk(proto int64, c *Chunk, data, payload []byte, read bool,
 		return resp, isRead, err
 	case ProtoSSE:
 		// SSE commands target the SteelSeries Windows driver (OS-level
-		// CPI, acceleration, firmware flashing). They have no Linux
-		// counterpart; sleeps are honoured so timing stays the same.
-		if c.Type == sseCommandSleep && len(data) >= 4 {
+		// CPI, acceleration, firmware flashing). Most have no Linux
+		// counterpart; sleeps are honoured so timing stays the same, and
+		// mouse rotation goes to ggd, which turns the motion itself.
+		switch {
+		case c.Type == sseCommandSleep && len(data) >= 4:
 			time.Sleep(time.Duration(binary.LittleEndian.Uint32(data)) * time.Millisecond)
+		case c.Type == sseMouseRotation && len(data) >= 5:
+			if h, ok := instance.hooks.(DriverHooks); ok {
+				angle := math.Float32frombits(binary.LittleEndian.Uint32(data))
+				h.MouseRotation(d.ID, data[4] != 0, float64(angle))
+			}
 		}
 		return nil, false, nil
 	}

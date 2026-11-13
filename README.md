@@ -123,6 +123,12 @@ Wine and Proton prefixes, under
   on-device EQ. With Sonar on, GG's Auto-Flatten EQ banner reports a
   headset EQ that stacks on Sonar's and flattens it when you ask.
 - A wireless mouse plugged in by cable while its dongle is in.
+- Mouse rotation on the mice where GG marks it "GG required" (Sensei and
+  Rival Pro, Aerox 3 Wireless Gen 2): GG's Windows driver turns their
+  motion, and on Linux ggd does, through a virtual copy of the mouse. It
+  needs the current udev rule (run `setup.sh` again). Those mice also send
+  their angle snapping and acceleration settings to that driver; ggd does
+  not stand in for it there yet.
 - Battery levels, and a desktop notification when a device's battery runs
   low, with GG's low battery sound.
 - The tray icon: open GG, switch each connected device's configuration,

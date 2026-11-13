@@ -116,7 +116,7 @@ if [ "$udev" = 1 ]; then
         step "Device access is set up"
     else
         step "Device access"
-        note "A udev rule lets your user talk to SteelSeries devices and play macros."
+        note "A udev rule lets your user talk to SteelSeries devices, play macros and turn mouse motion."
         if ask "Install $rules (sudo)?"; then
             sudo install -Dm644 "$repo/packaging/70-steelseries-gg.rules" "$rules"
             sudo udevadm control --reload
