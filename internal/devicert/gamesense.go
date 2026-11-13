@@ -43,7 +43,7 @@ func (d *Decl) GameSense() (*GameSenseInfo, error) {
 		return info, nil
 	}
 	for k, v := range golisp.FrameValue(zones).Data {
-		var codes []int
+		codes := []int{} // an empty zone is [] to the client, which fails on null
 		for _, c := range golisp.ToArray(v) {
 			if golisp.IntegerP(c) {
 				codes = append(codes, int(golisp.IntegerValue(c)))

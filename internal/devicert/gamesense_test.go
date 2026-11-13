@@ -1,6 +1,8 @@
 package devicert
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -93,5 +95,33 @@ func TestScreenWrite(t *testing.T) {
 		if len(list) != 640 || toInt(list[0]) != int64(c.want) {
 			t.Errorf("%#x: %d bytes, first %v, want %#x (%v)", c.id, len(list), list[:1], c.want, cmds)
 		}
+	}
+}
+
+// A TKL keyboard's spec has empty zones (keypad); GG's client fails on a
+// null zone, so they must come out as empty lists.
+func TestGameSenseEmptyZones(t *testing.T) {
+	data := os.Getenv("GG_LINUX_DATA")
+	if data == "" {
+		t.Skip("GG_LINUX_DATA not set")
+	}
+	rt, err := New(filepath.Join(data, "engine", "deviceSpecifications"), filepath.Join(data, "engine"), nullTransport{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := rt.Device(0x10381646) // Apex Pro TKL Wireless (2024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := d.GameSense()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(info.Zones)
+	if bytes.Contains(b, []byte("null")) {
+		t.Errorf("zones with null: %s", b)
+	}
+	if kp, ok := info.Zones["keypad"]; !ok || kp == nil {
+		t.Errorf("keypad zone %v (present %v)", kp, ok)
 	}
 }
