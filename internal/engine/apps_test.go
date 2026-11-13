@@ -37,8 +37,8 @@ func appsEngine(t *testing.T) *Engine {
 
 func TestToggleEngineApps(t *testing.T) {
 	e := appsEngine(t)
-	if !e.PrismLightingEnabled() {
-		t.Fatal("Prism lighting starts off")
+	if e.prismSyncApp() {
+		t.Fatal("PrismSync starts on")
 	}
 	e.toggleEngineApps(`{"on":[{"gamesense_game_name":"","is_image_sync":true}],"off":[{"gamesense_game_name":"CSGO"}],"toggle":[{"is_prism_sync":true}]}`)
 	if on, _ := e.imageSyncEnabled(); !on {
@@ -47,14 +47,14 @@ func TestToggleEngineApps(t *testing.T) {
 	if e.gameSense.state.Enabled("CSGO") {
 		t.Error("the game not turned off")
 	}
-	if e.PrismLightingEnabled() {
-		t.Error("PrismSync not toggled off")
+	if !e.prismSyncApp() {
+		t.Error("PrismSync not toggled on")
 	}
 	e.toggleEngineApps(`{"on":[],"off":[{"is_image_sync":true}],"toggle":[{"is_prism_sync":true},{"gamesense_game_name":"CSGO"}]}`)
 	if on, _ := e.imageSyncEnabled(); on {
 		t.Error("ImageSync not turned off")
 	}
-	if !e.PrismLightingEnabled() || !e.gameSense.state.Enabled("CSGO") {
+	if e.prismSyncApp() || !e.gameSense.state.Enabled("CSGO") {
 		t.Error("toggles not undone")
 	}
 	var disabled []string

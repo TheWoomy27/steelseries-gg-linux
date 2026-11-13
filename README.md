@@ -208,8 +208,7 @@ configuration's lighting back.
   about 10% of a core on a 2560x1440 monitor).
 - On Hyprland, lighting dims or goes off while the monitors sleep, as each
   configuration's "When Monitor Sleeps" says.
-- ImageSync plays a GIF on per-key keyboards, and GG's PrismSync switch
-  turns Prism's lighting off and on.
+- ImageSync plays a GIF on per-key keyboards.
 
 GG's previews of the Audio Visualizer and Reflect use made-up sound and a
 made-up picture.
@@ -268,8 +267,10 @@ window is in front, so a running game counts as in front.
   lighting editor, for the Apex M750/M800, Apex 3 and MSI keyboards) and
   the Moments record toggle as a key binding.
 - Sonar's keyboard shortcuts and its overlays (their settings pages are
-  there, and empty or without effect), and PrismSync's older editor:
-  "Configure" on the PrismSync app opens the Prism tab instead.
+  there, and empty or without effect).
+- The Engine's older PrismSync app. Its switch is kept but, as on Windows,
+  the Prism tab lights its devices whether it is on or off; "Configure" on
+  the app opens the Prism tab.
 
 ## Tested hardware
 

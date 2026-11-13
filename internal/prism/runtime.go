@@ -186,14 +186,12 @@ func (s *Service) renderLoop(ctx context.Context) {
 		case <-tick.C:
 		case <-s.kick:
 		}
-		// With GG's PrismSync switch off, Prism lights a device only while
-		// a game (or ImageSync) shows something on it through GameSense.
-		on := s.eng.PrismLightingEnabled()
+		// Prism lights the devices enabled in its tab with the current
+		// configuration, GameSense over it. Without a configuration it
+		// lights a device only while a game (or ImageSync) shows something
+		// on it.
 		gs := s.eng.GameSense()
 		gsActive := gs != nil && gs.Active()
-		lights := func(d *device) bool {
-			return d.Enabled && (on || (gsActive && d.gs != nil && len(gs.Lights(&d.gs.dev)) > 0))
-		}
 		s.mu.Lock()
 		if s.current == nil {
 			if c := s.currentConfig(); c != nil {
@@ -202,6 +200,9 @@ func (s *Service) renderLoop(ctx context.Context) {
 			}
 		}
 		cur, started, lastInput := s.current, s.started, s.lastInput
+		lights := func(d *device) bool {
+			return d.Enabled && (cur != nil || (gsActive && d.gs != nil && len(gs.Lights(&d.gs.dev)) > 0))
+		}
 		var active []*device
 		present := map[int]bool{}
 		for _, d := range s.devices {
@@ -226,14 +227,14 @@ func (s *Service) renderLoop(ctx context.Context) {
 			slog.Info("prism: giving the device its own lighting back", "device", id)
 			go s.eng.PrismRelease(id)
 		}
-		if len(active) == 0 || (on && cur == nil) {
+		if len(active) == 0 {
 			s.watchInput(false)
 			s.audio.need(false, "")
 			s.screen.need(false)
 			continue
 		}
 		name := "GameSense"
-		if !on {
+		if cur == nil {
 			s.watchInput(false)
 			s.audio.need(false, "")
 			s.screen.need(false)

@@ -18,22 +18,22 @@ import (
 // games, which GG's Apps page switches and toggle_engine_apps bindings
 // turn on, off or over.
 
-// PrismLightingEnabled reports whether Prism lights the devices (GG's
-// PrismSync switch, on unless turned off).
-func (e *Engine) PrismLightingEnabled() bool {
-	on := true
+// prismSyncApp is the switch of the Engine's PrismSync app, the older
+// lighting the Prism tab replaced. On Windows it starts off and the Prism
+// tab lights its devices either way; ggd keeps the switch for GG's Apps
+// page and bindings, and it lights nothing.
+func (e *Engine) prismSyncApp() bool {
+	on := false
 	e.state.Get("prismLighting", &on)
 	return on
 }
 
-func (e *Engine) setPrismLighting(on bool) {
-	if on == e.PrismLightingEnabled() {
+func (e *Engine) setPrismSyncApp(on bool) {
+	if on == e.prismSyncApp() {
 		return
 	}
 	e.state.Set("prismLighting", on)
-	slog.Info("prism lighting", "on", on)
 	e.emit("prismSyncEnabledChanged", map[string]any{"enabled": on})
-	e.prismDevicesChanged(nil)
 }
 
 // imageSync plays a GIF on the per-key keyboards (GG's ImageSync): the
@@ -172,7 +172,7 @@ func (e *Engine) appRoutes() {
 	// getPrismSyncInfo. Only "enabled" means anything on Linux: Prism's
 	// own pages hold its lighting.
 	s.Handle("GET /prismSync", func(w http.ResponseWriter, r *http.Request) {
-		on := e.PrismLightingEnabled()
+		on := e.prismSyncApp()
 		effect := func() map[string]any {
 			return map[string]any{"sections": []any{map[string]any{"red": 255, "green": 102, "blue": 0, "length": 255, "randomized": 0}}}
 		}
@@ -188,8 +188,8 @@ func (e *Engine) appRoutes() {
 			"idle_info":        map[string]any{"time": 0, "effect": effect()},
 		}})
 	})
-	s.Handle("POST /prismSync/enable", func(w http.ResponseWriter, r *http.Request) { e.setPrismLighting(true); httpx.OK(w) })
-	s.Handle("POST /prismSync/disable", func(w http.ResponseWriter, r *http.Request) { e.setPrismLighting(false); httpx.OK(w) })
+	s.Handle("POST /prismSync/enable", func(w http.ResponseWriter, r *http.Request) { e.setPrismSyncApp(true); httpx.OK(w) })
+	s.Handle("POST /prismSync/disable", func(w http.ResponseWriter, r *http.Request) { e.setPrismSyncApp(false); httpx.OK(w) })
 
 	s.Handle("GET /imageSync", func(w http.ResponseWriter, r *http.Request) {
 		on, data := e.imageSyncEnabled()
@@ -265,7 +265,7 @@ func (e *Engine) toggleEngineApps(params string) {
 	apply := func(it item, set func(bool) bool) {
 		switch {
 		case it.PrismSync:
-			e.setPrismLighting(set(e.PrismLightingEnabled()))
+			e.setPrismSyncApp(set(e.prismSyncApp()))
 		case it.ImageSync:
 			on, _ := e.imageSyncEnabled()
 			e.setImageSync(set(on))
