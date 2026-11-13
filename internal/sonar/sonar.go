@@ -31,6 +31,7 @@ type Service struct {
 	stopWatch chan struct{} // stops watch
 	headsets  Headsets
 	quickset  QuicksetHost // GG's game profiles (quickset.go)
+	onStatus  func(status any)
 
 	fallbackMu sync.Mutex // fallback list changes
 	// otherProfiles are the device nodes hidden as other-profile copies
@@ -46,7 +47,10 @@ func New(token string) (*Service, error) {
 		return nil, err
 	}
 	s := &Service{srv: httpx.NewServer("sonar", token), ws: events.NewHub("sonar", ""), db: d, floor: newNoiseFloor()}
-	s.audio.onRunning = s.applyChannel
+	s.audio.onRunning = func(c channel) {
+		s.applyChannel(c)
+		s.sendStatus()
+	}
 	s.audio.onCopyRunning = s.applyMicCopy
 	s.audio.onAEC = func(available bool) {
 		s.ws.Broadcast("SONAR_EVENT_FEATURE_UPDATED", map[string]any{"id": featureAEC, "isEnabled": available, "data": nil})

@@ -120,6 +120,7 @@ func (s *Service) isActive() bool {
 
 // syncAudio starts, restarts or stops the engine to match Sonar's state.
 func (s *Service) syncAudio() {
+	defer s.sendStatus()
 	if !s.isActive() || !s.boolSetting("ONBOARDING_FINISHED") {
 		s.stopAudio()
 		return

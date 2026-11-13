@@ -133,6 +133,7 @@ func run(verbose bool) error {
 	// Sonar learns about headsets (ChatMix dials, wireless links) from
 	// Engine, as the Windows Sonar does over GG's websocket.
 	snr.SetHeadsets(headsets{eng})
+	snr.OnStatus(func(status any) { core.Broadcast("EVENT_SONAR_STATUS", status) })
 	eng.OnChatMix(snr.HeadsetChatMix)
 	eng.OnHeadsetLink(snr.HeadsetLinkChanged)
 	eng.SetAutoFlatten(func() bool {

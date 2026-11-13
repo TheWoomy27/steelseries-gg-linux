@@ -77,6 +77,36 @@ func (s *Service) setClassicVolume(role string, set func(*volume)) error {
 	return nil
 }
 
+// appStatus is Sonar's AppStatus: GET /v1/status and EVENT_SONAR_STATUS.
+func (s *Service) appStatus() map[string]any {
+	return map[string]any{
+		"isEnabled":              s.isActive(),
+		"isOnboardingDone":       s.boolSetting("ONBOARDING_FINISHED"),
+		"mode":                   camel(s.setting("MODE", modeClassic)),
+		"areEndpointsConfigured": s.audio.isRunning(channels[0]),
+		"devices":                s.vadStatuses(),
+	}
+}
+
+// OnStatus sets where Sonar's status goes when its channels change. The
+// Windows Sonar sends it over GG's websocket as EVENT_SONAR_STATUS, and
+// the client redraws its channels from it (an added Media or Aux channel
+// shows up only then).
+func (s *Service) OnStatus(fn func(status any)) {
+	s.mu.Lock()
+	s.onStatus = fn
+	s.mu.Unlock()
+}
+
+func (s *Service) sendStatus() {
+	s.mu.Lock()
+	fn := s.onStatus
+	s.mu.Unlock()
+	if fn != nil {
+		fn(s.appStatus())
+	}
+}
+
 // vadStatuses are Sonar's VadStatus entries for the running channels,
 // with the device each plays to or records from and, for a SteelSeries
 // device Engine knows, Engine's name for it (QuickSet's tiles compare it).
@@ -180,15 +210,7 @@ func (s *Service) statusRoutes() {
 	sv.Handle("GET /onboarding", func(w http.ResponseWriter, r *http.Request) {
 		httpx.JSON(w, map[string]bool{"finished": s.boolSetting("ONBOARDING_FINISHED")})
 	})
-	sv.Handle("GET /v1/status", func(w http.ResponseWriter, r *http.Request) {
-		httpx.JSON(w, map[string]any{
-			"isEnabled":              s.isActive(),
-			"isOnboardingDone":       s.boolSetting("ONBOARDING_FINISHED"),
-			"mode":                   camel(s.setting("MODE", modeClassic)),
-			"areEndpointsConfigured": s.audio.isRunning(channels[0]),
-			"devices":                s.vadStatuses(),
-		})
-	})
+	sv.Handle("GET /v1/status", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, s.appStatus()) })
 
 	sv.Handle("GET /volumeSettings/classic", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, s.volumeInfo()) })
 	sv.Handle("GET /volumeSettings/streamer", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, s.volumeInfo()) })
