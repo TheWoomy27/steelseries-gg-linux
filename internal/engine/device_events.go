@@ -117,7 +117,21 @@ func (e *Engine) handleDeviceEvent(ev deviceEvent) {
 		e.refreshPrismData(l)
 	}
 	if w, ok := ev.data["wirelessDevConnStatusEvent"].(map[string]any); ok {
-		e.emit("EVENT_WIRELESS_DEVICE_CONNECTION_STATUS", map[string]any{"deviceId": l.dbID, "isConnected": w["isConnected"], "physicalId": w["physicalId"]})
+		e.emit("EVENT_WIRELESS_DEVICE_CONNECTION_STATUS", map[string]any{"device_id": l.dbID, "product_id": w["physicalId"],
+			"deviceName": l.cat.Name, "Devices": []any{}, "IsConnected": w["isConnected"]})
+	}
+	if c, ok := ev.data["caseBatteryEvent"].(map[string]any); ok {
+		// An earbuds case reports both buds and itself; GG shows them on
+		// the dongle's device.
+		if dongle := e.budsDongle(l); dongle != nil {
+			dongle.mu.Lock()
+			dongle.budsState().caseBattery(c)
+			dongle.mu.Unlock()
+			e.emitStatus(dongle)
+		}
+	}
+	if _, ok := ev.data["reconnectDevice"]; ok {
+		e.reread(l)
 	}
 	if ev.kind&(evDispatchToUI|evGenericStatus) != 0 {
 		// The client matches device_event on a top-level id and reads the
@@ -127,7 +141,7 @@ func (e *Engine) handleDeviceEvent(ev deviceEvent) {
 			msg[k] = v
 		}
 		e.emit("device_event", msg)
-		e.emit("EVENT_DEVICE_STATUS_CHANGED", map[string]any{"deviceId": l.dbID, "device": l.cat.Name, "status": ev.data})
+		e.emitStatus(l)
 	}
 }
 
@@ -177,12 +191,18 @@ func (l *liveDevice) trackStatus(d map[string]any) {
 		if n, ok := num(b["batteryPercent"]); ok {
 			battery().percent = n
 		}
+		if _, ok := b["leftBatteryPercent"]; ok { // earbuds
+			l.budsState().battery(b)
+		}
 	}
 	if c, ok := d["chargingEvent"].(map[string]any); ok {
 		battery().charging = c["chargingStatus"] == "PLUGGED_IN_CHARGING"
 	}
 	if c, ok := d["connectionEvent"].(map[string]any); ok {
 		l.linkKnown, l.linkUp = true, c["connectionStatus"] == "PAIRED_CONNECTED"
+		if _, ok := c["leftConnectionStatus"]; ok {
+			l.budsState().connection(c)
+		}
 	}
 	if c, ok := d["connection_status"].(map[string]any); ok {
 		if n, ok := num(c["status"]); ok {
@@ -211,8 +231,13 @@ func (e *Engine) genericStatuses(deviceName string) map[string]any {
 	if l == nil {
 		return out
 	}
+	caseUp := e.budsCaseConnected(l)
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if l.buds != nil {
+		out["batteryLevels"], out["wirelessConnection"] = l.buds.statuses(caseUp)
+		return out
+	}
 	if l.battery != nil {
 		out["batteryLevels"] = map[string]any{"type": "single_battery", "statusKnown": l.battery.percent >= 0,
 			"percent": max(l.battery.percent, 0), "charging": l.battery.charging}

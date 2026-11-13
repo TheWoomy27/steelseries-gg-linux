@@ -37,7 +37,9 @@ type liveDevice struct {
 	battery   *batteryState
 	linkKnown bool
 	linkUp    bool
-	low       bool // the spec reports the battery low
+	low       bool       // the spec reports the battery low
+	buds      *budsState // earbuds (GameBuds): each bud's battery and link
+	rereading bool       // a reconnectDevice is being handled
 }
 
 type batteryState struct {
@@ -152,7 +154,7 @@ func (e *Engine) onHotplug(added, removed []hid.Info) {
 	for _, l := range gone {
 		slog.Info("device disconnected", "device", l.cat.FullName)
 		e.emit("deviceDisconnected", map[string]any{"id": l.dbID, "product_id": l.cat.ProductID})
-		e.emit("EVENT_DEVICE_STATUS_CHANGED", map[string]any{"deviceId": l.dbID, "connected": false})
+		e.emitStatus(l)
 	}
 	if len(unplugged) > 0 {
 		e.prismDevicesChanged(unplugged)
@@ -229,6 +231,15 @@ func (e *Engine) initDevice(l *liveDevice, d *devicert.Decl) {
 			slog.Debug("post-init", "spec", d.Name, "err", err)
 		}
 	}
+	e.deviceReady(l, d)
+}
+
+// deviceReady reads what a device reports about itself (settings, headset
+// status, firmware), tells the client, and re-applies the configuration GG
+// manages. It runs after init, and again when the spec says the device
+// reconnected (earbuds taken out of their case), as the Windows Engine
+// runs its connect steps again then.
+func (e *Engine) deviceReady(l *liveDevice, d *devicert.Decl) {
 	if s, err := d.SyncSettings(); err == nil {
 		e.applyDeviceSettings(l, d, s)
 	}
@@ -246,7 +257,7 @@ func (e *Engine) initDevice(l *liveDevice, d *devicert.Decl) {
 	l.ready = true
 	l.mu.Unlock()
 	e.emit("deviceConnected", e.deviceJSON(l.cat, l))
-	e.emit("EVENT_DEVICE_STATUS_CHANGED", map[string]any{"deviceId": l.dbID, "connected": true})
+	e.emitStatus(l)
 	e.prismDevicesChanged(nil)
 
 	// gg-linux only writes settings it owns: once a configuration has been

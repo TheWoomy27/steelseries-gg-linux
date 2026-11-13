@@ -110,17 +110,20 @@ func (e *Engine) routes() {
 		httpx.JSON(w, map[string]any{"configurations": cfgs})
 	})
 	// Device functions: (call-device-function ...) from the UI, e.g.
-	// reading headset status for the device card.
+	// reading headset status for the device card. Like the Windows Engine
+	// they always answer 200: {} for a device that isn't there, an error
+	// object when the function fails. The client throws on anything else.
 	deviceFunc := func(w http.ResponseWriter, r *http.Request) {
 		d := e.functionDecl(pathInt(r, "id"), uint32(pathInt(r, "pid")))
 		if d == nil {
-			httpx.Error(w, 404, "device not connected")
+			httpx.JSON(w, map[string]any{})
 			return
 		}
 		name := r.PathValue("fn")
 		v, err := d.Call(name)
 		if err != nil {
-			httpx.Error(w, 500, err.Error())
+			slog.Debug("device function", "spec", d.Name, "function", name, "err", err)
+			httpx.JSON(w, map[string]any{"error": map[string]any{"message": err.Error()}})
 			return
 		}
 		httpx.JSON(w, map[string]any{"function_data": lispResult(v)})
