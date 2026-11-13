@@ -282,7 +282,11 @@ func (s *State) Screen(d *Device) *Screen {
 			continue
 		}
 		for _, e := range g.events {
-			for _, b := range e.screens {
+			screens := e.screens
+			if ub := e.userScreens[d.ProductID]; ub != nil {
+				screens = []*screenBinding{ub}
+			}
+			for _, b := range screens {
 				if !b.set || b.h.Disabled || !b.h.applies(d) || b.current(now) == nil {
 					continue
 				}

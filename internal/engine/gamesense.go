@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -204,6 +205,17 @@ func (g *gameSense) load() {
 			g.state.SetUserHandler(parts[0], parts[1], uint32(pid), raw)
 		}
 	}
+	var screens map[string]json.RawMessage
+	g.e.state.Get("gameSenseUserScreens", &screens)
+	for k, raw := range screens {
+		parts := strings.Split(k, "/")
+		if len(parts) != 3 {
+			continue
+		}
+		if pid, err := strconv.ParseUint(parts[2], 10, 32); err == nil {
+			g.state.SetUserScreen(parts[0], parts[1], uint32(pid), raw)
+		}
+	}
 }
 
 // eventRequest reads a register or bind request.
@@ -384,11 +396,15 @@ func (e *Engine) GameIntegrationDevices() any {
 						break
 					}
 				}
+				userScreen := screen
+				if h := ev.UserScreens[d.pid]; h != nil {
+					userScreen = h.Raw
+				}
 				events = append(events, map[string]any{"event": ev.Name, "min_value": ev.Info.Min, "max_value": ev.Info.Max,
 					"icon_id": ev.Info.IconID, "value_optional": ev.Info.ValueOptional, "zones_by_specifier": bySpecifier,
 					"illumination_handler": map[string]string{"handler": string(user), "default_handler": string(def)},
 					"vibration_handler":    map[string]string{"handler": "{}", "default_handler": "{}"},
-					"screen_handler":       map[string]string{"handler": string(screen), "default_handler": string(screen)}})
+					"screen_handler":       map[string]string{"handler": string(userScreen), "default_handler": string(screen)}})
 			}
 			name := gd.DisplayName
 			if name == "" {
@@ -428,6 +444,10 @@ func (e *Engine) SetUserHandlers(body []byte) error {
 			Illumination struct {
 				Handler string `json:"handler"`
 			} `json:"illumination_handler"`
+			Screen *struct {
+				Handler        string `json:"handler"`
+				DefaultHandler string `json:"default_handler"`
+			} `json:"screen_handler"`
 		} `json:"events"`
 	}
 	if err := json.Unmarshal(body, &p); err != nil {
@@ -437,12 +457,29 @@ func (e *Engine) SetUserHandlers(body []byte) error {
 	game := strings.ToUpper(p.Game)
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	var user map[string]json.RawMessage
+	var user, screens map[string]json.RawMessage
 	e.state.Get("gameSenseUser", &user)
 	if user == nil {
 		user = map[string]json.RawMessage{}
 	}
+	e.state.Get("gameSenseUserScreens", &screens)
+	if screens == nil {
+		screens = map[string]json.RawMessage{}
+	}
 	for _, ev := range p.Events {
+		if sc := ev.Screen; sc != nil {
+			// The page sends the game's handler back unchanged for the
+			// events the user left alone.
+			raw := json.RawMessage(sc.Handler)
+			key := userKey(game, strings.ToUpper(ev.Event), p.ProductID)
+			if !json.Valid(raw) || sameJSON(raw, json.RawMessage(sc.DefaultHandler)) || string(raw) == "{}" {
+				raw = json.RawMessage("{}")
+				delete(screens, key)
+			} else {
+				screens[key] = raw
+			}
+			g.state.SetUserScreen(game, strings.ToUpper(ev.Event), p.ProductID, raw)
+		}
 		raw := json.RawMessage(ev.Illumination.Handler)
 		if !json.Valid(raw) {
 			raw = json.RawMessage("{}")
@@ -456,5 +493,17 @@ func (e *Engine) SetUserHandlers(body []byte) error {
 		}
 	}
 	slog.Info("gamesense: user handlers", "game", game, "device", p.ProductID, "events", len(p.Events))
+	if err := e.state.Set("gameSenseUserScreens", screens); err != nil {
+		return err
+	}
 	return e.state.Set("gameSenseUser", user)
+}
+
+// sameJSON reports whether two JSON texts hold the same value.
+func sameJSON(a, b json.RawMessage) bool {
+	var x, y any
+	if json.Unmarshal(a, &x) != nil || json.Unmarshal(b, &y) != nil {
+		return false
+	}
+	return reflect.DeepEqual(x, y)
 }

@@ -92,3 +92,29 @@ func TestScreenImage(t *testing.T) {
 		t.Fatalf("image: %+v", sc)
 	}
 }
+
+func TestUserScreen(t *testing.T) {
+	s, _ := newState()
+	bind(t, s, "HEALTH", `{"device-type":"screened","zone":"one","mode":"screen","datas":[{"lines":[{"has-text":true,"prefix":"HP "}]}]}`)
+	value(s, "HEALTH", 50)
+	d := apex()
+	// The user turns the event off on this device's screen.
+	s.SetUserScreen("GAME", "HEALTH", d.ProductID, json.RawMessage(`{"device-type":"screened","zone":"one","mode":"screen-disabled"}`))
+	if sc := s.Screen(d); sc != nil {
+		t.Fatalf("a disabled screen shows %+v", sc)
+	}
+	value(s, "HEALTH", 60)
+	if sc := s.Screen(d); sc != nil {
+		t.Fatalf("a disabled screen shows %+v after an event", sc)
+	}
+	// Their own text takes the game's place, from what the game showed.
+	s.SetUserScreen("GAME", "HEALTH", d.ProductID, json.RawMessage(`{"device-type":"screened","zone":"one","mode":"screen","datas":[{"lines":[{"has-text":true,"prefix":"Life "}]}]}`))
+	if sc := s.Screen(d); sc == nil || sc.Lines[0].Text != "Life 60" {
+		t.Fatalf("user screen: %+v", sc)
+	}
+	// Removing it brings the game's back.
+	s.SetUserScreen("GAME", "HEALTH", d.ProductID, json.RawMessage(`{}`))
+	if sc := s.Screen(d); sc == nil || sc.Lines[0].Text != "HP 60" {
+		t.Fatalf("game screen: %+v", sc)
+	}
+}

@@ -116,6 +116,7 @@ type event struct {
 	handlers      []*binding
 	user          map[uint32]*binding // the user's handler for a device, in place of the game's
 	screens       []*screenBinding
+	userScreens   map[uint32]*screenBinding // the user's screen handler for a device, in place of the game's
 }
 
 // binding is a handler and the last value it showed.
@@ -252,10 +253,19 @@ func (g *game) deactivate() {
 		for _, b := range e.all() {
 			b.set, b.frame = false, nil
 		}
-		for _, b := range e.screens {
+		for _, b := range e.allScreens() {
 			b.set, b.frame = false, nil
 		}
 	}
+}
+
+// allScreens is the event's screen handlers and the user's.
+func (e *event) allScreens() []*screenBinding {
+	out := append([]*screenBinding(nil), e.screens...)
+	for _, b := range e.userScreens {
+		out = append(out, b)
+	}
+	return out
 }
 
 // all is the event's handlers and the user's.
@@ -358,7 +368,7 @@ func (s *State) Event(gameName, eventName string, data json.RawMessage) {
 			*b = binding{h: b.h, set: true, value: v, frame: d.Frame, color: b.h.color(v, opt),
 				half: b.h.freq(v), repeat: b.h.repeat(v), start: now, seq: s.seq}
 		}
-		for _, b := range e.screens {
+		for _, b := range e.allScreens() {
 			if b.set && b.value == v && d.Value != nil && !e.valueOptional {
 				continue
 			}
@@ -628,13 +638,42 @@ func (s *State) SetUserHandler(gameName, eventName string, productID uint32, raw
 	e.user[productID] = &binding{h: h}
 }
 
+// SetUserScreen sets the user's screen handler for an event on one
+// device (GG's GameSense page), in place of the game's; an empty or
+// unreadable handler removes it. "screen-disabled" keeps the event off
+// that device's screen.
+func (s *State) SetUserScreen(gameName, eventName string, productID uint32, raw json.RawMessage) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e := s.game(gameName).event(eventName)
+	h, ok := parseScreenHandler(raw)
+	if !ok {
+		delete(e.userScreens, productID)
+		return
+	}
+	h.DeviceID = productID
+	b := &screenBinding{h: h}
+	// Show what the game is showing now, through the user's handler.
+	for _, gb := range e.screens {
+		if gb.set {
+			b.update(gb.value, gb.frame, gb.start, gb.seq)
+			break
+		}
+	}
+	if e.userScreens == nil {
+		e.userScreens = map[uint32]*screenBinding{}
+	}
+	e.userScreens[productID] = b
+}
+
 // EventDetail describes an event for GG's GameSense page.
 type EventDetail struct {
-	Name     string
-	Info     EventInfo
-	Handlers []*Handler          // the game's lighting handlers
-	Screens  []*ScreenHandler    // the game's screen handlers
-	User     map[uint32]*Handler // the user's, by device
+	Name        string
+	Info        EventInfo
+	Handlers    []*Handler                // the game's lighting handlers
+	Screens     []*ScreenHandler          // the game's screen handlers
+	User        map[uint32]*Handler       // the user's, by device
+	UserScreens map[uint32]*ScreenHandler // the user's screen handlers, by device
 }
 
 // GameDetail describes a game for GG's GameSense page.
@@ -654,7 +693,7 @@ func (s *State) Details() []GameDetail {
 		}
 		gd := GameDetail{GameInfo: GameInfo{Name: g.name, DisplayName: g.displayName, Developer: g.developer, Enabled: !s.disabled[g.name], Active: g.active}}
 		for n, e := range g.events {
-			ed := EventDetail{Name: n, Info: EventInfo{Min: e.min, Max: e.max, ValueOptional: e.valueOptional, IconID: e.iconID}, User: map[uint32]*Handler{}}
+			ed := EventDetail{Name: n, Info: EventInfo{Min: e.min, Max: e.max, ValueOptional: e.valueOptional, IconID: e.iconID}, User: map[uint32]*Handler{}, UserScreens: map[uint32]*ScreenHandler{}}
 			for _, b := range e.handlers {
 				ed.Handlers = append(ed.Handlers, b.h)
 			}
@@ -663,6 +702,9 @@ func (s *State) Details() []GameDetail {
 			}
 			for pid, b := range e.user {
 				ed.User[pid] = b.h
+			}
+			for pid, b := range e.userScreens {
+				ed.UserScreens[pid] = b.h
 			}
 			gd.Events = append(gd.Events, ed)
 			gd.GameInfo.Events = append(gd.GameInfo.Events, n)
