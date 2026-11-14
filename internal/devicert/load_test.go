@@ -102,3 +102,42 @@ func TestAeroxRewritesOnPair(t *testing.T) {
 		t.Errorf("on waking: low power mode rewritten %v, polling rate %v", lpgm, polling)
 	}
 }
+
+// The Apex Pro (2024) redefines the lighting structs (113 zones, with the
+// OLED's media key) after its base embedded the 112-zone ones in
+// lighting_config; the configuration's lighting must use the new ones.
+func TestRedefinedStructs(t *testing.T) {
+	data := os.Getenv("GG_LINUX_DATA")
+	if data == "" {
+		t.Skip("GG_LINUX_DATA not set")
+	}
+	rt, err := New(filepath.Join(data, "engine", "deviceSpecifications"), filepath.Join(data, "engine"), nullTransport{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := rt.Device(0x10381640) // Apex Pro (2024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	field := func(st *Struct, name string) *Field {
+		for _, f := range st.Outgoing.Fields {
+			if f.Name == name {
+				return f
+			}
+		}
+		t.Fatalf("%s has no field %s", st.Name, name)
+		return nil
+	}
+	lc := d.Struct("lighting_config")
+	fg := field(lc, "foundation_graphics").nested
+	if fg != d.Struct("libsteel_foundation_graphics_struct") {
+		t.Fatal("lighting_config embeds an old libsteel_foundation_graphics_struct")
+	}
+	g := field(fg, "graphics").nested
+	if g != d.Struct("libsteel_foundation_graphic") {
+		t.Fatal("libsteel_foundation_graphics_struct embeds an old libsteel_foundation_graphic")
+	}
+	if r := field(g, "num_assigned_codes").Range; r == nil || r[1] != 113 {
+		t.Errorf("num_assigned_codes range %v, want up to 113", r)
+	}
+}

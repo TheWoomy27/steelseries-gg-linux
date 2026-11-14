@@ -124,6 +124,28 @@ func (d *Decl) Struct(name string) *Struct {
 	return d.Structs[name]
 }
 
+// relinkStructs points struct-typed fields at their struct's latest
+// definition. A spec may redefine a struct after another embeds it: the
+// Apex Pro (2024) widens the lighting structs that its included base built
+// lighting_config from. The Windows Engine looks embedded structs up by
+// name, so the latest definition is the one that counts.
+func (d *Decl) relinkStructs() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, st := range d.Structs {
+		for _, sec := range []*Section{st.Outgoing, st.Incoming} {
+			if sec == nil {
+				continue
+			}
+			for _, f := range sec.Fields {
+				if cur := d.Structs[f.Type]; f.nested != nil && cur != nil {
+					f.nested = cur
+				}
+			}
+		}
+	}
+}
+
 func (d *Decl) Api(name string) *Api {
 	d.mu.Lock()
 	defer d.mu.Unlock()

@@ -286,6 +286,17 @@ func (rt *Runtime) loadFile(path string) error {
 			rt.loadError(filepath.Base(path), err)
 		}
 	}
+	rt.mu.Lock()
+	var decls []*Decl
+	for id, d := range rt.decls {
+		if rt.deviceFile[id] == path {
+			decls = append(decls, d)
+		}
+	}
+	rt.mu.Unlock()
+	for _, d := range decls {
+		d.relinkStructs()
+	}
 	slog.Debug("spec loaded", "file", filepath.Base(path), "ms", time.Since(start).Milliseconds())
 	return nil
 }
