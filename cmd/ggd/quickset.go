@@ -1,7 +1,10 @@
 package main
 
 import (
+	"log/slog"
+
 	"ggl/internal/ggcore"
+	"ggl/internal/prism"
 	"ggl/internal/sonar"
 )
 
@@ -66,9 +69,17 @@ func sonarConfigs(cfgs []ggcore.LoadoutConfig) []sonar.QuicksetConfig {
 }
 
 // connectQuickset wires Sonar and the GG core's QuickSet both ways.
-func connectQuickset(core *ggcore.Core, snr *sonar.Service) {
+func connectQuickset(core *ggcore.Core, snr *sonar.Service, ps *prism.Service) {
 	snr.SetQuickset(quicksetBridge{core})
-	core.OnLoadoutChange(func(cfgs []ggcore.LoadoutConfig) { snr.ApplyQuickset(sonarConfigs(cfgs)) })
+	core.OnLoadoutChange(func(cfgs []ggcore.LoadoutConfig) {
+		snr.ApplyQuickset(sonarConfigs(cfgs))
+		// A profile's Prism configuration becomes Prism's current one.
+		for _, c := range cfgs {
+			if c.ConfigType == "prism" && c.ConfigID != "" && !ps.SetCurrent(c.ConfigID) {
+				slog.Warn("quickset: no such Prism configuration", "id", c.ConfigID)
+			}
+		}
+	})
 	core.OnQuicksetStatus(snr.QuicksetStatusChanged)
 	core.OnLoadoutsModified(snr.QuicksetModified)
 }

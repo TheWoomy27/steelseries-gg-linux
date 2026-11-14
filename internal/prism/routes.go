@@ -106,16 +106,7 @@ func (s *Service) routes() {
 		logBody("PUT /configs/"+a+"/"+b, body)
 		switch {
 		case a == "current":
-			s.db.Exec(`UPDATE configs SET is_current = 0, is_last_manually_deployed = 0`)
-			s.db.Exec(`UPDATE configs SET is_current = 1, is_last_manually_deployed = 1 WHERE id = ?`, b)
-			s.configChanged(b)
-			s.mu.Lock()
-			s.current = nil
-			s.mu.Unlock()
-			s.notify("EVENT_PRISMSYNC_CURRENT_CONFIG_CHANGED", b)
-			if c := s.config(b); c != nil {
-				s.sendPreviews(c)
-			}
+			s.SetCurrent(b)
 		case a == "idle" && b == "time":
 			s.setIdleTime(body)
 		case b == "metadata":
@@ -395,4 +386,23 @@ func (s *Service) setIdleTime(body []byte) {
 			s.sendPreviews(c)
 		}
 	}
+}
+
+// SetCurrent makes a configuration the one Prism lights its devices with
+// (the Prism tab's pick, or a QuickSet profile's). It reports whether the
+// configuration exists.
+func (s *Service) SetCurrent(id string) bool {
+	c := s.config(id)
+	if c == nil {
+		return false
+	}
+	s.db.Exec(`UPDATE configs SET is_current = 0, is_last_manually_deployed = 0`)
+	s.db.Exec(`UPDATE configs SET is_current = 1, is_last_manually_deployed = 1 WHERE id = ?`, id)
+	s.configChanged(id)
+	s.mu.Lock()
+	s.current = nil
+	s.mu.Unlock()
+	s.notify("EVENT_PRISMSYNC_CURRENT_CONFIG_CHANGED", id)
+	s.sendPreviews(c)
+	return true
 }

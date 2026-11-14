@@ -165,8 +165,10 @@ func (c *Core) DeployLoadout(id string, manual bool) bool {
 	if !ok {
 		return false
 	}
+	// Engine configurations deploy here; Prism's and Sonar's go to their
+	// services through the loadoutChanged hook.
 	for _, cfg := range cfgs {
-		if cfg.ConfigType == "engine" || cfg.ConfigType == "prism" || cfg.ConfigType == "prismSync" || cfg.ConfigType == "" {
+		if cfg.ConfigType == "engine" || cfg.ConfigType == "" {
 			c.eng.DeployConfigByID(cfg.ConfigID)
 		}
 	}
@@ -269,13 +271,17 @@ func (c *Core) loadoutRoutes() {
 		l.Bindings = p.Bindings
 		return map[string]any{"loadout": l}, 200
 	}))
-	s.Handle("POST /loadouts/{id}/deploy", func(w http.ResponseWriter, r *http.Request) {
+	// The client deploys a profile at /v1/loadouts/{id}/deploy, as the
+	// Windows GG serves it.
+	deploy := func(w http.ResponseWriter, r *http.Request) {
 		if !c.DeployLoadout(r.PathValue("id"), true) {
 			httpx.Error(w, 404, "loadout not found")
 			return
 		}
 		httpx.OK(w)
-	})
+	}
+	s.Handle("POST /v1/loadouts/{id}/deploy", deploy)
+	s.Handle("POST /loadouts/{id}/deploy", deploy)
 	newLoadout := func(st *loadoutState, name string, b *Binding) *Loadout {
 		l := Loadout{ID: httpx.RandomToken(8), Name: name, CreationTime: time.Now().UTC(), Configs: []LoadoutConfig{}, Bindings: []Binding{}}
 		if b != nil {
@@ -316,14 +322,16 @@ func (c *Core) loadoutRoutes() {
 		}
 		return map[string]any{"loadout": newLoadout(st, p.Name, b)}, 200
 	}))
-	s.Handle("POST /loadouts/profiles/enable", func(w http.ResponseWriter, r *http.Request) {
-		c.setProfilesEnabled(true)
-		httpx.OK(w)
-	})
-	s.Handle("POST /loadouts/profiles/disable", func(w http.ResponseWriter, r *http.Request) {
-		c.setProfilesEnabled(false)
-		httpx.OK(w)
-	})
+	for _, prefix := range []string{"", "/v1"} {
+		s.Handle("POST "+prefix+"/loadouts/profiles/enable", func(w http.ResponseWriter, r *http.Request) {
+			c.setProfilesEnabled(true)
+			httpx.OK(w)
+		})
+		s.Handle("POST "+prefix+"/loadouts/profiles/disable", func(w http.ResponseWriter, r *http.Request) {
+			c.setProfilesEnabled(false)
+			httpx.OK(w)
+		})
+	}
 	s.Handle("GET /loadouts/shortcuts", c.loadoutReader(func(st *loadoutState, r *http.Request) any {
 		return map[string]any{"shortcuts": st.Shortcuts}
 	}))

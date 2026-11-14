@@ -175,7 +175,7 @@ func run(verbose bool) error {
 		snr.SetActive(on)
 	})
 	core.RegisterSubApp("sonar", sonarMD)
-	connectQuickset(core, snr)
+	connectQuickset(core, snr, ps)
 	go snr.SetActive(core.SubAppEnabled("sonar"))
 
 	mom, err := startMoments(ctx, core, token, tlsCfg)
