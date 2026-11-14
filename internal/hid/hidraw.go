@@ -401,6 +401,9 @@ func (d *Device) SetFeature(data []byte, size int) error {
 func (d *Device) setFeature(data []byte, size int) error {
 	b := pad(data, size)
 	b = b[:min(len(b), d.featureLen(b[0], len(b)))]
+	if traceReports {
+		slog.Debug("hid set feature", "pid", fmt.Sprintf("%04x", d.ProductID), "if", d.Interface, "data", fmt.Sprintf("% x", b[:min(len(b), 12)]))
+	}
 	_, err := d.ioctl(iocRW(0x06, uintptr(len(b))), b)
 	return err
 }
