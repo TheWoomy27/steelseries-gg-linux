@@ -267,21 +267,35 @@ func (g *gameSense) remember(path, game, event string, body json.RawMessage) {
 		sg.Events[event] = body
 	case "/remove_game_event":
 		delete(sg.Events, event)
+		g.forgetUser(game + "/" + event + "/")
 	case "/remove_game":
 		delete(games, game)
 		g.e.state.Set("gameSenseGames", games)
-		var user map[string]json.RawMessage
-		g.e.state.Get("gameSenseUser", &user)
-		for k := range user {
-			if strings.HasPrefix(k, game+"/") {
-				delete(user, k)
-			}
-		}
-		g.e.state.Set("gameSenseUser", user)
+		g.forgetUser(game + "/")
 		return
 	}
 	games[game] = sg
 	g.e.state.Set("gameSenseGames", games)
+}
+
+// forgetUser drops the user's stored lighting and screen handlers whose
+// keys (game/event/product) start with prefix: loading them would bring
+// back the game or event they belong to.
+func (g *gameSense) forgetUser(prefix string) {
+	for _, key := range []string{"gameSenseUser", "gameSenseUserScreens"} {
+		var user map[string]json.RawMessage
+		g.e.state.Get(key, &user)
+		changed := false
+		for k := range user {
+			if strings.HasPrefix(k, prefix) {
+				delete(user, k)
+				changed = true
+			}
+		}
+		if changed {
+			g.e.state.Set(key, user)
+		}
+	}
 }
 
 // GameSense pages: GG's Engine apps list the registered games, and their
