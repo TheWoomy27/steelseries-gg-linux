@@ -106,7 +106,10 @@ func (c *Core) withLoadouts(fn func(st *loadoutState) (any, int)) (any, int) {
 		for _, l := range st.Loadouts {
 			ids = append(ids, l.ID)
 		}
+		// The client's QuickSet page and device pages reload the profiles
+		// (and the active one) on the V1 event; the other refreshes devices.
 		c.Broadcast("EVENT_LOADOUT_MODIFIED", map[string]any{"loadout_ids": ids})
+		c.Broadcast("EVENT_LOADOUTS_LOADOUT_MODIFIED_V1", map[string]any{"version": 1, "loadout_ids": ids})
 		if fn := c.hooks().loadoutsModified; fn != nil {
 			go fn()
 		}
