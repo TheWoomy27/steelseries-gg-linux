@@ -3,6 +3,7 @@ package prism
 import (
 	"encoding/json"
 	"math"
+	"math/rand/v2"
 	"testing"
 )
 
@@ -48,26 +49,47 @@ func TestVisualizerZones(t *testing.T) {
 	}
 }
 
+// The bands are laid out as GG's Windows sampling library lays them out:
+// on a 14-column keyboard (Apex Pro Mini) a 100 Hz tone lands in column
+// 0 and a 1 kHz tone in column 4; the low frequencies get no more columns
+// than the rest.
 func TestSpectrumAndBands(t *testing.T) {
-	s := make([]float64, fftSize)
-	for i := range s {
-		s[i] = math.Sin(2 * math.Pi * 1000 * float64(i) / audioRate)
+	tone := func(hz float64) []float32 {
+		// A faint noise floor, as real sound has: a level of exactly 0
+		// (log -Inf) makes a column read 0, as in the library.
+		rnd := rand.New(rand.NewPCG(1, 2))
+		s := make([]float64, fftSize)
+		for i := range s {
+			s[i] = math.Sin(2*math.Pi*hz*float64(i)/audioRate) + 1e-5*(rnd.Float64()-0.5)
+		}
+		return bands(spectrum(s), 14)
 	}
-	mags := spectrum(s)
-	bin := int(math.Floor(1000.0 / (audioRate / float64(fftSize))))
-	if m := max(mags[bin], mags[bin+1]); m < 0.8 || m > 1.05 {
-		t.Errorf("a full-scale 1 kHz sine reads %.2f", m)
+	loudest := func(b []float32) int {
+		l := 0
+		for i := range b {
+			if b[i] > b[l] {
+				l = i
+			}
+		}
+		return l
 	}
-	b := bands(mags, 10)
-	loudest := 0
-	for i := range b {
-		if b[i] > b[loudest] {
-			loudest = i
+	for _, c := range []struct {
+		hz   float64
+		want int
+	}{{100, 0}, {1000, 4}, {3000, 9}} {
+		b := tone(c.hz)
+		if got := loudest(b); got != c.want {
+			t.Errorf("%v Hz is loudest in column %d, want %d: %v", c.hz, got, c.want, b)
+		}
+		if b[c.want] <= 0 || b[c.want] > 1 {
+			t.Errorf("%v Hz: column %d at %.2f", c.hz, c.want, b[c.want])
 		}
 	}
-	// 1 kHz is in band 5 of 10 log-spaced bands from 40 Hz to 16 kHz.
-	if loudest != 5 || b[5] < 0.95 || b[0] > 0.3 {
-		t.Errorf("bands %v", b)
+	// Silence lights nothing.
+	for i, v := range bands(spectrum(make([]float64, fftSize)), 14) {
+		if v != 0 {
+			t.Errorf("silence: column %d at %v", i, v)
+		}
 	}
 }
 

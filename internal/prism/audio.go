@@ -16,17 +16,20 @@ import (
 // Audio for the Audio Visualizer effect: the sound going to an output
 // (the default one unless the user picks another), recorded from its
 // monitor with pw-record while a configuration uses the effect. Windows
-// Prism gets band levels from a sampling library; here they come from an
-// FFT of the latest samples, in log-spaced bands, then go through
-// Prism's own normalisation: "tide marks" following the quietest and
+// Prism gets band levels from its sampling library (audio-sample-lib),
+// which ggd follows: an FFT of the latest samples, its bins spread over
+// points by the library's own frequency curve, each column the mean of its
+// points' levels; then Prism's own normalisation: "tide marks" following the quietest and
 // loudest bands, an amplitude multiplier from the user's amplitude
 // setting, and averaging with the previous frame.
 
 const (
-	audioRate  = 48000
-	fftSize    = 2048
-	bandLowHz  = 40
-	bandHighHz = 16000
+	audioRate = 48000
+	fftSize   = 4096
+	// The library spreads the spectrum over specPoints points, from 0 to
+	// specTopHz (at most half the sample rate).
+	specPoints = fftSize/2 + 1
+	specTopHz  = 19000
 )
 
 // avFrame is one frame of audio levels: per band for each device bitmap
@@ -212,21 +215,20 @@ func (a *audioCapture) updateTideMarks(lo, hi float32) {
 	a.rng = a.high - a.low
 }
 
-// spectrum is the magnitude of each FFT bin of a Hann-windowed frame,
-// where a full-scale sine reads 1.
+// spectrum is the magnitude of each FFT bin (0 to half the sample rate)
+// of a frame under a periodic Hann window, scaled as the library scales
+// them: |X| / (2 * specPoints).
 func spectrum(samples []float64) []float64 {
 	n := len(samples)
 	x := make([]complex128, n)
-	var sum float64
 	for i, s := range samples {
-		w := 0.5 - 0.5*math.Cos(2*math.Pi*float64(i)/float64(n-1))
-		sum += w
+		w := 0.5 * (1 - math.Cos(2*math.Pi*float64(i)/float64(n)))
 		x[i] = complex(s*w, 0)
 	}
 	fft(x)
-	mags := make([]float64, n/2)
+	mags := make([]float64, n/2+1)
 	for i := range mags {
-		mags[i] = 2 * cmplx.Abs(x[i]) / sum
+		mags[i] = cmplx.Abs(x[i]) / (2 * specPoints)
 	}
 	return mags
 }
@@ -257,28 +259,46 @@ func fft(x []complex128) {
 	}
 }
 
-// bands splits a spectrum into n log-spaced bands from 40 Hz to 16 kHz:
-// each band's loudest bin, on a 60 dB scale (0 silent, 1 full scale).
+// specCurve is where each of the library's points falls in the FFT's
+// bins: p(i) = N(1 - ln(F+1 - iF/N) / ln(F+1)), N points up to F Hz. It
+// spreads the lower frequencies out and packs the higher ones together.
+var specCurve = func() []float64 {
+	n, f := float64(specPoints), float64(min(audioRate/2, specTopHz))
+	out := make([]float64, specPoints)
+	for i := range out {
+		out[i] = n * (1 - math.Log(f+1-float64(i)*f/n)/math.Log(f+1))
+	}
+	return out
+}()
+
+// bands splits a spectrum into n columns as the library does: the
+// spectrum interpolated at each point of specCurve, each point's level on
+// a 180 dB scale (log10(magnitude)/9 + 1), and each column the mean of its
+// points' levels, lowest frequencies first.
 func bands(mags []float64, n int) []float32 {
 	out := make([]float32, n)
 	if n <= 0 {
 		return out
 	}
-	binHz := float64(audioRate) / float64(2*len(mags))
-	edge := func(i int) float64 {
-		return bandLowHz * math.Pow(bandHighHz/bandLowHz, float64(i)/float64(n))
+	per := (specPoints - 1) / n
+	if per == 0 {
+		return out
 	}
-	for i := 0; i < n; i++ {
-		from, to := int(edge(i)/binHz), int(edge(i+1)/binHz)
-		to = max(to, from+1)
-		var m float64
-		for k := from; k < to && k < len(mags); k++ {
-			m = max(m, mags[k])
+	level := func(i int) float64 {
+		p := specCurve[i]
+		k := int(p)
+		if k+1 >= len(mags) {
+			return math.Log10(mags[len(mags)-1])/9 + 1.0001
 		}
-		if m > 0 {
-			db := 20 * math.Log10(m)
-			out[i] = float32(min(max(1+db/60, 0), 1))
+		m := mags[k] + (mags[k+1]-mags[k])*(p-float64(k))
+		return math.Log10(m)/9 + 1.0001
+	}
+	for c := 0; c < n; c++ {
+		var sum float64
+		for i := c * per; i < (c+1)*per; i++ {
+			sum += level(i)
 		}
+		out[c] = float32(min(max(sum/float64(per), 0), 1)) // silence (-Inf) reads 0
 	}
 	return out
 }
