@@ -20,8 +20,12 @@ udev_installed() {
     [ -f "$installed" ] && cmp -s "$installed" "$repo/packaging/70-steelseries-gg.rules"
 }
 
+# shell_quote quotes $1 for a command line to copy (the repo's path can
+# have spaces).
+shell_quote() { printf "'%s'" "$(printf %s "$1" | sed "s/'/'\\\\''/g")"; }
+
 udev_command() {
-    echo "sudo install -Dm644 $repo/packaging/70-steelseries-gg.rules $udev_rules && sudo udevadm control --reload && sudo udevadm trigger"
+    echo "sudo install -Dm644 $(shell_quote "$repo/packaging/70-steelseries-gg.rules") $udev_rules && sudo udevadm control --reload && sudo udevadm trigger"
 }
 
 setup_udev() {

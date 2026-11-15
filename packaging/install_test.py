@@ -50,8 +50,8 @@ class InstallTest(unittest.TestCase):
 
     def test_host(self):
         desktop, service, prefix = self.install()
-        self.assertEqual(self.line(desktop, "Exec"), f"Exec={prefix}/bin/steelseries-gg")
-        self.assertEqual(self.line(service, "ExecStart"), f"ExecStart={prefix}/bin/ggd")
+        self.assertEqual(self.line(desktop, "Exec"), f'Exec="{prefix}/bin/steelseries-gg"')
+        self.assertEqual(self.line(service, "ExecStart"), f'ExecStart="{prefix}/bin/ggd"')
 
     def test_distrobox(self):
         # The desktop entry and the service run on the host, where the
@@ -60,9 +60,18 @@ class InstallTest(unittest.TestCase):
         # entries do.
         desktop, service, prefix = self.install(CONTAINER_ID="apps", DISTROBOX_ENTER_PATH="/usr/bin/distrobox-enter")
         self.assertEqual(self.line(desktop, "Exec"),
-                         f"Exec=/usr/bin/distrobox-enter -n apps -- {prefix}/bin/steelseries-gg")
+                         f'Exec="/usr/bin/distrobox-enter" -n "apps" -- "{prefix}/bin/steelseries-gg"')
         self.assertEqual(self.line(service, "ExecStart"),
-                         f"ExecStart=/usr/bin/distrobox-enter -n apps -- {prefix}/bin/ggd")
+                         f'ExecStart="/usr/bin/distrobox-enter" -n "apps" -- "{prefix}/bin/ggd"')
+
+    def test_prefix_with_space(self):
+        # A home folder with a space or an & in its name.
+        tmp = Path(tempfile.mkdtemp(prefix="gg-install-"))
+        self.addCleanup(shutil.rmtree, tmp)
+        prefix = tmp / "Joe & Ann's apps"
+        desktop, service, _ = self.install(PREFIX=str(prefix))
+        self.assertEqual(self.line(desktop, "Exec"), f'Exec="{prefix}/bin/steelseries-gg"')
+        self.assertEqual(self.line(service, "ExecStart"), f'ExecStart="{prefix}/bin/ggd"')
 
 
 if __name__ == "__main__":

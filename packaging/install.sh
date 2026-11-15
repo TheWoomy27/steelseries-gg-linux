@@ -33,11 +33,18 @@ mkdir -p "$datahome/applications" "$confighome/systemd/user"
 # container's packages, but the desktop entry and the service are run by
 # the host: they enter the container first, as distrobox-export's
 # entries do.
+# Each path is quoted for the Exec and ExecStart lines (they can hold
+# spaces), and escaped for sed's replacement.
+exec_quote() { printf %s "$1" | sed 's/[\\"]/\\&/g'; }
+sed_escape() { printf %s "$1" | sed 's/[\\|&]/\\&/g'; }
 run=""
 if [ -n "${CONTAINER_ID:-}" ] && [ -n "${DISTROBOX_ENTER_PATH:-}" ]; then
-    run="$DISTROBOX_ENTER_PATH -n $CONTAINER_ID -- "
+    run="\"$(exec_quote "$DISTROBOX_ENTER_PATH")\" -n \"$(exec_quote "$CONTAINER_ID")\" -- "
 fi
-fill() { sed -e "s|@BINDIR@|$bindir|g" -e "s|^\(Exec\(Start\)\{0,1\}=\)|\1$run|" "$1"; }
+fill() {
+    sed -e "s|@BINDIR@/\([a-z-]*\)|\"$(sed_escape "$(exec_quote "$bindir")")/\1\"|g" \
+        -e "s|^\(Exec\(Start\)\{0,1\}=\)|\1$(sed_escape "$run")|" "$1"
+}
 fill packaging/steelseries-gg.desktop > "$datahome/applications/steelseries-gg.desktop"
 fill packaging/steelseries-ggd.service > "$confighome/systemd/user/steelseries-ggd.service"
 systemctl --user daemon-reload 2>/dev/null || true
