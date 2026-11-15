@@ -56,8 +56,10 @@ fi
 
 # setup.sh does the rest itself.
 [ -n "${GG_LINUX_SETUP:-}" ] && exit 0
-if ! cmp -s /etc/udev/rules.d/70-steelseries-gg.rules "$repo/packaging/70-steelseries-gg.rules"; then
-    echo "For device access, as root:" >&2
-    echo "  cp $repo/packaging/70-steelseries-gg.rules /etc/udev/rules.d/ && udevadm control --reload && udevadm trigger" >&2
+. "$repo/packaging/udev.sh"
+if ! udev_installed; then
+    in_container && where=" on the host, outside this container" || where=""
+    echo "For device access, run$where:" >&2
+    echo "  $(udev_command)" >&2
 fi
 echo "Installed to $bindir. Start ggd at login: systemctl --user enable --now steelseries-ggd.service"

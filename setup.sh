@@ -110,24 +110,8 @@ step "Installing for $(id -un)"
 GG_LINUX_SETUP=1 "$repo/packaging/install.sh"
 
 # --- 4. Device access and ggd ------------------------------------------------
-rules=/etc/udev/rules.d/70-steelseries-gg.rules
-if [ "$udev" = 1 ]; then
-    if [ -f "$rules" ] && cmp -s "$rules" "$repo/packaging/70-steelseries-gg.rules"; then
-        step "Device access is set up"
-    else
-        step "Device access"
-        note "A udev rule lets your user talk to SteelSeries devices, play macros and turn mouse motion."
-        if ask "Install $rules (sudo)?"; then
-            sudo install -Dm644 "$repo/packaging/70-steelseries-gg.rules" "$rules"
-            sudo udevadm control --reload
-            sudo udevadm trigger
-            note "Done. Replug your devices if GG does not see them."
-        else
-            note "Skipped. To do it later:"
-            note "  sudo install -Dm644 $repo/packaging/70-steelseries-gg.rules $rules && sudo udevadm control --reload && sudo udevadm trigger"
-        fi
-    fi
-fi
+. "$repo/packaging/udev.sh"
+[ "$udev" = 0 ] || setup_udev
 
 if [ "$service" = 1 ]; then
     step "Starting ggd"
