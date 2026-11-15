@@ -1,7 +1,6 @@
 package kwinfocus
 
 import (
-	"bufio"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -13,6 +12,8 @@ import (
 	"time"
 
 	"github.com/godbus/dbus/v5"
+
+	"ggl/internal/dbustest"
 )
 
 // TestScriptInKWinAPIs runs the script with node and a stand-in for
@@ -20,7 +21,7 @@ import (
 func TestScriptInKWinAPIs(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Fatal("node runs the script in this test:", err)
+		t.Skip("node runs the script in this test:", err)
 	}
 	harness := `
 const calls = [];
@@ -46,8 +47,8 @@ console.log(JSON.stringify(calls));
 	os.WriteFile(s, []byte(Script(`:1.42`)), 0o644)
 	row := func(args ...any) []any { return append([]any{":1.42", objectPath, iface, "Activated"}, args...) }
 	want := [][]any{
-		row("1717", "org.kde.dolphin", "Home — Dolphin"),
-		row("4242", "wow.exe", "World of Warcraft"),
+		row("1717", "org.kde.dolphin", ""), // titles are left out
+		row("4242", "wow.exe", ""),
 		row("0", "", ""),
 	}
 	for _, plasma := range []string{"6", "5"} {
@@ -147,20 +148,7 @@ func (k *fakeKWin) activate(pid, class, caption string) error {
 
 // sessionBus starts a private session bus for the test.
 func sessionBus(t *testing.T) string {
-	daemon := exec.Command("dbus-daemon", "--session", "--nofork", "--print-address=1")
-	out, err := daemon.StdoutPipe()
-	if err == nil {
-		err = daemon.Start()
-	}
-	if err != nil {
-		t.Fatal("dbus-daemon:", err)
-	}
-	t.Cleanup(func() { daemon.Process.Kill(); daemon.Wait() })
-	addr, err := bufio.NewReader(out).ReadString('\n')
-	if err != nil {
-		t.Fatal(err)
-	}
-	addr = strings.TrimSpace(addr)
+	addr := dbustest.Bus(t)
 	t.Setenv("DBUS_SESSION_BUS_ADDRESS", addr)
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 	return addr
@@ -178,6 +166,10 @@ func waitFor(t *testing.T, what string, ok func() bool) {
 
 func TestTracker(t *testing.T) {
 	addr := sessionBus(t)
+	_, plugin, err := scriptFile()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if tr, err := Start(); err == nil {
 		tr.Close()
 		t.Fatal("started without KWin")
@@ -189,7 +181,7 @@ func TestTracker(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "the first window", func() bool { _, ok := tr.Window(); return ok })
-	if w, _ := tr.Window(); w != (Window{PID: 4242, Class: "wow.exe", Caption: "World of Warcraft"}) {
+	if w, _ := tr.Window(); w != (Window{PID: 4242, Class: "wow.exe"}) {
 		t.Errorf("window %+v", w)
 	}
 	select {
@@ -197,7 +189,7 @@ func TestTracker(t *testing.T) {
 	default:
 		t.Error("no change signalled")
 	}
-	if got := strings.Join(kwin.calls(), "; "); got != "unload gg-linux-foreground; load gg-linux-foreground; start" {
+	if got := strings.Join(kwin.calls(), "; "); got != "unload "+plugin+"; load "+plugin+"; start" {
 		t.Errorf("KWin calls: %s", got)
 	}
 
@@ -223,7 +215,7 @@ func TestTracker(t *testing.T) {
 	waitFor(t, "KWin gone", func() bool { _, ok := tr.Window(); return !ok })
 	kwin2 := startFakeKWin(t, addr, false)
 	waitFor(t, "the script reloaded", func() bool { _, ok := tr.Window(); return ok })
-	if got := strings.Join(kwin2.calls(), "; "); got != "unload gg-linux-foreground; load gg-linux-foreground; start" {
+	if got := strings.Join(kwin2.calls(), "; "); got != "unload "+plugin+"; load "+plugin+"; start" {
 		t.Errorf("new KWin calls: %s", got)
 	}
 
@@ -232,7 +224,7 @@ func TestTracker(t *testing.T) {
 		t.Error("no script file:", err)
 	}
 	tr.Close()
-	waitFor(t, "unload", func() bool { c := kwin2.calls(); return c[len(c)-1] == "unload gg-linux-foreground" })
+	waitFor(t, "unload", func() bool { c := kwin2.calls(); return c[len(c)-1] == "unload "+plugin })
 	if _, err := os.Stat(file); !os.IsNotExist(err) {
 		t.Error("script file left behind")
 	}

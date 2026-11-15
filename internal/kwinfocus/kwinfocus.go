@@ -1,14 +1,17 @@
 // Package kwinfocus follows the window in front on KDE Plasma. Wayland
 // gives clients no way to ask which window is active, but KWin runs
 // scripts that can: ggd loads a small one over KWin's D-Bus scripting
-// interface, and the script calls ggd back with the pid, class and title
-// of every window KWin activates. It covers Wayland windows and X11 ones
+// interface, and the script calls ggd back with the pid and class of
+// every window KWin activates. It covers Wayland windows and X11 ones
 // (Xwayland: Wine and Proton games) alike.
 package kwinfocus
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -18,13 +21,14 @@ import (
 	"time"
 
 	"github.com/godbus/dbus/v5"
+
+	"ggl/internal/paths"
 )
 
 const (
 	kwinName      = "org.kde.KWin"
 	scriptingPath = "/Scripting"
 	scriptingIf   = "org.kde.kwin.Scripting"
-	pluginName    = "gg-linux-foreground"
 
 	objectPath = "/io/github/gglinux/Foreground"
 	iface      = "io.github.gglinux.Foreground"
@@ -33,17 +37,18 @@ const (
 // Window is the window in front. PID is what KWin knows: the Wayland
 // client's pid, or for X11 windows the pid Xwayland or the window reports
 // (a sandboxed X11 client can report the pid it has in its own pid
-// namespace). PID 0 means no window is active.
+// namespace). PID 0 means no window is active. Window titles are left
+// out: they can be private, and games are told apart without them.
 type Window struct {
-	PID     int
-	Class   string // resource class: an app id, "wow.exe", "steam_app_570"
-	Caption string
+	PID   int
+	Class string // resource class: an app id, "wow.exe", "steam_app_570"
 }
 
 // Tracker follows KWin's active window. A nil Tracker knows nothing.
 type Tracker struct {
 	conn    *dbus.Conn
 	file    string
+	plugin  string // the script's name in KWin
 	changed chan struct{}
 
 	mu    sync.Mutex
@@ -63,7 +68,7 @@ func Script(dest string) string {
 (function () {
     function send(w) {
         if (w) {
-            callDBus(%[1]s, %[2]s, %[3]s, "Activated", String(w.pid), String(w.resourceClass), String(w.caption));
+            callDBus(%[1]s, %[2]s, %[3]s, "Activated", String(w.pid), String(w.resourceClass), "");
         } else {
             callDBus(%[1]s, %[2]s, %[3]s, "Activated", "0", "", "");
         }
@@ -81,7 +86,12 @@ func Start() (*Tracker, error) {
 	if err != nil {
 		return nil, err
 	}
-	t := &Tracker{conn: conn, changed: make(chan struct{}, 1), file: scriptFile()}
+	file, plugin, err := scriptFile()
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	t := &Tracker{conn: conn, changed: make(chan struct{}, 1), file: file, plugin: plugin}
 	if err := conn.ExportMethodTable(map[string]any{"Activated": t.activated}, objectPath, iface); err != nil {
 		conn.Close()
 		return nil, err
@@ -102,14 +112,39 @@ func Start() (*Tracker, error) {
 	return t, nil
 }
 
-// scriptFile is where the script goes for KWin to read: the runtime
-// directory, which a distrobox shares with the host.
-func scriptFile() string {
+// scriptFile is where the script goes for KWin to read, and its name in
+// KWin: in the runtime directory, which only the user can write to (and a
+// distrobox shares with the host), never a shared one such as /tmp, as
+// KWin runs whatever the file holds. Both are named after ggd's data
+// folder, so a second ggd (a test instance) doesn't replace this one's.
+func scriptFile() (file, plugin string, err error) {
 	dir := os.Getenv("XDG_RUNTIME_DIR")
 	if dir == "" {
-		dir = os.TempDir()
+		return "", "", errors.New("no XDG_RUNTIME_DIR for the KWin script")
 	}
-	return filepath.Join(dir, "gg-linux-foreground.js")
+	sum := sha256.Sum256([]byte(paths.Data()))
+	plugin = "gg-linux-foreground-" + hex.EncodeToString(sum[:4])
+	return filepath.Join(dir, plugin+".js"), plugin, nil
+}
+
+// writeScript writes the script readable by the user only, through a new
+// file renamed into place.
+func writeScript(file, src string) error {
+	f, err := os.CreateTemp(filepath.Dir(file), ".gg-linux-foreground-*")
+	if err != nil {
+		return err
+	}
+	_, err = f.WriteString(src)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Rename(f.Name(), file)
+	}
+	if err != nil {
+		os.Remove(f.Name())
+	}
+	return err
 }
 
 func (t *Tracker) call(method string, args ...any) *dbus.Call {
@@ -127,21 +162,21 @@ func (t *Tracker) load() error {
 	t.mu.Lock()
 	t.kwin, t.known = owner, false
 	t.mu.Unlock()
-	if err := os.WriteFile(t.file, []byte(Script(t.conn.Names()[0])), 0o644); err != nil {
+	if err := writeScript(t.file, Script(t.conn.Names()[0])); err != nil {
 		return err
 	}
 	// A ggd that did not exit cleanly left its script loaded; KWin will
 	// not load another under the same name.
-	t.call("unloadScript", pluginName)
+	t.call("unloadScript", t.plugin)
 	var id int32
-	if err := t.call("loadScript", t.file, pluginName).Store(&id); err != nil {
+	if err := t.call("loadScript", t.file, t.plugin).Store(&id); err != nil {
 		return fmt.Errorf("KWin loadScript: %w", err)
 	}
 	if id < 0 {
 		return fmt.Errorf("KWin refused the script (%d)", id)
 	}
 	if err := t.call("start").Err; err != nil {
-		t.call("unloadScript", pluginName)
+		t.call("unloadScript", t.plugin)
 		return fmt.Errorf("KWin start: %w", err)
 	}
 	slog.Info("kwinfocus: following the active window through KWin")
@@ -169,19 +204,19 @@ func (t *Tracker) watchKWin(signals chan *dbus.Signal) {
 }
 
 // activated is the method the script calls.
-func (t *Tracker) activated(sender dbus.Sender, pid, class, caption string) *dbus.Error {
+func (t *Tracker) activated(sender dbus.Sender, pid, class, _ string) *dbus.Error {
 	t.mu.Lock()
 	if string(sender) != t.kwin {
 		t.mu.Unlock()
 		return dbus.MakeFailedError(fmt.Errorf("only KWin reports windows"))
 	}
 	n, _ := strconv.Atoi(pid)
-	w := Window{PID: n, Class: class, Caption: caption}
+	w := Window{PID: n, Class: class}
 	same := t.known && t.win == w
 	t.win, t.known = w, true
 	t.mu.Unlock()
 	if !same {
-		slog.Debug("kwinfocus: active window", "pid", n, "class", class, "caption", caption)
+		slog.Debug("kwinfocus: active window", "pid", n, "class", class)
 		t.notify()
 	}
 	return nil
@@ -221,7 +256,7 @@ func (t *Tracker) Close() {
 	running := t.kwin != ""
 	t.mu.Unlock()
 	if running {
-		t.call("unloadScript", pluginName)
+		t.call("unloadScript", t.plugin)
 	}
 	os.Remove(t.file)
 	t.conn.Close()
