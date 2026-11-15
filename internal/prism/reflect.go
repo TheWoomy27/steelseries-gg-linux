@@ -6,11 +6,13 @@ import (
 	"log/slog"
 	"math"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/godbus/dbus/v5"
 
+	"ggl/internal/paths"
 	"ggl/internal/wlcopy"
 )
 
@@ -296,13 +298,18 @@ func usesReflect(g *Group) bool {
 
 // screenCapture captures the focused monitor while Reflect is used.
 type screenCapture struct {
-	mu     sync.Mutex
-	on     bool
-	stop   chan struct{}
-	latest *screen
-	smooth map[rect]smoothed
-	warned bool
+	mu       sync.Mutex
+	on       bool
+	stop     chan struct{}
+	latest   *screen
+	smooth   map[rect]smoothed
+	warned   bool
+	declined time.Time // when the user last declined to share a monitor
 }
+
+// declineWait is how long Reflect waits before asking again to share a
+// monitor the user declined to (an idle layer starts it each time).
+const declineWait = 10 * time.Minute
 
 // need starts or stops capturing.
 func (sc *screenCapture) need(on bool) {
@@ -355,6 +362,9 @@ func (sc *screenCapture) run(stop chan struct{}) {
 // capture copies the screen until stop (returning nil) or an error.
 func (sc *screenCapture) capture(stop chan struct{}) error {
 	c, err := wlcopy.Open()
+	if errors.Is(err, wlcopy.ErrUsePortal) {
+		return sc.capturePortal(stop)
+	}
 	if err != nil {
 		return err
 	}
@@ -382,6 +392,56 @@ func (sc *screenCapture) capture(stop chan struct{}) error {
 			output, picked = focusedOutput(c), time.Now()
 		}
 		f, err := c.CaptureChanged(output)
+		if errors.Is(err, wlcopy.ErrUnchanged) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		scr := downscale(f)
+		sc.mu.Lock()
+		if sc.stop == stop {
+			sc.latest = scr
+		}
+		sc.warned = false
+		sc.mu.Unlock()
+	}
+}
+
+// capturePortal captures the monitor the user shares through the desktop
+// portal (GNOME and other desktops without a capture protocol), until stop.
+func (sc *screenCapture) capturePortal(stop chan struct{}) error {
+	sc.mu.Lock()
+	declined := time.Since(sc.declined) < declineWait
+	sc.mu.Unlock()
+	if !declined {
+		p, err := wlcopy.OpenPortal(filepath.Join(paths.State(), "reflect-portal-token"))
+		if err == nil {
+			defer p.Close()
+			slog.Info("prism: Reflect capturing the screen", "with", "desktop portal")
+			err = sc.readPortal(p, stop)
+		}
+		if !errors.Is(err, wlcopy.ErrNotShared) {
+			return err
+		}
+		slog.Info("prism: no monitor shared for Reflect; asking again in a while", "after", declineWait)
+		sc.mu.Lock()
+		sc.declined = time.Now()
+		sc.mu.Unlock()
+	}
+	<-stop
+	return nil
+}
+
+// readPortal keeps the latest frame of a portal stream until stop.
+func (sc *screenCapture) readPortal(p *wlcopy.Portal, stop chan struct{}) error {
+	for {
+		select {
+		case <-stop:
+			return nil
+		default:
+		}
+		f, err := p.CaptureChanged()
 		if errors.Is(err, wlcopy.ErrUnchanged) {
 			continue
 		}

@@ -98,8 +98,9 @@ func (b Backend) String() string {
 	return "none"
 }
 
-// BackendEnv names the variable that forces a backend: "screencopy" or
-// "kde" (unset or "auto" picks the first the compositor has).
+// BackendEnv names the variable that forces a backend: "screencopy",
+// "kde" or "portal" (unset or "auto" picks the first the compositor has,
+// else the desktop portal).
 const BackendEnv = "GG_LINUX_REFLECT_CAPTURE"
 
 // pickBackend chooses the backend from the compositor's globals: wlr-
@@ -116,7 +117,9 @@ func pickBackend(has func(iface string) bool, want string) (Backend, error) {
 		case kde:
 			return BackendKDE, nil
 		}
-		return 0, errors.New("the compositor has neither wlr-screencopy nor KDE's screencast protocol")
+		return 0, ErrUsePortal
+	case "portal":
+		return 0, ErrUsePortal
 	case "screencopy":
 		if screencopy {
 			return BackendScreencopy, nil
@@ -128,14 +131,14 @@ func pickBackend(has func(iface string) bool, want string) (Backend, error) {
 		}
 		return 0, errors.New("the compositor has no KDE screencast protocol")
 	}
-	return 0, fmt.Errorf("%s=%q: use screencopy, kde or auto", BackendEnv, want)
+	return 0, fmt.Errorf("%s=%q: use screencopy, kde, portal or auto", BackendEnv, want)
 }
 
 // Open connects to the compositor and picks a way to capture it.
 func Open() (*Client, error) {
 	name := os.Getenv("WAYLAND_DISPLAY")
 	if name == "" {
-		return nil, errors.New("no Wayland display")
+		return nil, ErrUsePortal // an X11 session: its portal can share a monitor
 	}
 	path := name
 	if !filepath.IsAbs(path) {

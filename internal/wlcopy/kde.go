@@ -131,10 +131,10 @@ func gstCheck() error {
 
 func lookForGst() error {
 	if _, err := exec.LookPath("gst-launch-1.0"); err != nil {
-		return errors.New("KDE screen capture needs gst-launch-1.0 (GStreamer tools: gstreamer1 on Fedora, gstreamer1.0-tools on Debian/Ubuntu, gstreamer on Arch)")
+		return errors.New("Reflect needs gst-launch-1.0 on this desktop (GStreamer tools: gstreamer1 on Fedora, gstreamer1.0-tools on Debian/Ubuntu, gstreamer on Arch)")
 	}
 	if exec.Command("gst-inspect-1.0", "--exists", "pipewiresrc").Run() != nil {
-		return errors.New("KDE screen capture needs GStreamer's PipeWire plugin (pipewire-gstreamer on Fedora, gstreamer1.0-pipewire on Debian/Ubuntu, gst-plugin-pipewire on Arch)")
+		return errors.New("Reflect needs GStreamer's PipeWire plugin on this desktop (pipewire-gstreamer on Fedora, gstreamer1.0-pipewire on Debian/Ubuntu, gst-plugin-pipewire on Arch)")
 	}
 	return nil
 }

@@ -219,8 +219,14 @@ configuration's lighting back.
   for a PipeWire stream of the monitor, scaled down to 180 pixels high on
   the GPU, and reads it with GStreamer: this needs GStreamer's PipeWire
   plugin (`pipewire-gstreamer` on Fedora, `gstreamer1.0-pipewire` on
-  Debian/Ubuntu, `gst-plugin-pipewire` on Arch). `GG_LINUX_REFLECT_CAPTURE`
-  set to `screencopy` or `kde` picks the way.
+  Debian/Ubuntu, `gst-plugin-pipewire` on Arch). Elsewhere (GNOME, and
+  X11 sessions) the desktop's screen sharing portal asks once which
+  monitor to share, remembers the choice, and Reflect follows that monitor
+  rather than the focused one; it needs the same GStreamer pieces, and the
+  desktop shows its screen sharing indicator while Reflect is on. Declined,
+  it asks again ten minutes later at the earliest.
+  `GG_LINUX_REFLECT_CAPTURE` set to `screencopy`, `kde` or `portal` picks
+  the way.
 - On Hyprland and KDE Plasma (Wayland), lighting dims or goes off while
   every monitor sleeps, as each configuration's "When Monitor Sleeps" says.
 - ImageSync plays a GIF on per-key keyboards.
