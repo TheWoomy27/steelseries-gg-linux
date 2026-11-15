@@ -183,7 +183,10 @@ func fakeClient(t *testing.T) (*Client, net.Conn) {
 // stream. It needs gst-launch-1.0 and GStreamer's base plugins.
 func TestKDECapture(t *testing.T) {
 	if _, err := exec.LookPath("gst-launch-1.0"); err != nil {
-		t.Fatal("this test needs gst-launch-1.0 (GStreamer tools and base plugins)")
+		t.Skip("this test needs gst-launch-1.0 (GStreamer tools and base plugins)")
+	}
+	if exec.Command("gst-inspect-1.0", "--exists", "videotestsrc", "videoscale", "videoconvert", "fdsink").Run() != nil {
+		t.Skip("this test needs GStreamer's base plugins (videotestsrc, videoscale, videoconvert)")
 	}
 	var gotSerial uint64
 	newSource = func(serial uint64, haveSerial bool, node uint32) []string {
@@ -195,7 +198,12 @@ func TestKDECapture(t *testing.T) {
 	defer func() { newSource = pipewireSource }()
 	c, kwin := fakeClient(t)
 	reqs := fakeKWin(kwin, "")
+	// GStreamer can take more than the first wait to start on a busy
+	// machine; ggd asks again then, and so does the test.
 	f, err := c.CaptureChanged("DP-1")
+	for i := 0; i < 4 && errors.Is(err, ErrUnchanged); i++ {
+		f, err = c.CaptureChanged("DP-1")
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

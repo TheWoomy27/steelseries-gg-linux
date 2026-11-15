@@ -111,8 +111,25 @@ func pipewireSource(serial uint64, haveSerial bool, node uint32) []string {
 	return []string{"pipewiresrc", "path=" + strconv.FormatUint(uint64(node), 10)}
 }
 
-// gstCheck reports whether GStreamer can read PipeWire streams.
+var gstChecked struct {
+	sync.Mutex
+	at  time.Time
+	err error
+}
+
+// gstCheck reports whether GStreamer can read PipeWire streams. A missing
+// piece is looked for again after a minute, not at each capture attempt.
 func gstCheck() error {
+	gstChecked.Lock()
+	defer gstChecked.Unlock()
+	if gstChecked.err != nil && time.Since(gstChecked.at) < time.Minute {
+		return gstChecked.err
+	}
+	gstChecked.at, gstChecked.err = time.Now(), lookForGst()
+	return gstChecked.err
+}
+
+func lookForGst() error {
 	if _, err := exec.LookPath("gst-launch-1.0"); err != nil {
 		return errors.New("KDE screen capture needs gst-launch-1.0 (GStreamer tools: gstreamer1 on Fedora, gstreamer1.0-tools on Debian/Ubuntu, gstreamer on Arch)")
 	}
