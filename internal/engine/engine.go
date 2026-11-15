@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -160,14 +161,20 @@ func (e *Engine) SetBroadcaster(fn func(event string, data any)) {
 	e.broadcast = fn
 }
 
-// emit sends an event to the engine socket and, for EVENT_* names, the GG
-// core sockets as well.
+// coreEvents are the engine events the client also listens for on the
+// GG core's socket: the Engine page's device list follows connections
+// there (without them it showed a device unplugged as connected until it
+// was opened again).
+var coreEvents = map[string]bool{"deviceConnected": true, "deviceDisconnected": true}
+
+// emit sends an event to the engine socket and, for EVENT_* names and
+// coreEvents, the GG core sockets as well.
 func (e *Engine) emit(event string, data any) {
 	e.hub.Broadcast(event, data)
 	e.mu.Lock()
 	b, tray := e.broadcast, e.trayChanged
 	e.mu.Unlock()
-	if len(event) > 6 && event[:6] == "EVENT_" {
+	if strings.HasPrefix(event, "EVENT_") || coreEvents[event] {
 		b(event, data)
 	}
 	if tray != nil && trayEvents[event] {

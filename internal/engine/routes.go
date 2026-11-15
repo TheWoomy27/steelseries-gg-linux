@@ -416,7 +416,9 @@ func (e *Engine) handleDeviceWrite(w http.ResponseWriter, r *http.Request) {
 	}
 	l := e.liveByID(id)
 	if l == nil || l.primary() == nil {
-		httpx.Error(w, 404, "device not connected")
+		// As the Windows Engine, answer 200: the client throws on anything
+		// else, and its Engine page polls a device just unplugged.
+		httpx.JSON(w, map[string]any{})
 		return
 	}
 	payload := p.Command
