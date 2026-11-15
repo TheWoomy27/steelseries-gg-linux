@@ -34,22 +34,30 @@ type Info struct {
 	Name      string
 	Serial    string
 	Desc      Descriptor
+	// instance is the HID device behind the node (its sysfs directory,
+	// .../0003:1038:1852.0004). Its number grows with every device the
+	// kernel adds, so a node freed by an unplug and given to a device
+	// plugged in again has a different one.
+	instance string
 }
+
+// sysClassHidraw and devDir are where Enumerate finds hidraw nodes.
+var sysClassHidraw, devDir = "/sys/class/hidraw", "/dev"
 
 // Enumerate lists SteelSeries hidraw nodes.
 func Enumerate() ([]Info, error) {
-	entries, err := os.ReadDir("/sys/class/hidraw")
+	entries, err := os.ReadDir(sysClassHidraw)
 	if err != nil {
 		return nil, err
 	}
 	var out []Info
 	for _, e := range entries {
-		sys := filepath.Join("/sys/class/hidraw", e.Name())
+		sys := filepath.Join(sysClassHidraw, e.Name())
 		info, err := readInfo(sys)
 		if err != nil || info.VendorID != SteelSeriesVID {
 			continue
 		}
-		info.Path = "/dev/" + e.Name()
+		info.Path = filepath.Join(devDir, e.Name())
 		out = append(out, info)
 	}
 	return out, nil
@@ -81,6 +89,7 @@ func readInfo(sys string) (Info, error) {
 	f.Close()
 	// .../X-Y:1.N/0003:1038:1852.0004 -> interface N
 	if dev, err := filepath.EvalSymlinks(filepath.Join(sys, "device")); err == nil {
+		info.instance = dev
 		if b, err := os.ReadFile(filepath.Join(filepath.Dir(dev), "bInterfaceNumber")); err == nil {
 			if n, err := strconv.ParseUint(strings.TrimSpace(string(b)), 16, 8); err == nil {
 				info.Interface = int(n)

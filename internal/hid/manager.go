@@ -17,19 +17,40 @@ func NewManager(onChange func(added, removed []Info)) *Manager {
 	return &Manager{devices: map[string]*Device{}, onChange: onChange}
 }
 
-// Scan reconciles open nodes with /sys/class/hidraw.
+// Scan reconciles open nodes with /sys/class/hidraw. Removals are
+// reported before additions, so a device plugged back in between two
+// scans is seen to leave and come back.
 func (m *Manager) Scan() {
 	infos, err := Enumerate()
 	if err != nil {
 		slog.Warn("hidraw enumerate", "err", err)
 		return
 	}
-	seen := map[string]bool{}
-	var added, removed []Info
+	present := map[string]Info{}
+	for _, info := range infos {
+		present[info.Path] = info
+	}
+	var removed []Info
+	m.mu.Lock()
+	for path, d := range m.devices {
+		// A node can be freed by an unplug and given to the next device
+		// plugged in, the same one again after a USB reset or a resume
+		// from suspend: the node open here is dead then.
+		if info, ok := present[path]; ok && info.ProductID == d.ProductID && info.instance == d.instance {
+			continue
+		}
+		d.Close()
+		delete(m.devices, path)
+		removed = append(removed, d.Info)
+	}
+	m.mu.Unlock()
+	if len(removed) > 0 && m.onChange != nil {
+		m.onChange(nil, removed)
+	}
+	var added []Info
 	m.mu.Lock()
 	for _, info := range infos {
-		seen[info.Path] = true
-		if d, ok := m.devices[info.Path]; ok && d.ProductID == info.ProductID {
+		if _, ok := m.devices[info.Path]; ok {
 			continue
 		}
 		d, err := Open(info)
@@ -40,16 +61,9 @@ func (m *Manager) Scan() {
 		m.devices[info.Path] = d
 		added = append(added, info)
 	}
-	for path, d := range m.devices {
-		if !seen[path] {
-			d.Close()
-			delete(m.devices, path)
-			removed = append(removed, d.Info)
-		}
-	}
 	m.mu.Unlock()
-	if (len(added) > 0 || len(removed) > 0) && m.onChange != nil {
-		m.onChange(added, removed)
+	if len(added) > 0 && m.onChange != nil {
+		m.onChange(added, nil)
 	}
 }
 
