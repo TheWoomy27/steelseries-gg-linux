@@ -446,8 +446,10 @@ func (b *binding) off(now time.Time) bool {
 	if b.half <= 0 {
 		return false
 	}
-	phase := int(now.Sub(b.start) / (time.Duration(b.half) * time.Millisecond))
-	return phase%2 == 1 && (b.repeat == 0 || phase/2 < b.repeat)
+	// In milliseconds: a game's half period can be too long to hold as
+	// a time.Duration.
+	phase := now.Sub(b.start).Milliseconds() / int64(b.half)
+	return phase%2 == 1 && (b.repeat == 0 || phase/2 < int64(b.repeat))
 }
 
 func (b *binding) paint(d *Device, g *game, now time.Time) (paint, bool) {

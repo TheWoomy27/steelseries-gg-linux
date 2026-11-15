@@ -283,3 +283,20 @@ func TestUserHandler(t *testing.T) {
 		t.Errorf("back to the game's: %v", got)
 	}
 }
+
+// A game's frequency is any number. One so low that its half period
+// overflows a time.Duration must not crash the renderer that asks for the
+// lights (a division by zero for this one), nor make the key flash.
+func TestFrequencyTooLowToFlash(t *testing.T) {
+	s, c := newState()
+	// 500 ms / 2^-56·125 Hz is a half period of 2^58 ms, which as
+	// nanoseconds wraps to 0.
+	bind(t, s, "SLOW", `{"device-type":"keyboard","zone":"escape","color":{"red":255,"green":0,"blue":0},"rate":{"frequency":1.7347234759768071e-15}}`)
+	value(s, "SLOW", 1)
+	for _, ms := range []int{0, 1000, 10000} { // within the game's 15 s timeout
+		c.t = c.t.Add(time.Duration(ms) * time.Millisecond)
+		if got := s.Lights(keyboard())[0x29]; got != (Color{255, 0, 0}) {
+			t.Errorf("after %d ms: %v, want steady red", ms, got)
+		}
+	}
+}
