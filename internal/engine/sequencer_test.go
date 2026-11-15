@@ -79,10 +79,15 @@ func TestSequencerOverlappingPlaysLeaveNoAnimation(t *testing.T) {
 	done := make(chan error)
 	go func() { done <- s.Play(d, "color", nil, frames(1, 2)) }()
 	<-tr.entered // the first play is writing its first frame
-	if err := s.Play(d, "color", nil, frames(3, 4)); err != nil {
+	// The second play waits for the device (one command at a time), so it
+	// runs alongside; the first frame is let through once it's queued.
+	done2 := make(chan error)
+	go func() { done2 <- s.Play(d, "color", nil, frames(3, 4)) }()
+	time.Sleep(50 * time.Millisecond)
+	close(tr.release)
+	if err := <-done2; err != nil {
 		t.Fatal(err)
 	}
-	close(tr.release)
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}

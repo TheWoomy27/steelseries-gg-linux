@@ -263,7 +263,24 @@ var ErrFirmwareDisabled = errors.New("firmware updates are disabled")
 type ioState struct {
 	timeBetween time.Duration
 	timeout     time.Duration
-	lastWrite   time.Time
+}
+
+// sendChunk sends one HID chunk at least the device's time between
+// commands after the chunk before it, whichever api or PrismSync frame
+// sent that one. DeviceLib runs all of a device's commands through one
+// executor, so the spec's gap holds between apis too, not only between
+// the chunks of one api. The legacy Apex keyboards need it: they drop a
+// command that comes too soon, and a deploy sends dozens of apis back to
+// back.
+func (d *Decl) sendChunk(kind, size int, data []byte, read bool, st *ioState) ([]byte, error) {
+	d.ioMu.Lock()
+	defer d.ioMu.Unlock()
+	if wait := st.timeBetween - time.Since(d.lastIO); wait > 0 {
+		time.Sleep(wait)
+	}
+	resp, err := d.rt.transport.Chunk(d.target(), kind, size, data, read, st.timeBetween, st.timeout)
+	d.lastIO = time.Now()
+	return resp, err
 }
 
 func (d *Decl) target() Target {
@@ -362,11 +379,7 @@ func (d *Decl) execChunk(proto int64, c *Chunk, data, payload []byte, read bool,
 		case HIDSSFWStatus:
 			return nil, false, nil
 		}
-		if wait := st.timeBetween - time.Since(st.lastWrite); wait > 0 {
-			time.Sleep(wait)
-		}
-		resp, err := d.rt.transport.Chunk(d.target(), int(c.Type), int(c.Size), data, read, st.timeBetween, st.timeout)
-		st.lastWrite = time.Now()
+		resp, err := d.sendChunk(int(c.Type), int(c.Size), data, read, st)
 		if err != nil && c.Type == HIDIONoFail {
 			err = nil
 		}

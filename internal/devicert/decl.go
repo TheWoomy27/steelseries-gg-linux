@@ -2,6 +2,7 @@ package devicert
 
 import (
 	"sync"
+	"time"
 
 	"github.com/steelseries/golisp"
 )
@@ -58,6 +59,9 @@ type Decl struct {
 	outputOnboardSchem int64
 	syncDisabled       bool
 	sequences          map[string]*Sequence
+
+	ioMu   sync.Mutex // one chunk at a time, as DeviceLib's executor
+	lastIO time.Time  // when the last chunk went to the device
 }
 
 // Api mirrors support.DeviceApi.

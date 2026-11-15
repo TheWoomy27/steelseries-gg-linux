@@ -199,3 +199,112 @@ func TestMouseRotationToDriver(t *testing.T) {
 		t.Errorf("%d HID chunks, want 1 (the mouse's copy)", len(tr.sent))
 	}
 }
+
+type timedTransport struct {
+	at   []time.Time
+	sent [][]byte
+}
+
+func (r *timedTransport) Chunk(_ Target, _, _ int, data []byte, _ bool, _, _ time.Duration) ([]byte, error) {
+	r.at = append(r.at, time.Now())
+	r.sent = append(r.sent, append([]byte{}, data...))
+	return nil, nil
+}
+
+func (r *timedTransport) Connected(Target) bool { return true }
+
+// Three one-chunk apis, as a deploy sends them to the Apex Pro (2024):
+// meta_toggle_hid, the OLED picture, rapid_tap_enable.
+const spacingSpec = `
+(device 0x10380003
+    (usage-page 0xffc0)
+    (usage 0x0001)
+    (define (time-between-commands) 40)
+
+    (struct meta_toggle_hid
+        (unaligned)
+        (field report_id uint8 (constant 0x00))
+        (field command uint8 (constant 0x60))
+        (field code uint8))
+    (api meta_toggle_hid
+        (api-write HID (chunk HIDIO 65 payload)))
+
+    (struct oled_display
+        (unaligned)
+        (field report_id uint8 (constant 0x00))
+        (field command uint8 (constant 0x65))
+        (field pixel uint8))
+    (api oled_display
+        (api-write HID (chunk HIDFEATURE 643 payload)))
+
+    (struct rapid_tap_enable
+        (unaligned)
+        (field report_id uint8 (constant 0x00))
+        (field command uint8 (constant 0x1A))
+        (field enabled uint8 (values 0 1)))
+    (api rapid_tap_enable
+        (api-write HID (chunk HIDIO 65 payload))))
+`
+
+func spacingTestDevice(t *testing.T) (*Decl, *timedTransport) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "test.lsp"), []byte(spacingSpec), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tr := &timedTransport{}
+	rt, err := New(dir, dir, tr, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := rt.Device(0x10380003)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d, tr
+}
+
+func checkSpacing(t *testing.T, tr *timedTransport, n int, gap time.Duration) {
+	t.Helper()
+	if len(tr.at) != n {
+		t.Fatalf("sent %d chunks, want %d", len(tr.at), n)
+	}
+	for i := 1; i < n; i++ {
+		if d := tr.at[i].Sub(tr.at[i-1]); d < gap {
+			t.Errorf("chunk %d (% x) went %v after the one before, want at least %v", i, tr.sent[i], d, gap)
+		}
+	}
+}
+
+// DeviceLib keeps a device's time between commands between every two
+// commands, not only between the chunks of one api. A deploy writes its
+// apis back to back; the Apex Pro (2024) lost the OLED picture when the
+// next api followed it 3 ms later.
+func TestTimeBetweenCommandsAcrossApis(t *testing.T) {
+	d, tr := spacingTestDevice(t)
+	if err := d.WriteApi("meta_toggle_hid", map[string]any{"code": 0xf0}); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.WriteApi("oled_display", map[string]any{"pixel": 0x80}); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.WriteApi("rapid_tap_enable", map[string]any{"enabled": 0}); err != nil {
+		t.Fatal(err)
+	}
+	checkSpacing(t, tr, 3, 40*time.Millisecond)
+	if got := tr.sent[1]; len(got) < 3 || got[1] != 0x65 || got[2] != 0x80 {
+		t.Errorf("second chunk % x, want the OLED picture", got)
+	}
+}
+
+// PrismSync frames go through the same executor: a frame right after a
+// deploy's last api waits its turn too.
+func TestTimeBetweenCommandsApiThenPrism(t *testing.T) {
+	d, tr := spacingTestDevice(t)
+	if err := d.WriteApi("oled_display", map[string]any{"pixel": 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.WritePrism([]PrismWrite{{Type: HIDFeature, Size: 643, Data: []byte{0x00, 0x3a, 0x01}}}); err != nil {
+		t.Fatal(err)
+	}
+	checkSpacing(t, tr, 2, 40*time.Millisecond)
+}

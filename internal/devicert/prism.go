@@ -3,7 +3,6 @@ package devicert
 import (
 	"encoding/binary"
 	"fmt"
-	"time"
 
 	"github.com/steelseries/golisp"
 )
@@ -240,14 +239,8 @@ func (d *Decl) PrismData() (*PrismData, error) {
 func (d *Decl) WritePrism(writes []PrismWrite) error {
 	d.prismIO.Do(func() { d.prismTiming = d.newIOState() })
 	st := &ioState{timeBetween: d.prismTiming.timeBetween, timeout: d.prismTiming.timeout}
-	for i, w := range writes {
-		if i > 0 {
-			if wait := st.timeBetween - time.Since(st.lastWrite); wait > 0 {
-				time.Sleep(wait)
-			}
-		}
-		_, err := d.rt.transport.Chunk(d.target(), w.Type, w.Size, w.Data, w.Read, st.timeBetween, st.timeout)
-		st.lastWrite = time.Now()
+	for _, w := range writes {
+		_, err := d.sendChunk(w.Type, w.Size, w.Data, w.Read, st)
 		if err != nil && w.Type != HIDIONoFail {
 			return err
 		}
