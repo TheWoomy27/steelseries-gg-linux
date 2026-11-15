@@ -213,6 +213,7 @@ func defDevice(a []*golisp.Data, env *golisp.SymbolTableFrame) (*golisp.Data, er
 			instance.loadError(fmt.Sprintf("%s %s", name, truncate(golisp.String(form), 60)), err)
 		}
 	}
+	holdAfterFileCommit(d)
 	instance.mu.Lock()
 	instance.decls[id] = d
 	instance.mu.Unlock()

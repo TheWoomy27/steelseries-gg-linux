@@ -60,8 +60,9 @@ type Decl struct {
 	syncDisabled       bool
 	sequences          map[string]*Sequence
 
-	ioMu   sync.Mutex // one chunk at a time, as DeviceLib's executor
-	lastIO time.Time  // when the last chunk went to the device
+	ioMu       sync.Mutex // one chunk at a time, as DeviceLib's executor
+	lastIO     time.Time  // when the last chunk went to the device
+	quietUntil time.Time  // no chunk before this: an api's hold after write
 }
 
 // Api mirrors support.DeviceApi.

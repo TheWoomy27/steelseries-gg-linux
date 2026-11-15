@@ -141,3 +141,40 @@ func TestRedefinedStructs(t *testing.T) {
 		t.Errorf("num_assigned_codes range %v, want up to 113", r)
 	}
 }
+
+// Which real specs get the settle after a mappings file commit: the macho
+// keyboards (the Apex Pro (2024) among them), not a mouse like the Rival 500.
+func TestFileCommitHoldInRealSpecs(t *testing.T) {
+	data := os.Getenv("GG_LINUX_DATA")
+	if data == "" {
+		t.Skip("GG_LINUX_DATA not set")
+	}
+	rt, err := New(filepath.Join(data, "engine", "deviceSpecifications"), filepath.Join(data, "engine"), nullTransport{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var held []string
+	for _, id := range rt.KnownIDs() {
+		d, err := rt.Device(id)
+		if err != nil {
+			continue
+		}
+		if a := d.Api("mappings"); a != nil && a.HoldAfterWriteMs == int(fileCommitSettle/time.Millisecond) {
+			held = append(held, d.Name)
+		}
+	}
+	sort.Strings(held)
+	t.Logf("%d devices hold after mappings: %s", len(held), strings.Join(held, " "))
+	apex, err := rt.Device(0x10381640)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := apex.Api("mappings").HoldAfterWriteMs; got != 200 {
+		t.Errorf("Apex Pro (2024) mappings hold %d ms, want 200", got)
+	}
+	if rival, err := rt.Device(0x1038170e); err == nil {
+		if a := rival.Api("mappings"); a != nil && a.HoldAfterWriteMs != 0 {
+			t.Errorf("Rival 500 mappings hold %d ms, want 0", a.HoldAfterWriteMs)
+		}
+	}
+}

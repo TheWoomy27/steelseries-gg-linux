@@ -2,6 +2,7 @@ package devicert
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -307,4 +308,132 @@ func TestTimeBetweenCommandsApiThenPrism(t *testing.T) {
 		t.Fatal(err)
 	}
 	checkSpacing(t, tr, 2, 40*time.Millisecond)
+}
+
+// A keyboard on the "macho" firmware, cut down to a deploy's tail on the
+// Apex Pro (2024): the mappings file push (0x63, 0x71) and its 0x4D
+// commit, then meta_toggle_hid and the OLED picture. The second spec is
+// the same device without (onboard-macro-function).
+const fileCommitSpec = `
+(device 0x10380004
+    (usage-page 0xffc0)
+    (usage 0x0001)
+    (define (time-between-commands) 10)
+    %s
+
+    (struct mappings
+        (unaligned)
+        (field report_id uint8 (constant 0x00))
+        (field command uint8 (constant 0x63))
+        (field key uint8))
+    (api mappings
+        (cache-exempt)
+        %s
+        (api-write HID
+            (chunk HIDFEATURE 643 payload)
+            (chunk HIDFEATURE 643 [0x00 0x71 0x00])
+            (chunk HIDIO 65 [0x00 0x4D 0x00])))
+
+    (struct meta_toggle_hid
+        (unaligned)
+        (field report_id uint8 (constant 0x00))
+        (field command uint8 (constant 0x60))
+        (field code uint8))
+    (api meta_toggle_hid
+        (api-write HID (chunk HIDIO 65 payload)))
+
+    (struct oled_display
+        (unaligned)
+        (field report_id uint8 (constant 0x00))
+        (field command uint8 (constant 0x65))
+        (field pixel uint8))
+    (api oled_display
+        (api-write HID (chunk HIDFEATURE 643 payload))))
+`
+
+func fileCommitDevice(t *testing.T, extra, apiExtra string) (*Decl, *timedTransport) {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "test.lsp"), []byte(fmt.Sprintf(fileCommitSpec, extra, apiExtra)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tr := &timedTransport{}
+	rt, err := New(dir, dir, tr, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := rt.Device(0x10380004)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d, tr
+}
+
+// deployTail writes mappings, meta_toggle_hid and the OLED picture back to
+// back, as a deploy does, and returns how long after the 0x4D commit the
+// next command and the 0x65 picture went out.
+func deployTail(t *testing.T, d *Decl, tr *timedTransport) (next, oled time.Duration) {
+	t.Helper()
+	if err := d.WriteApi("mappings", map[string]any{"key": 4}); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.WriteApi("meta_toggle_hid", map[string]any{"code": 0xf0}); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.WriteApi("oled_display", map[string]any{"pixel": 0x80}); err != nil {
+		t.Fatal(err)
+	}
+	commit, pic := -1, -1
+	for i, b := range tr.sent {
+		switch {
+		case len(b) > 1 && b[1] == 0x4d:
+			commit = i
+		case len(b) > 1 && b[1] == 0x65:
+			pic = i
+		}
+	}
+	if commit < 0 || pic < 0 || commit+1 >= len(tr.at) {
+		t.Fatalf("sent % x: no 0x4D commit or 0x65 picture", tr.sent)
+	}
+	return tr.at[commit+1].Sub(tr.at[commit]), tr.at[pic].Sub(tr.at[commit])
+}
+
+// The Apex Pro (2024) ignored an OLED picture that came 10-20 ms after the
+// mappings commit and showed every one that came 150 ms after it. The
+// device is left alone for fileCommitSettle after the commit, so neither
+// meta_toggle_hid nor the picture reaches it while it saves the file.
+func TestOledWaitsForMappingsFileCommit(t *testing.T) {
+	d, tr := fileCommitDevice(t, "(define (onboard-macro-function) 0x71)", "")
+	if got := d.Api("mappings").HoldAfterWriteMs; got != 200 {
+		t.Errorf("mappings hold %d ms, want 200", got)
+	}
+	start := time.Now()
+	next, oled := deployTail(t, d, tr)
+	if next < fileCommitSettle {
+		t.Errorf("next command %v after the 0x4D commit, want at least %v", next, fileCommitSettle)
+	}
+	if oled < fileCommitSettle+10*time.Millisecond {
+		t.Errorf("OLED picture %v after the 0x4D commit, want at least %v", oled, fileCommitSettle+10*time.Millisecond)
+	}
+	// The hold delays the next command, not the write that asked for it.
+	if took := tr.at[2].Sub(start); took > 100*time.Millisecond {
+		t.Errorf("mappings write took %v", took)
+	}
+	checkSpacing(t, tr, 5, 10*time.Millisecond)
+}
+
+// Devices whose mappings are not a file push keep the plain time between
+// commands, and a hold the spec declares itself is kept.
+func TestFileCommitHoldOnlyForMachoMappings(t *testing.T) {
+	d, tr := fileCommitDevice(t, "", "")
+	if got := d.Api("mappings").HoldAfterWriteMs; got != 0 {
+		t.Errorf("mappings hold %d ms without onboard macros, want 0", got)
+	}
+	if _, oled := deployTail(t, d, tr); oled > 100*time.Millisecond {
+		t.Errorf("OLED picture %v after the commit on a device without a file commit", oled)
+	}
+	d, _ = fileCommitDevice(t, "(define (onboard-macro-function) 0x71)", "(api-hold-after-write 300)")
+	if got := d.Api("mappings").HoldAfterWriteMs; got != 300 {
+		t.Errorf("mappings hold %d ms, want the spec's 300", got)
+	}
 }

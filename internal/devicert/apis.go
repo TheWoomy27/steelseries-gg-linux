@@ -275,7 +275,11 @@ type ioState struct {
 func (d *Decl) sendChunk(kind, size int, data []byte, read bool, st *ioState) ([]byte, error) {
 	d.ioMu.Lock()
 	defer d.ioMu.Unlock()
-	if wait := st.timeBetween - time.Since(d.lastIO); wait > 0 {
+	wait := st.timeBetween - time.Since(d.lastIO)
+	if q := time.Until(d.quietUntil); q > wait {
+		wait = q
+	}
+	if wait > 0 {
 		time.Sleep(wait)
 	}
 	resp, err := d.rt.transport.Chunk(d.target(), kind, size, data, read, st.timeBetween, st.timeout)
@@ -503,9 +507,48 @@ func (d *Decl) WriteApi(name string, values any) error {
 		d.rt.evalBody(api.Finally, env)
 	}
 	if api.HoldAfterWriteMs > 0 {
-		time.Sleep(time.Duration(api.HoldAfterWriteMs) * time.Millisecond)
+		d.holdIO(time.Duration(api.HoldAfterWriteMs) * time.Millisecond)
 	}
 	return runErr
+}
+
+// holdIO keeps the device's next chunk back until hold has passed, as
+// (api-hold-after-write ms) asks: whichever api or PrismSync frame comes
+// next waits in sendChunk, not only the caller of this write.
+func (d *Decl) holdIO(hold time.Duration) {
+	d.ioMu.Lock()
+	defer d.ioMu.Unlock()
+	if until := time.Now().Add(hold); until.After(d.quietUntil) {
+		d.quietUntil = until
+	}
+}
+
+// fileCommitSettle is how long a keyboard on SteelSeries' "macho" firmware
+// (Apex Pro, Apex 7/Pro 2022, ...) is left alone after its mappings api.
+// That api pushes the key and macro tables into the keyboard's file system
+// (0x63 and 0x71 feature reports) and ends with the 0x4D output report,
+// after which the firmware is busy saving them and ignores what comes
+// next: on an Apex Pro (2024) an OLED picture (0x65) sent 10-20 ms later
+// never showed, one sent 150 ms later always did. The spec gives this api
+// no wait, but its other file pushes declare one: lighting_config sleeps
+// 200 ms after its push "before restarting graphics", load_profile 250 ms
+// "for the firmware to finish deploying". 200 ms matches the former and
+// leaves margin over the 150 ms seen to work.
+const fileCommitSettle = 200 * time.Millisecond
+
+// holdAfterFileCommit gives the mappings api of a keyboard that keeps its
+// bindings and onboard macros in its file system, the ones whose spec
+// defines (onboard-macro-function), the settle fileCommitSettle describes,
+// unless the spec already declares an (api-hold-after-write ...) for it.
+// Windows GG plays the OLED picture through DeviceLib's sequencer,
+// separately from a deploy's other apis, which hides the missing wait
+// there; ggd writes the deploy's apis back to back.
+func holdAfterFileCommit(d *Decl) {
+	api := d.Apis["mappings"]
+	if api == nil || len(api.Write) == 0 || api.HoldAfterWriteMs > 0 || !d.HasFunction("onboard-macro-function") {
+		return
+	}
+	api.HoldAfterWriteMs = int(fileCommitSettle / time.Millisecond)
 }
 
 // ReadApi performs the api's read chunks and decodes the reply.
