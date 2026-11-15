@@ -143,6 +143,46 @@ func (c *Core) loadoutHandler(fn func(st *loadoutState, r *http.Request) (any, i
 // DeployLoadout switches the active loadout and asks the services that own
 // each config to apply it.
 func (c *Core) DeployLoadout(id string, manual bool) bool {
+	overlay := "loadoutSwitchedAuto"
+	if manual {
+		overlay = "loadoutSwitchedManual"
+	}
+	return c.deployLoadout(id, manual, overlay)
+}
+
+// ProfileShortcuts maps QuickSet's profile shortcuts (by index, 1 to 5) to
+// their profiles, while profiles are on.
+func (c *Core) ProfileShortcuts() map[int]string {
+	loadoutMu.Lock()
+	defer loadoutMu.Unlock()
+	st := c.loadLoadouts()
+	out := map[int]string{}
+	if !st.ProfilesEnabled {
+		return out
+	}
+	for _, m := range st.Shortcuts {
+		if m.LoadoutID != "" && findLoadout(&st, m.LoadoutID) != nil {
+			out[m.ShortcutIndex] = m.LoadoutID
+		}
+	}
+	return out
+}
+
+// DeployShortcut deploys the profile QuickSet's profile shortcut idx
+// switches to; it is false when the shortcut has none.
+func (c *Core) DeployShortcut(idx int) bool {
+	loadoutMu.Lock()
+	st := c.loadLoadouts()
+	loadoutMu.Unlock()
+	for _, m := range st.Shortcuts {
+		if m.ShortcutIndex == idx && m.LoadoutID != "" {
+			return c.deployLoadout(m.LoadoutID, true, "loadoutSwitchedShortcut")
+		}
+	}
+	return false
+}
+
+func (c *Core) deployLoadout(id string, manual bool, overlay string) bool {
 	ok := false
 	var cfgs []LoadoutConfig
 	var name, kind string
@@ -175,7 +215,7 @@ func (c *Core) DeployLoadout(id string, manual bool) bool {
 	if fn := c.hooks().loadoutChanged; fn != nil {
 		fn(cfgs)
 	}
-	c.notifyLoadout(name, manual)
+	c.notifyLoadout(name, overlay)
 	c.Broadcast("EVENT_FOREGROUND_APP_OR_LOADOUT_CHANGE", map[string]any{
 		"version":                 1,
 		"loadoutId":               id,
@@ -346,6 +386,15 @@ func (c *Core) loadoutRoutes() {
 		st.Shortcuts = append(out, ShortcutMapping{ShortcutIndex: idx, LoadoutID: r.PathValue("loadout")})
 		return map[string]any{"shortcuts": st.Shortcuts}, 200
 	}))
+	// ggctl profile N, which a profile shortcut's key runs.
+	s.Handle("POST /loadouts/shortcuts/{idx}/deploy", func(w http.ResponseWriter, r *http.Request) {
+		idx, _ := strconv.Atoi(r.PathValue("idx"))
+		if !c.DeployShortcut(idx) {
+			httpx.Error(w, 404, "no profile on this shortcut")
+			return
+		}
+		httpx.OK(w)
+	})
 	s.Handle("DELETE /loadouts/shortcuts/{idx}", c.loadoutHandler(func(st *loadoutState, r *http.Request) (any, int) {
 		idx, _ := strconv.Atoi(r.PathValue("idx"))
 		out := st.Shortcuts[:0]

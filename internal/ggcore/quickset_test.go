@@ -91,3 +91,32 @@ func TestGameUID(t *testing.T) {
 		t.Errorf("Epic: %s", got)
 	}
 }
+
+// TestProfileShortcuts follows QuickSet's profile shortcuts: they are
+// listed while profiles are on, and deploy their profile.
+func TestProfileShortcuts(t *testing.T) {
+	c := testCore(t)
+	var id string
+	c.withLoadouts(func(st *loadoutState) (any, int) {
+		st.Loadouts = append(st.Loadouts, Loadout{ID: "p2", Name: "Work"})
+		st.Shortcuts = []ShortcutMapping{{ShortcutIndex: 2, LoadoutID: "p2"}, {ShortcutIndex: 3, LoadoutID: "gone"}}
+		id = "p2"
+		return nil, 200
+	})
+	if got := c.ProfileShortcuts(); len(got) != 0 {
+		t.Errorf("profile shortcuts with profiles off: %v", got)
+	}
+	c.setProfilesEnabled(true)
+	if got := c.ProfileShortcuts(); len(got) != 1 || got[2] != id {
+		t.Errorf("profile shortcuts %v, want 2 → %s (and not a deleted profile)", got, id)
+	}
+	if c.DeployShortcut(1) {
+		t.Error("shortcut 1 has no profile but deployed one")
+	}
+	if !c.DeployShortcut(2) {
+		t.Fatal("shortcut 2 did not deploy its profile")
+	}
+	if st := c.loadLoadouts(); st.ActiveID != id {
+		t.Errorf("active profile %q, want %q", st.ActiveID, id)
+	}
+}

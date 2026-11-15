@@ -1,8 +1,12 @@
 // Package hotkeys makes GG's keyboard shortcuts global. Wayland gives
-// applications no way to grab keys, so on Hyprland ggd asks the compositor
-// to bind them, through hyprctl, to a command that tells ggd; the binds
-// come back after Hyprland reloads its configuration. Hyprland 0.57 and
-// later take binds as Lua (hl.bind); older versions as keywords.
+// applications no way to grab keys, so ggd asks the desktop to bind them
+// to a command that tells ggd:
+//
+//   - On Hyprland, through hyprctl; the binds come back after Hyprland
+//     reloads its configuration. Hyprland 0.57 and later take binds as Lua
+//     (hl.bind); older versions as keywords.
+//   - Elsewhere, through the XDG desktop portal's GlobalShortcuts
+//     interface (KDE Plasma 6, GNOME 48 and later), see portal.go.
 package hotkeys
 
 import (
@@ -23,14 +27,18 @@ import (
 )
 
 // Spec turns a GG shortcut (a HID keyboard usage and a HID modifier mask)
-// into a Hyprland key ("ALT,S"); ok is false for keys it can't name.
+// into a Hyprland key ("ALT,S"); ok is false for keys it can't name, and
+// for Ctrl+Alt+F1 to F12, which switch Linux's virtual terminals.
 func Spec(modifiers, hidCode int) (string, bool) {
 	key, ok := hidKey(hidCode)
 	if !ok {
 		return "", false
 	}
-	var mods []string
 	m := modifiers | modifiers>>4 // right-hand modifiers count as left
+	if m&5 == 5 && hidCode >= 58 && hidCode <= 69 {
+		return "", false
+	}
+	var mods []string
 	if m&1 != 0 {
 		mods = append(mods, "CTRL")
 	}
@@ -76,13 +84,31 @@ func hidKey(code int) (string, bool) {
 	return k, ok
 }
 
-// Available reports whether this session can have global shortcuts.
-func Available() bool { return os.Getenv("HYPRLAND_INSTANCE_SIGNATURE") != "" }
-
-// Bind is what a key does: a command, and the description Hyprland lists
-// it with.
+// Bind is what a key does: a command, and the description the desktop
+// lists it with. ID names the shortcut to the portal, which keeps the key
+// the user gives it under that name.
 type Bind struct {
-	Command, Description string
+	ID, Command, Description string
+}
+
+// Binder keeps a set of global shortcuts, by key spec (see Spec).
+type Binder interface {
+	// Set makes exactly binds bound (the user's own are left alone).
+	Set(binds map[string]Bind)
+}
+
+// New finds the way this session binds global shortcuts: Hyprland's, else
+// the desktop portal's. It returns nil when there is none.
+func New(ctx context.Context) Binder {
+	if os.Getenv("HYPRLAND_INSTANCE_SIGNATURE") != "" {
+		return NewHyprland(ctx)
+	}
+	p, err := NewPortal(ctx)
+	if err != nil {
+		slog.Info("hotkeys: no global shortcuts portal", "err", err)
+		return nil
+	}
+	return p
 }
 
 // descPrefix marks ggd's binds, so they are told apart from the user's.

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -163,4 +164,21 @@ func momentsCommand(args []string) error {
 		return fmt.Errorf("unknown moments command %q", args[0])
 	}
 	return nil
+}
+
+// profileCommand runs "ggctl profile N": it deploys the QuickSet profile
+// GG's profile shortcut N switches to.
+func profileCommand(args []string) error {
+	n := 0
+	if len(args) == 1 {
+		n, _ = strconv.Atoi(args[0])
+	}
+	if n < 1 || n > 5 {
+		return fmt.Errorf("usage: ggctl profile 1-5")
+	}
+	c, err := newGGDClient()
+	if err != nil {
+		return err
+	}
+	return c.do("POST", "https://"+c.gg+"/loadouts/shortcuts/"+strconv.Itoa(n)+"/deploy", nil, nil)
 }

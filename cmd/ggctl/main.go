@@ -10,6 +10,7 @@
 //	ggctl moments clip            save a Moments clip (bind it to a key)
 //	ggctl moments toggle|mic|desktop  switch capture, mic, desktop capture
 //	ggctl moments status          what Moments is recording
+//	ggctl profile N               deploy the QuickSet profile on shortcut N (1-5)
 //	ggctl report [FILE]           write a report to attach to a bug report
 package main
 
@@ -46,7 +47,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: ggctl hid | devices | apis PID | read PID API | call PID FUNCTION | write PID API JSON | moments clip|status | report [FILE]")
+	fmt.Fprintln(os.Stderr, "usage: ggctl hid | devices | apis PID | read PID API | call PID FUNCTION | write PID API JSON | moments clip|status | profile N | report [FILE]")
 	os.Exit(2)
 }
 
@@ -67,6 +68,9 @@ func run(cmd string, args []string) error {
 	}
 	if cmd == "report" {
 		return reportCommand(args)
+	}
+	if cmd == "profile" {
+		return profileCommand(args)
 	}
 	if cmd == "hid" {
 		infos, err := hid.Enumerate()

@@ -20,6 +20,15 @@ func TestSpec(t *testing.T) {
 	if _, ok := Spec(4, 0); ok {
 		t.Error("named a key for HID usage 0")
 	}
+	// Ctrl+Alt+F1 to F12 switch virtual terminals: never bound.
+	for _, c := range []struct{ mods, hid int }{{1 | 4, 58}, {1 | 4, 69}, {0x10 | 0x40, 62}, {1 | 2 | 4, 60}} {
+		if spec, ok := Spec(c.mods, c.hid); ok {
+			t.Errorf("Spec(%d, %d) = %q; a VT switch key was named", c.mods, c.hid, spec)
+		}
+	}
+	if spec, ok := Spec(1|4, 104); !ok || spec != "CTRL ALT,F13" {
+		t.Errorf("Spec(Ctrl+Alt, F13) = %q, %v", spec, ok)
+	}
 	if got := luaKeys("SHIFT ALT,M"); got != "SHIFT + ALT + M" {
 		t.Errorf("luaKeys = %q", got)
 	}

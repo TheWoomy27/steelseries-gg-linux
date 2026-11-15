@@ -69,7 +69,8 @@ func sonarConfigs(cfgs []ggcore.LoadoutConfig) []sonar.QuicksetConfig {
 }
 
 // connectQuickset wires Sonar and the GG core's QuickSet both ways.
-func connectQuickset(core *ggcore.Core, snr *sonar.Service, ps *prism.Service) {
+// shortcutsChanged runs when profiles or their shortcuts may have changed.
+func connectQuickset(core *ggcore.Core, snr *sonar.Service, ps *prism.Service, shortcutsChanged func()) {
 	snr.SetQuickset(quicksetBridge{core})
 	core.OnLoadoutChange(func(cfgs []ggcore.LoadoutConfig) {
 		snr.ApplyQuickset(sonarConfigs(cfgs))
@@ -80,6 +81,12 @@ func connectQuickset(core *ggcore.Core, snr *sonar.Service, ps *prism.Service) {
 			}
 		}
 	})
-	core.OnQuicksetStatus(snr.QuicksetStatusChanged)
-	core.OnLoadoutsModified(snr.QuicksetModified)
+	core.OnQuicksetStatus(func() {
+		snr.QuicksetStatusChanged()
+		shortcutsChanged()
+	})
+	core.OnLoadoutsModified(func() {
+		snr.QuicksetModified()
+		shortcutsChanged()
+	})
 }

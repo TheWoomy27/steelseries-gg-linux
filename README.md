@@ -180,9 +180,8 @@ screenshots, montages), exports and the settings pages.
 - Recording uses gpu-screen-recorder when it is installed (it encodes on
   the GPU and keeps sound and picture in sync), else wf-recorder on
   Wayland or ffmpeg on X11.
-- On Hyprland, GG's Moments shortcuts (Alt+S saves a clip) are bound while
-  capture is on, except keys your configuration already uses. On other
-  desktops, bind a key to `ggctl moments clip`.
+- GG's Moments shortcuts (Alt+S saves a clip) are bound while capture is
+  on; see [Global shortcuts](#global-shortcuts).
 - Sharing: clips drag out of GG's share dialogs into Discord, browsers and
   file managers. Sharing to YouTube exports the clip into the Shared Clips
   folder, shows it in the file manager with its path on the clipboard, and
@@ -245,7 +244,27 @@ others by install folder) and Default comes back when it exits. Device
 configurations and the Sonar Game preset follow the profile, and a game
 with a Sonar preset gets a profile made from it. Profiles are off until
 you turn them on in QuickSet. Wayland has no portable way to tell which
-window is in front, so a running game counts as in front.
+window is in front, so a running game counts as in front. The profile
+shortcuts (QuickSet's settings) are bound while profiles are on; see
+[Global shortcuts](#global-shortcuts).
+
+### Global shortcuts
+
+Wayland lets no application grab keys, so ggd asks the desktop to bind
+GG's Moments shortcuts (while capture is on) and QuickSet's profile
+shortcuts (while profiles are on, for those with a profile):
+
+- On Hyprland, through hyprctl, except keys your configuration already
+  uses. A key changed in GG is rebound at once.
+- On KDE Plasma 6, GNOME 48 and other desktops whose portal has
+  GlobalShortcuts, through the desktop portal. The first time, the desktop
+  asks you to confirm them, with GG's keys filled in. They are then listed
+  under SteelSeries GG in System Settings → Keyboard → Shortcuts (KDE), and
+  the desktop keeps the key set there: change a key there, not in GG.
+- Elsewhere, bind keys to `ggctl moments clip|mic|desktop|toggle` and
+  `ggctl profile 1`…`5` in your desktop's settings.
+
+Ctrl+Alt+F1 to F12 are never bound: they switch virtual terminals.
 
 ### Desktop integration
 
@@ -315,7 +334,8 @@ your device and a report from `ggctl report` (see below).
   `ggctl read 1852 read_battery_status`, `ggctl call 22a1 get_headset_status`.
   It also drives Moments in the running ggd: `ggctl moments clip` saves a
   clip, and `ggctl moments toggle|mic|desktop|status` switch capture, the
-  microphone and desktop capture.
+  microphone and desktop capture. `ggctl profile N` deploys the QuickSet
+  profile on GG's profile shortcut N.
 
 ## Development
 

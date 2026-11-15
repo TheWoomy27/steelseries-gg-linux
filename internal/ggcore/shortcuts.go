@@ -47,6 +47,10 @@ const (
 	ShortcutMomentsMicMute = 1
 	ShortcutMomentsDesktop = 2
 	ShortcutMomentsEnable  = 3
+	// QuickSet's "switch to profile" shortcuts 1 to 5 are 69 to 73 (GG's
+	// QUICKSET_SWITCH_PROFILE_n); the profile each switches to is in the
+	// loadouts' shortcut mappings, by index 1 to 5.
+	ShortcutQuicksetProfile = 68 // + index
 )
 
 type shortcutStore struct {

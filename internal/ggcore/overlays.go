@@ -143,11 +143,7 @@ func (c *Core) OnNotify(fn func(tag, summary, body string)) {
 
 // notifyLoadout tells the user a QuickSet profile was switched, where
 // Windows GG shows its "QuickSet Profile Switched" overlay.
-func (c *Core) notifyLoadout(name string, manual bool) {
-	overlay := "loadoutSwitchedAuto"
-	if manual {
-		overlay = "loadoutSwitchedManual"
-	}
+func (c *Core) notifyLoadout(name, overlay string) {
 	c.mu.Lock()
 	fn := c.notify
 	c.mu.Unlock()

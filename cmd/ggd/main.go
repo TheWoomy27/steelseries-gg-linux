@@ -175,10 +175,11 @@ func run(verbose bool) error {
 		snr.SetActive(on)
 	})
 	core.RegisterSubApp("sonar", sonarMD)
-	connectQuickset(core, snr, ps)
+	keys := newGlobalShortcuts(ctx, core)
+	connectQuickset(core, snr, ps, keys.apply)
 	go snr.SetActive(core.SubAppEnabled("sonar"))
 
-	mom, err := startMoments(ctx, core, token, tlsCfg)
+	mom, err := startMoments(ctx, core, token, tlsCfg, keys)
 	if err != nil {
 		return fmt.Errorf("moments: %w", err)
 	}
