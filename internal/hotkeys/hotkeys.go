@@ -103,6 +103,12 @@ func New(ctx context.Context) Binder {
 	if os.Getenv("HYPRLAND_INSTANCE_SIGNATURE") != "" {
 		return NewHyprland(ctx)
 	}
+	// The portal is tried on KDE Plasma only so far: GNOME's asks the
+	// user in a dialog of its own, and that has not been tried yet.
+	// GG_LINUX_SHORTCUTS=portal uses it elsewhere.
+	if !strings.Contains(strings.ToUpper(os.Getenv("XDG_CURRENT_DESKTOP")), "KDE") && os.Getenv("GG_LINUX_SHORTCUTS") != "portal" {
+		return nil
+	}
 	p, err := NewPortal(ctx)
 	if err != nil {
 		slog.Info("hotkeys: no global shortcuts portal", "err", err)

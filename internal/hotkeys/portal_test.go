@@ -1,9 +1,9 @@
 package hotkeys
 
 import (
-	"bufio"
 	"context"
-	"os/exec"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/godbus/dbus/v5"
+
+	"ggl/internal/dbustest"
 )
 
 func TestPortalTrigger(t *testing.T) {
@@ -39,9 +41,10 @@ type fakePortal struct {
 	conn  *dbus.Conn
 	event chan string // each call, as it comes
 
-	mu    sync.Mutex
-	binds []shortcutArg   // the last BindShortcuts
-	sess  dbus.ObjectPath // the last session made
+	mu     sync.Mutex
+	binds  []shortcutArg   // the last BindShortcuts
+	sess   dbus.ObjectPath // the last session made
+	cancel bool            // the user cancels the bind dialog
 }
 
 func (f *fakePortal) record(s string) { f.event <- s }
@@ -98,9 +101,13 @@ func (s shortcuts) BindShortcuts(sender dbus.Sender, sess dbus.ObjectPath, list 
 	sort.Strings(ids)
 	s.f.mu.Lock()
 	s.f.binds = list
+	code := uint32(0)
+	if s.f.cancel {
+		code = 1
+	}
 	s.f.mu.Unlock()
 	req := requestPath(sender, opts)
-	s.f.conn.Emit(req, requestIface+".Response", uint32(0), map[string]dbus.Variant{"shortcuts": dbus.MakeVariant(out)})
+	s.f.conn.Emit(req, requestIface+".Response", code, map[string]dbus.Variant{"shortcuts": dbus.MakeVariant(out)})
 	s.f.record("Bind " + strings.Join(ids, " "))
 	return req, nil
 }
@@ -112,25 +119,9 @@ func (s session) Close() *dbus.Error {
 	return nil
 }
 
-// privateBus starts a session bus of the test's own (dbus-daemon, from
-// the dbus package, is needed).
-func privateBus(t *testing.T) string {
-	t.Helper()
-	daemon := exec.Command("dbus-daemon", "--session", "--nofork", "--print-address=1")
-	out, err := daemon.StdoutPipe()
-	if err == nil {
-		err = daemon.Start()
-	}
-	if err != nil {
-		t.Fatal("dbus-daemon:", err)
-	}
-	t.Cleanup(func() { daemon.Process.Kill(); daemon.Wait() })
-	addr, err := bufio.NewReader(out).ReadString('\n')
-	if err != nil {
-		t.Fatal(err)
-	}
-	return strings.TrimSpace(addr)
-}
+// privateBus starts a session bus of the test's own, which starts no
+// installed services (the real desktop portal).
+func privateBus(t *testing.T) string { return dbustest.Bus(t) }
 
 // TestPortal binds shortcuts through a fake GlobalShortcuts portal on a
 // private bus, presses them and changes them.
@@ -219,7 +210,14 @@ func TestPortal(t *testing.T) {
 	press(sess, "unknown")
 	press(sess, "quickset-profile-1")
 	expectRun("ggctl profile 1")
-	expectNoRun("for another session's or an unknown shortcut")
+	// Any program on the bus can send the signal; only the portal's count.
+	other, err := dbus.Connect(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	other.Emit(portalPath, shortcutsIface+".Activated", sess, "quickset-profile-1", uint64(1), map[string]dbus.Variant{})
+	expectNoRun("for another session's or an unknown shortcut, or a program posing as the portal")
 
 	// The same binds again change nothing; others take a new session.
 	p.Set(map[string]Bind{
@@ -249,5 +247,66 @@ func TestNoPortal(t *testing.T) {
 	defer cli.Close()
 	if _, err := newPortal(context.Background(), cli, func(string) {}); err == nil {
 		t.Error("a portal on a bus without one")
+	}
+}
+
+// TestPortalCancelled: when the user cancels the desktop's dialog, the
+// same shortcuts aren't asked for again (every profile change sets them),
+// only a different set is.
+func TestPortalCancelled(t *testing.T) {
+	addr := privateBus(t)
+	srv, err := dbus.Connect(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	f := &fakePortal{conn: srv, event: make(chan string, 32), cancel: true}
+	srv.Export(registry{f}, portalPath, registryIface)
+	srv.Export(props{f}, portalPath, "org.freedesktop.DBus.Properties")
+	srv.Export(shortcuts{f}, portalPath, shortcutsIface)
+	if _, err := srv.RequestName(portalService, dbus.NameFlagDoNotQueue); err != nil {
+		t.Fatal(err)
+	}
+	cli, err := dbus.Connect(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cli.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	p, err := newPortal(ctx, cli, func(string) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls []string
+	drain := func() {
+		for end := time.After(300 * time.Millisecond); ; {
+			select {
+			case e := <-f.event:
+				calls = append(calls, e)
+			case <-end:
+				return
+			}
+		}
+	}
+	binds := map[string]Bind{"ALT,S": {ID: "moments-clip", Command: "ggctl moments clip", Description: "Moments: save a clip"}}
+	p.Set(binds)
+	drain()
+	p.Set(maps.Clone(binds))
+	drain()
+	n := 0
+	for _, c := range calls {
+		if strings.HasPrefix(c, "Bind ") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("binds asked for %d times after a cancel, want once: %v", n, calls)
+	}
+	p.Set(map[string]Bind{"ALT,M": {ID: "moments-mic", Command: "ggctl moments mic", Description: "Moments: mute the microphone"}})
+	calls = nil
+	drain()
+	if !slices.ContainsFunc(calls, func(c string) bool { return strings.HasPrefix(c, "Bind moments-mic") }) {
+		t.Errorf("a new set was not asked for: %v", calls)
 	}
 }

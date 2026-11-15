@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
+	"strings"
 	"sync"
 
 	"ggl/internal/ggcore"
@@ -27,14 +29,15 @@ var momentsShortcuts = map[int][3]string{
 type globalShortcuts struct {
 	core  *ggcore.Core
 	keys  hotkeys.Binder // nil: the session has no global shortcuts
-	ggctl string
+	ggctl string         // quoted for the shell the commands run in
 
-	mu  sync.Mutex
-	mom *moments.Service
+	mu   sync.Mutex
+	mom  *moments.Service
+	last map[string]hotkeys.Bind // the binds last set
 }
 
 func newGlobalShortcuts(ctx context.Context, core *ggcore.Core) *globalShortcuts {
-	g := &globalShortcuts{core: core, keys: hotkeys.New(ctx), ggctl: ggctlPath()}
+	g := &globalShortcuts{core: core, keys: hotkeys.New(ctx), ggctl: shellQuote(ggctlPath())}
 	if g.keys == nil {
 		slog.Info("no global shortcuts in this session; bind keys to `ggctl moments clip` and `ggctl profile N` instead")
 		return g
@@ -93,5 +96,13 @@ func (g *globalShortcuts) apply() {
 			})
 		}
 	}
+	// Profile changes call this too; an unchanged set is left alone.
+	if g.last != nil && maps.Equal(binds, g.last) {
+		return
+	}
+	g.last = binds
 	g.keys.Set(binds)
 }
+
+// shellQuote quotes s for sh.
+func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }

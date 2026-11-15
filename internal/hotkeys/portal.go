@@ -48,13 +48,15 @@ type Portal struct {
 	conn *dbus.Conn
 	run  func(command string) // runs an activated shortcut's command
 
-	mu      sync.Mutex
-	want    map[string]Bind // key spec → bind
-	byID    map[string]Bind // the session's binds, by shortcut id
-	session dbus.ObjectPath
-	waiting map[dbus.ObjectPath]chan *dbus.Signal // requests, by handle
-	kick    chan struct{}
-	token   int
+	mu        sync.Mutex
+	want      map[string]Bind // key spec → bind
+	byID      map[string]Bind // the session's binds, by shortcut id
+	session   dbus.ObjectPath
+	owner     string                                // the portal's unique bus name, which its signals come from
+	restarted bool                                  // the portal restarted and forgot ggd's session
+	waiting   map[dbus.ObjectPath]chan *dbus.Signal // requests, by handle
+	kick      chan struct{}
+	token     int
 }
 
 // NewPortal connects to the session bus's desktop portal; it fails when
@@ -84,6 +86,11 @@ func newPortal(ctx context.Context, conn *dbus.Conn, run func(string)) (*Portal,
 	if ver, _ := v.Value().(uint32); ver < 1 {
 		return nil, fmt.Errorf("GlobalShortcuts version %v", v.Value())
 	}
+	var owner string
+	if err := conn.BusObject().Call("org.freedesktop.DBus.GetNameOwner", 0, portalService).Store(&owner); err != nil {
+		return nil, err
+	}
+	p.owner = owner
 	signals := make(chan *dbus.Signal, 16)
 	conn.Signal(signals)
 	for _, m := range [][]dbus.MatchOption{
@@ -135,8 +142,11 @@ func byIDOf(binds map[string]Bind) map[string]Bind {
 // sync brings the portal session in line with the wanted binds. Portals
 // take a session's shortcuts once (GNOME's), so a change binds them in a
 // new session; shortcuts the desktop knows come back without asking.
+//
+// A set is asked for once: when the user cancels the desktop's dialog, it
+// is asked for again only once the set changes or the portal restarts.
 func (p *Portal) sync(ctx context.Context) {
-	var bound map[string]Bind // spec → bind, as bound; nil: nothing yet
+	var tried map[string]Bind // spec → bind, as last asked for; nil: nothing yet
 	for {
 		select {
 		case <-ctx.Done():
@@ -145,25 +155,22 @@ func (p *Portal) sync(ctx context.Context) {
 		}
 		p.mu.Lock()
 		want := p.want
-		reset := p.session == "" && bound != nil // the portal restarted
-		p.mu.Unlock()
-		if reset {
-			bound = nil
+		if p.restarted {
+			tried, p.restarted = nil, false
 		}
-		if bound != nil && maps.Equal(want, bound) {
+		p.mu.Unlock()
+		if tried != nil && maps.Equal(want, tried) {
 			continue
 		}
 		p.closeSession()
-		bound = map[string]Bind{}
+		tried = want
 		if len(want) == 0 {
 			continue
 		}
 		if err := p.bind(ctx, want); err != nil {
 			slog.Warn("hotkeys: portal", "err", err)
 			p.closeSession()
-			continue
 		}
-		bound = want
 	}
 }
 
@@ -287,6 +294,13 @@ func (p *Portal) request(ctx context.Context, method string, args ...any) (map[s
 // waiters, shortcut presses to their commands.
 func (p *Portal) signals(ch chan *dbus.Signal) {
 	for sig := range ch {
+		// Any program on the bus can send these; only the portal's count.
+		p.mu.Lock()
+		fromPortal := sig.Sender == p.owner
+		p.mu.Unlock()
+		if !fromPortal && sig.Name != "org.freedesktop.DBus.NameOwnerChanged" {
+			continue
+		}
 		switch sig.Name {
 		case requestIface + ".Response":
 			p.mu.Lock()
@@ -319,8 +333,11 @@ func (p *Portal) signals(ch chan *dbus.Signal) {
 			if dbus.Store(sig.Body, &name, &old, &owner) != nil || name != portalService || owner == "" {
 				continue
 			}
+			if sig.Sender != "org.freedesktop.DBus" {
+				continue
+			}
 			p.mu.Lock()
-			p.session, p.byID = "", nil
+			p.session, p.byID, p.owner, p.restarted = "", nil, owner, true
 			p.mu.Unlock()
 			p.register()
 			select {
