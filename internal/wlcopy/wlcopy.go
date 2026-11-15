@@ -1,7 +1,11 @@
-// Package wlcopy captures a Wayland output's picture through the
-// wlr-screencopy protocol (Hyprland, sway and other wlroots-style
-// compositors): the compositor copies each frame into shared memory.
-// It speaks just enough of the Wayland wire protocol for that.
+// Package wlcopy captures a Wayland output's picture. It speaks just
+// enough of the Wayland wire protocol for one of two ways:
+//
+//   - wlr-screencopy (Hyprland, sway and other wlroots-style compositors):
+//     the compositor copies each frame into shared memory.
+//   - KDE's screencast protocol (KWin): KWin streams the monitor through
+//     PipeWire, scaled down on the GPU, and GStreamer's pipewiresrc reads
+//     it (see kde.go).
 package wlcopy
 
 import (
@@ -32,6 +36,10 @@ type Output struct {
 	Height    int
 	Transform int // wl_output transform (0 normal, 1 90°, 2 180°, 3 270°, 4-7 flipped)
 	id        uint32
+
+	// Its place in the desktop's logical coordinates (xdg-output), which
+	// KDE's region streams take; zero if unknown.
+	logX, logY, logW, logH int
 }
 
 // Frame is a captured picture: Pix holds Height rows of Stride bytes,
@@ -65,11 +73,65 @@ type Client struct {
 	bufS    int
 	bufFmt  uint32
 	mgrVers uint32
+
+	backend Backend
+	kde     kdeState
 }
 
 const displayID = 1
 
-// Open connects to the compositor and finds the screencopy protocol.
+// Backend is a way to capture the screen.
+type Backend int
+
+const (
+	BackendScreencopy Backend = iota + 1 // wlr-screencopy
+	BackendKDE                           // zkde_screencast + PipeWire
+)
+
+func (b Backend) String() string {
+	switch b {
+	case BackendScreencopy:
+		return "wlr-screencopy"
+	case BackendKDE:
+		return "KDE screencast"
+	}
+	return "none"
+}
+
+// BackendEnv names the variable that forces a backend: "screencopy" or
+// "kde" (unset or "auto" picks the first the compositor has).
+const BackendEnv = "GG_LINUX_REFLECT_CAPTURE"
+
+// pickBackend chooses the backend from the compositor's globals: wlr-
+// screencopy if it has it (it needs no helper program), else KDE's
+// screencast. want is BackendEnv's value.
+func pickBackend(has func(iface string) bool, want string) (Backend, error) {
+	screencopy := has("zwlr_screencopy_manager_v1") && has("wl_shm")
+	kde := has("zkde_screencast_unstable_v1")
+	switch want {
+	case "", "auto":
+		switch {
+		case screencopy:
+			return BackendScreencopy, nil
+		case kde:
+			return BackendKDE, nil
+		}
+		return 0, errors.New("the compositor has neither wlr-screencopy nor KDE's screencast protocol")
+	case "screencopy":
+		if screencopy {
+			return BackendScreencopy, nil
+		}
+		return 0, errors.New("the compositor has no wlr-screencopy")
+	case "kde":
+		if kde {
+			return BackendKDE, nil
+		}
+		return 0, errors.New("the compositor has no KDE screencast protocol")
+	}
+	return 0, fmt.Errorf("%s=%q: use screencopy, kde or auto", BackendEnv, want)
+}
+
+// Open connects to the compositor and picks a way to capture it.
 func Open() (*Client, error) {
 	name := os.Getenv("WAYLAND_DISPLAY")
 	if name == "" {
@@ -107,19 +169,44 @@ func Open() (*Client, error) {
 		conn.Close()
 		return nil, err
 	}
+	c.backend, err = pickBackend(func(iface string) bool {
+		for _, g := range globals {
+			if g.iface == iface {
+				return true
+			}
+		}
+		return false
+	}, os.Getenv(BackendEnv))
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	if c.backend == BackendKDE {
+		// KWin streams through PipeWire, which GStreamer reads.
+		if err := gstCheck(); err != nil {
+			conn.Close()
+			return nil, err
+		}
+	}
 	bind := func(g global, version uint32) (uint32, error) {
 		id := c.newID()
 		return id, c.send(registry, 0, newArgs().put32(g.name).putStr(g.iface).put32(version).put32(id), nil)
 	}
+	var xdgOutputs uint32
 	for _, g := range globals {
 		var err error
-		switch g.iface {
-		case "wl_shm":
+		switch {
+		case g.iface == "wl_shm" && c.backend == BackendScreencopy:
 			c.shm, err = bind(g, 1)
-		case "zwlr_screencopy_manager_v1":
+		case g.iface == "zwlr_screencopy_manager_v1" && c.backend == BackendScreencopy:
 			c.mgrVers = min(g.version, 3)
 			c.manager, err = bind(g, c.mgrVers)
-		case "wl_output":
+		case g.iface == "zkde_screencast_unstable_v1" && c.backend == BackendKDE:
+			c.mgrVers = min(g.version, 6)
+			c.manager, err = bind(g, c.mgrVers)
+		case g.iface == "zxdg_output_manager_v1" && c.backend == BackendKDE:
+			xdgOutputs, err = bind(g, min(g.version, 3))
+		case g.iface == "wl_output":
 			o := &Output{}
 			o.id, err = bind(g, min(g.version, 4))
 			c.outputs = append(c.outputs, o)
@@ -148,9 +235,24 @@ func Open() (*Client, error) {
 			return nil, err
 		}
 	}
-	if c.manager == 0 || c.shm == 0 {
-		conn.Close()
-		return nil, errors.New("the compositor has no wlr-screencopy")
+	if xdgOutputs != 0 {
+		for _, o := range c.outputs {
+			id := c.newID()
+			if err := c.send(xdgOutputs, 1, newArgs().put32(id).put32(o.id), nil); err != nil { // get_xdg_output
+				conn.Close()
+				return nil, err
+			}
+			out := o
+			handlers[id] = func(op uint16, a *args) error {
+				switch op {
+				case 0: // logical_position
+					out.logX, out.logY = int(int32(a.u32())), int(int32(a.u32()))
+				case 1: // logical_size
+					out.logW, out.logH = int(int32(a.u32())), int(int32(a.u32()))
+				}
+				return nil
+			}
+		}
 	}
 	if err := c.roundtrip(handlers); err != nil {
 		conn.Close()
@@ -158,6 +260,9 @@ func Open() (*Client, error) {
 	}
 	return c, nil
 }
+
+// Backend is how the client captures.
+func (c *Client) Backend() Backend { return c.backend }
 
 // Outputs lists the monitors.
 func (c *Client) Outputs() []Output {
@@ -175,7 +280,9 @@ const CaptureTimeout = time.Second
 // within CaptureTimeout (or is off).
 var ErrUnchanged = errors.New("wlcopy: the monitor did not change")
 
-// Capture copies a monitor's current picture.
+// Capture copies a monitor's current picture. (A KDE stream's first
+// frame is the current picture, so it waits for a frame since the stream
+// started, not for a change.)
 func (c *Client) Capture(output string) (*Frame, error) {
 	return c.capture(output, false)
 }
@@ -184,10 +291,16 @@ func (c *Client) Capture(output string) (*Frame, error) {
 // The compositor draws nothing extra for it, so it costs little while
 // the screen is still.
 func (c *Client) CaptureChanged(output string) (*Frame, error) {
+	if c.backend == BackendKDE {
+		return c.kdeCapture(output, true)
+	}
 	return c.capture(output, c.mgrVers >= 2)
 }
 
 func (c *Client) capture(output string, damage bool) (*Frame, error) {
+	if c.backend == BackendKDE {
+		return c.kdeCapture(output, false)
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	var out *Output
@@ -306,6 +419,7 @@ func (c *Client) releaseBuffer() {
 func (c *Client) Close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.kdeStop()
 	c.releaseBuffer()
 	c.conn.Close()
 }

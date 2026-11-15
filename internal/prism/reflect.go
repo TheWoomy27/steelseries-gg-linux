@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/godbus/dbus/v5"
+
 	"ggl/internal/wlcopy"
 )
 
@@ -22,8 +24,9 @@ import (
 // eased over 0.1 s.
 //
 // The screen comes from the compositor through wlr-screencopy
-// (Hyprland, sway...): the focused monitor, copied when it changes, up to
-// 10 times a second, while a configuration uses the effect.
+// (Hyprland, sway...) or KWin's screencast stream (KDE Plasma): the
+// focused monitor, copied when it changes, up to 10 times a second, while
+// a configuration uses the effect.
 
 const effectReflect = 1
 
@@ -358,13 +361,14 @@ func (sc *screenCapture) capture(stop chan struct{}) error {
 	defer c.Close()
 	sc.mu.Lock()
 	if !sc.warned {
-		slog.Info("prism: Reflect capturing the screen")
+		slog.Info("prism: Reflect capturing the screen", "with", c.Backend())
 	}
 	sc.mu.Unlock()
 	// Copying costs the compositor a read back of the monitor: on Hyprland
 	// at 2560x1440 a few percent of a core for any copying, about 10% at
 	// 10 copies a second. So the monitor is copied only when it changes,
-	// and at most 10 times a second.
+	// and at most 10 times a second. (KWin streams the focused monitor
+	// already scaled down, when it changes; the stream follows the focus.)
 	tick := time.NewTicker(100 * time.Millisecond)
 	defer tick.Stop()
 	output, picked := "", time.Time{}
@@ -394,11 +398,15 @@ func (sc *screenCapture) capture(stop chan struct{}) error {
 	}
 }
 
-// focusedOutput is the monitor in use: Hyprland's focused one, else the
-// first.
+// focusedOutput is the monitor in use: Hyprland's or KWin's focused one,
+// else the first.
 func focusedOutput(c *wlcopy.Client) string {
 	outs := c.Outputs()
-	if b, err := exec.Command("hyprctl", "-j", "monitors").Output(); err == nil {
+	if c.Backend() == wlcopy.BackendKDE {
+		if name := kwinActiveOutput(); name != "" {
+			return name
+		}
+	} else if b, err := exec.Command("hyprctl", "-j", "monitors").Output(); err == nil {
 		var mons []struct {
 			Name    string `json:"name"`
 			Focused bool   `json:"focused"`
@@ -415,6 +423,20 @@ func focusedOutput(c *wlcopy.Client) string {
 		return outs[0].Name
 	}
 	return ""
+}
+
+// kwinActiveOutput is the monitor KWin has focused (the one with the
+// active window, or the pointer), or "".
+func kwinActiveOutput() string {
+	conn, err := dbus.SessionBus()
+	if err != nil {
+		return ""
+	}
+	var name string
+	if conn.Object("org.kde.KWin", "/KWin").Call("org.kde.KWin.activeOutputName", 0).Store(&name) != nil {
+		return ""
+	}
+	return name
 }
 
 // downscale is quickScale: the frame scaled to 180 pixels high, each pixel

@@ -210,7 +210,12 @@ configuration's lighting back.
 - Reflect, which copies the focused monitor through wlr-screencopy
   (Hyprland, sway and other wlroots compositors) at most 10 times a second,
   when the screen changes. It costs the compositor some CPU (Hyprland:
-  about 10% of a core on a 2560x1440 monitor).
+  about 10% of a core on a 2560x1440 monitor). On KDE Plasma it asks KWin
+  for a PipeWire stream of the monitor, scaled down to 180 pixels high on
+  the GPU, and reads it with GStreamer: this needs GStreamer's PipeWire
+  plugin (`pipewire-gstreamer` on Fedora, `gstreamer1.0-pipewire` on
+  Debian/Ubuntu, `gst-plugin-pipewire` on Arch). `GG_LINUX_REFLECT_CAPTURE`
+  set to `screencopy` or `kde` picks the way.
 - On Hyprland and KDE Plasma (Wayland), lighting dims or goes off while
   every monitor sleeps, as each configuration's "When Monitor Sleeps" says.
 - ImageSync plays a GIF on per-key keyboards.

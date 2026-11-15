@@ -5,6 +5,8 @@ import (
 	"math"
 	"testing"
 	"time"
+
+	"ggl/internal/wlcopy"
 )
 
 func TestReflectZoneRect(t *testing.T) {
@@ -132,5 +134,31 @@ func TestReflectPreview(t *testing.T) {
 	right := f.color(&zone{}, cfg)
 	if left == right || left == (Color{}) {
 		t.Errorf("left %v, right %v", left, right)
+	}
+}
+
+// TestReflectDownscaleStream: KWin's streams come already 180 pixels
+// high, as RGBx; scaling them again keeps them as they are.
+func TestReflectDownscaleStream(t *testing.T) {
+	w, h := 320, 180
+	f := &wlcopy.Frame{Width: w, Height: h, Stride: w * 4, Format: wlcopy.FormatXBGR8888, Pix: make([]byte, w*h*4)}
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			copy(f.Pix[(y*w+x)*4:], []byte{byte(x), byte(y), 200, 0})
+		}
+	}
+	s := downscale(f)
+	if s.w != w || s.h != h {
+		t.Fatalf("%dx%d", s.w, s.h)
+	}
+	for _, p := range [][2]int{{0, 0}, {319, 179}, {100, 50}} {
+		got := s.pix[(p[1]*w+p[0])*3:][:3]
+		want := []float64{float64(byte(p[0])) / 255, float64(p[1]) / 255, 200.0 / 255}
+		for i := range want {
+			if math.Abs(got[i]-want[i]) > 1e-9 {
+				t.Errorf("pixel %v: %v, want %v", p, got, want)
+				break
+			}
+		}
 	}
 }
