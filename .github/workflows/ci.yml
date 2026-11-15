@@ -29,3 +29,5 @@ jobs:
           done
       - name: Test the drag fix
         run: python3 packaging/dragfix_test.py
+      - name: Test the client's Linux patches
+        run: node --test client/linux/windows_test.js

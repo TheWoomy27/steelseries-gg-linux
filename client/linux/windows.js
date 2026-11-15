@@ -7,7 +7,11 @@
 // when it first maps. Electron only passes window parents to X11, so
 // secondary windows map non-resizable (on Linux, Electron pins the minimum
 // and maximum size for that) and become resizable once the compositor has
-// placed them. Stacking window managers just place them as usual.
+// placed them. Stacking window managers place them as usual and are left
+// alone: KDE's Breeze decoration hides the maximize button of a window that
+// cannot be resized and, when the button reappears, does not move its
+// buttons back inside the title bar, which pushes the close button out of
+// sight until the window is next maximized or resized.
 //
 // The same classes give the client's windows and views the patched copy of
 // its preload (see patches.js).
@@ -19,6 +23,13 @@ const patches = require('./patches');
 // The compositor decides floating when the window first maps (its first
 // frame), shortly after show().
 const LOCK_MS = 1500;
+
+// floatsFixedSize reports whether the compositor floats a window that maps
+// with its size pinned: Hyprland and sway.
+function floatsFixedSize(env = process.env) {
+  if (env.HYPRLAND_INSTANCE_SIGNATURE || env.SWAYSOCK) return true;
+  return (env.XDG_CURRENT_DESKTOP || '').split(':').some((d) => /^(hyprland|sway)$/i.test(d));
+}
 
 // withPatchedPreload points a window or view at the patched copy of the
 // client's preload (see patches.js).
@@ -41,7 +52,7 @@ class BrowserWindow extends electron.BrowserWindow {
     super(withPatchedPreload(options));
     // The client marks its main window through the preload arguments.
     const args = options.webPreferences?.additionalArguments || [];
-    if (!args.includes('isMainWindow=true') && this.isResizable()) {
+    if (!args.includes('isMainWindow=true') && floatsFixedSize() && this.isResizable()) {
       this.#lockUntilMapped();
       // A window shown again after being hidden maps a new toplevel, which
       // the compositor places afresh.
@@ -91,4 +102,4 @@ const clientElectron = new Proxy(electron, {
   },
 });
 
-module.exports = { clientElectron };
+module.exports = { clientElectron, floatsFixedSize };
