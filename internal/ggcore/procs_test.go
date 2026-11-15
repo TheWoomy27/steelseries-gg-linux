@@ -177,3 +177,27 @@ func TestWindowGame(t *testing.T) {
 		t.Errorf("without the window: %v, want the playing game kept", front)
 	}
 }
+
+// Only paths that can be in an install folder are looked up on disk: a
+// lookup on a network mount that stopped answering hangs.
+func TestMayHold(t *testing.T) {
+	w := newProcWorld(t)
+	ix := newGameIndex(w.games)
+	for _, c := range []struct {
+		path string
+		fold bool
+		want bool
+	}{
+		{w.wow.Directory + "/Wow.exe", false, true},
+		{strings.Replace(w.wow.Directory, "/home/u/", "/var/home/u/", 1) + "/Wow.exe", false, true}, // the link resolved
+		{strings.ToUpper(w.wow.Directory) + "/WOW.EXE", true, true},                                 // a Windows path, any case
+		{strings.ToUpper(w.wow.Directory) + "/WOW.EXE", false, false},
+		{w.wow.Directory + "x/Wow.exe", false, false}, // a sibling folder
+		{"/net/server/share/game.exe", false, false},
+		{"/usr/bin/bash", false, false},
+	} {
+		if got := ix.mayHold(c.path, c.fold); got != c.want {
+			t.Errorf("mayHold(%q, %v) = %v, want %v", c.path, c.fold, got, c.want)
+		}
+	}
+}

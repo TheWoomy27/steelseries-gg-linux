@@ -41,6 +41,10 @@ type gameIndex struct {
 	games []ScannedGame
 	byApp map[string]ScannedGame
 	byDir map[fileID]ScannedGame
+	// roots are the install folders as text, in each form a path to them
+	// can take (/home and /var/home): only paths under one are looked up,
+	// as a lookup can hang on a network mount that stopped answering.
+	roots []string
 }
 
 func newGameIndex(games []ScannedGame) *gameIndex {
@@ -57,9 +61,45 @@ func newGameIndex(games []ScannedGame) *gameIndex {
 		}
 		if id, ok := idOf(d); ok {
 			ix.byDir[id] = g
+			ix.roots = append(ix.roots, pathForms(d)...)
 		}
 	}
 	return ix
+}
+
+// pathForms is a folder as text in each form a path to it can take: as
+// given, with links resolved, and /home and /var/home for each other
+// (Fedora Atomic links one to the other; in a distrobox they are separate
+// mounts of the same folder).
+func pathForms(dir string) []string {
+	forms := []string{dir}
+	if r, err := filepath.EvalSymlinks(dir); err == nil {
+		forms = append(forms, r)
+	}
+	for _, f := range forms[:len(forms):len(forms)] {
+		if rest, ok := strings.CutPrefix(f, "/var/home/"); ok {
+			forms = append(forms, "/home/"+rest)
+		} else if rest, ok := strings.CutPrefix(f, "/home/"); ok {
+			forms = append(forms, "/var/home/"+rest)
+		}
+	}
+	return forms
+}
+
+// mayHold reports whether path can be in an install folder, by its text
+// alone (fold: ignoring case, for a Windows path not yet looked up).
+func (ix *gameIndex) mayHold(path string, fold bool) bool {
+	path = filepath.Clean(path)
+	for _, r := range ix.roots {
+		if fold {
+			if len(path) >= len(r) && strings.EqualFold(path[:len(r)], r) && (len(path) == len(r) || path[len(r)] == '/') {
+				return true
+			}
+		} else if path == r || strings.HasPrefix(path, r+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 func readProc(pid, name string) []byte {
@@ -91,13 +131,13 @@ func (ix *gameIndex) procGames(pid string) []ScannedGame {
 				found[g.ID] = g
 			}
 		}
-		for _, p := range procPaths(cmd, env) {
+		for _, p := range procPaths(cmd, env, ix.mayHold) {
 			if g, ok := ix.underGame(p); ok {
 				found[g.ID] = g
 			}
 		}
 	}
-	if exe, err := os.Readlink(filepath.Join(procRoot, pid, "exe")); err == nil {
+	if exe, err := os.Readlink(filepath.Join(procRoot, pid, "exe")); err == nil && ix.mayHold(exe, false) {
 		if g, ok := ix.underGame(exe); ok {
 			found[g.ID] = g
 		}
@@ -113,13 +153,16 @@ func (ix *gameIndex) procGames(pid string) []ScannedGame {
 // procPaths are the file paths in a command line: absolute ones as they
 // are, and Windows ones (Wine names its processes by the .exe's Windows
 // path, "C:\Program Files (x86)\World of Warcraft\_retail_\Wow.exe") in
-// the process's Wine prefix.
-func procPaths(cmdline, environ []byte) []string {
+// the process's Wine prefix. Only those keep says may be wanted are
+// returned (and looked up on disk).
+func procPaths(cmdline, environ []byte, keep func(path string, fold bool) bool) []string {
 	var out []string
 	for _, a := range strings.Split(strings.TrimRight(string(cmdline), "\x00"), "\x00") {
 		switch {
 		case strings.HasPrefix(a, "/"):
-			out = append(out, a)
+			if keep(a, false) {
+				out = append(out, a)
+			}
 		case isWindowsPath(a):
 			prefix := envOf(environ, "WINEPREFIX")
 			if prefix == "" {
@@ -127,8 +170,18 @@ func procPaths(cmdline, environ []byte) []string {
 					prefix = filepath.Join(h, ".wine")
 				}
 			}
-			if prefix != "" {
-				out = append(out, foldPath(filepath.Join(prefix, "dosdevices", strings.ToLower(a[:2]), strings.ReplaceAll(a[3:], `\`, "/"))))
+			if prefix == "" {
+				continue
+			}
+			// The drive is a link into the prefix (drive_c) or anywhere
+			// (z: is /), so it is followed before the text is compared.
+			drive := filepath.Join(prefix, "dosdevices", strings.ToLower(a[:2]))
+			if real, err := filepath.EvalSymlinks(drive); err == nil {
+				drive = real
+			}
+			p := filepath.Join(drive, strings.ReplaceAll(a[3:], `\`, "/"))
+			if keep(p, true) {
+				out = append(out, foldPath(p))
 			}
 		}
 	}
