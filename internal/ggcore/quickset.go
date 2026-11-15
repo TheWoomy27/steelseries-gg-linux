@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"ggl/internal/httpx"
+	"ggl/internal/kwinfocus"
 )
 
 // QuickSet, GG's game profiles, as the GG core's loadouts service runs it:
@@ -29,8 +30,9 @@ import (
 //   - Changing a configuration outside QuickSet (picking a Sonar preset, a
 //     device configuration) changes the active profile's.
 //
-// Windows GG follows the foreground window; Wayland has no portable way to
-// know it, so a running game counts as in front.
+// Windows GG follows the foreground window. Wayland has no portable way to
+// know it; on KDE a KWin script reports it (internal/kwinfocus), elsewhere
+// a running game counts as in front.
 
 // CachedPreset is an app's preset with the games it suits.
 type CachedPreset struct {
@@ -278,17 +280,30 @@ func (c *Core) loadoutForGame(g ScannedGame) string {
 	return id
 }
 
-// watchGames polls running games and switches profiles: a running game's
-// profile, Default once no game runs. A profile deployed by hand stays
-// until a game starts or stops.
+// watchGames polls running games and switches profiles: the profile of
+// the game in front, Default when no game is. Where the window in front is
+// known (KDE, see FollowForeground) that is the game whose window it is;
+// elsewhere a running game counts as in front. A profile deployed by hand
+// stays until the game in front changes.
 func (c *Core) watchGames(ctx context.Context) {
 	t := time.NewTicker(3 * time.Second)
 	defer t.Stop()
+	// Switching windows quickly (alt-tab through a few) deploys only the
+	// profile of the one the user stays on.
+	settle := time.NewTimer(time.Hour)
+	settle.Stop()
+	c.mu.Lock()
+	fg := c.fg
+	c.mu.Unlock()
 	current := "" // the game whose profile is deployed
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-fg.Changed():
+			settle.Reset(500 * time.Millisecond)
+			continue
+		case <-settle.C:
 		case <-t.C:
 		}
 		quickset := c.loadLoadouts().ProfilesEnabled && c.Setting("autoDeployLoadouts") != false
@@ -297,34 +312,67 @@ func (c *Core) watchGames(ctx context.Context) {
 			c.setPlaying(nil)
 			continue
 		}
-		running := runningGames(c.cachedGames())
+		ix := newGameIndex(c.cachedGames())
+		running := ix.running()
 		sort.Slice(running, func(i, j int) bool { return running[i].UniqueIdentifier < running[j].UniqueIdentifier })
+		w, known := fg.Window()
+		front, keep := frontGame(w, known, ix, running, current)
+		if front != nil && !slices.ContainsFunc(running, func(g ScannedGame) bool { return g.ID == front.ID }) {
+			running = append(running, *front)
+		}
 		c.setPlaying(running)
 		if !quickset {
 			current = ""
 			continue
 		}
 		uid := ""
-		if i := slices.IndexFunc(running, func(g ScannedGame) bool { return g.UniqueIdentifier == current }); i >= 0 {
-			continue // still playing
-		} else if len(running) > 0 {
-			uid = running[0].UniqueIdentifier
+		if front != nil {
+			uid = front.UniqueIdentifier
 		}
-		if uid == current {
+		if keep || uid == current {
 			continue
 		}
 		switch {
-		case uid != "":
-			if id := c.loadoutForGame(running[0]); id != "" {
-				slog.Info("quickset: game started", "game", running[0].Name)
+		case front != nil:
+			if id := c.loadoutForGame(*front); id != "" {
+				slog.Info("quickset: game in front", "game", front.Name)
 				c.DeployLoadout(id, false)
 			}
 		default:
-			slog.Info("quickset: game stopped, back to Default")
+			slog.Info("quickset: no game in front, back to Default")
 			c.DeployLoadout(defaultLoadoutID, false)
 		}
 		current = uid
 	}
+}
+
+// frontGame is the game in front, nil for none, given the window in front
+// when it is known; keep says to leave the deployed profile as it is.
+func frontGame(w kwinfocus.Window, known bool, ix *gameIndex, running []ScannedGame, current string) (front *ScannedGame, keep bool) {
+	if known {
+		if g, ok := ix.windowGame(w); ok {
+			return &g, false
+		}
+		// GG's own windows (its overlays over a game, editing the
+		// game's profile) leave the profile alone.
+		return nil, isGGWindow(w)
+	}
+	if i := slices.IndexFunc(running, func(g ScannedGame) bool { return g.UniqueIdentifier == current }); i >= 0 {
+		return &running[i], false // still playing
+	}
+	if len(running) > 0 {
+		return &running[0], false
+	}
+	return nil, false
+}
+
+// FollowForeground has QuickSet follow the window in front as fg reports
+// it, instead of counting any running game as in front. Call it before
+// Run.
+func (c *Core) FollowForeground(fg *kwinfocus.Tracker) {
+	c.mu.Lock()
+	c.fg = fg
+	c.mu.Unlock()
 }
 
 func (c *Core) quicksetRoutes() {

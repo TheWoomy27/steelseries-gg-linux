@@ -244,12 +244,14 @@ made-up picture.
 
 ### QuickSet
 
-A game profile is deployed while its game runs (Steam games by app id,
-others by install folder) and Default comes back when it exits. Device
-configurations and the Sonar Game preset follow the profile, and a game
-with a Sonar preset gets a profile made from it. Profiles are off until
-you turn them on in QuickSet. Wayland has no portable way to tell which
-window is in front, so a running game counts as in front. The profile
+A game profile is deployed while its game is in front (Steam games by
+app id, others by install folder, Wine and Proton ones too) and Default
+comes back when it is not. Device configurations and the Sonar Game
+preset follow the profile, and a game with a Sonar preset gets a profile
+made from it. Profiles are off until you turn them on in QuickSet. On KDE
+Plasma ggd learns which window is in front from a small KWin script it
+loads while it runs; Wayland has no portable way to tell elsewhere, so
+there a running game counts as in front. The profile
 shortcuts (QuickSet's settings) are bound while profiles are on; see
 [Global shortcuts](#global-shortcuts).
 

@@ -26,6 +26,7 @@ import (
 	"ggl/internal/engine"
 	"ggl/internal/ggcore"
 	"ggl/internal/httpx"
+	"ggl/internal/kwinfocus"
 	"ggl/internal/notify"
 	"ggl/internal/paths"
 	"ggl/internal/prism"
@@ -196,6 +197,15 @@ func run(verbose bool) error {
 		go (&wineprefix.Keeper{Home: home, Props: gs}).Run(ctx)
 	}
 
+	// On KDE, QuickSet follows the window in front through a KWin script;
+	// elsewhere a running game counts as in front.
+	fg, err := kwinfocus.Start()
+	if err != nil {
+		slog.Info("QuickSet counts running games as in front", "reason", err)
+	} else {
+		core.FollowForeground(fg)
+	}
+
 	go core.Run(ctx)
 	go eng.Run(ctx)
 	if os.Getenv("GG_LINUX_NO_TRAY") == "" {
@@ -203,6 +213,7 @@ func run(verbose bool) error {
 	}
 	<-ctx.Done()
 	slog.Info("ggd shutting down")
+	fg.Close()
 	snr.Stop()
 	mom.Stop()
 	ps.Wait()

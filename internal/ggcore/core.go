@@ -14,6 +14,7 @@ import (
 	"ggl/internal/events"
 	"ggl/internal/httpx"
 	"ggl/internal/inputrec"
+	"ggl/internal/kwinfocus"
 	"ggl/internal/paths"
 	"ggl/internal/store"
 )
@@ -40,6 +41,7 @@ type Core struct {
 	shortcuts    shortcutStore
 	notify       func(tag, summary, body string) // shows a desktop notification
 	recorder     inputrec.Recorder
+	fg           *kwinfocus.Tracker // the window in front, where known
 }
 
 // OnSubAppToggle registers the in-process service behind a sub-app so it

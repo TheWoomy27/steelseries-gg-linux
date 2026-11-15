@@ -1,7 +1,6 @@
 package ggcore
 
 import (
-	"bytes"
 	"database/sql"
 	"encoding/json"
 	"net/http"
@@ -277,49 +276,6 @@ func (c *Core) gameRoutes() {
 		c.scanGames()
 		httpx.JSON(w, map[string]any{"id": id})
 	})
-}
-
-// runningGames matches /proc entries against the library: Steam games by
-// the SteamAppId environment variable, others by install directory.
-func runningGames(games []ScannedGame) []ScannedGame {
-	byApp := map[string]ScannedGame{}
-	for _, g := range games {
-		if g.steamAppID != "" {
-			byApp[g.steamAppID] = g
-		}
-	}
-	procs, _ := os.ReadDir("/proc")
-	found := map[string]ScannedGame{}
-	for _, p := range procs {
-		if p.Name()[0] < '0' || p.Name()[0] > '9' {
-			continue
-		}
-		dir := filepath.Join("/proc", p.Name())
-		if env, err := os.ReadFile(filepath.Join(dir, "environ")); err == nil {
-			for _, kv := range bytes.Split(env, []byte{0}) {
-				if bytes.HasPrefix(kv, []byte("SteamAppId=")) {
-					if g, ok := byApp[string(kv[len("SteamAppId="):])]; ok {
-						found[g.ID] = g
-					}
-				}
-			}
-		}
-		cmd, err := os.ReadFile(filepath.Join(dir, "cmdline"))
-		if err != nil || len(cmd) == 0 {
-			continue
-		}
-		line := string(bytes.ReplaceAll(cmd, []byte{0}, []byte{' '}))
-		for _, g := range games {
-			if g.Directory != "" && len(g.Directory) > 8 && strings.Contains(line, g.Directory) {
-				found[g.ID] = g
-			}
-		}
-	}
-	out := make([]ScannedGame, 0, len(found))
-	for _, g := range found {
-		out = append(out, g)
-	}
-	return out
 }
 
 // gameWatcher is a service that follows the game being played (Moments
