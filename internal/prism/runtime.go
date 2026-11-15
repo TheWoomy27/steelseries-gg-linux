@@ -94,13 +94,16 @@ func renderZones(c *ConfigData, devs []*device, t int64) map[string]Color {
 	if usesReflect(&c.Base) {
 		rf = &reflectFrame{scr: previewScreen(), colours: map[rect]Color{}}
 	}
-	return renderZonesAsleep(c, devs, t, false, av, rf)
+	colors, _ := renderZonesAsleep(c, devs, t, false, av, rf)
+	return colors
 }
 
-// renderZonesAsleep renders, dimmed as each configuration says when the
-// monitors are asleep; Audio Visualizer zones show av, Reflect zones rf.
-func renderZonesAsleep(c *ConfigData, devs []*device, t int64, asleep bool, av *avFrame, rf *reflectFrame) map[string]Color {
+// renderZonesAsleep renders the zones, and when the monitors are asleep
+// gives the dimming each configuration asks for, by zone (applyDims
+// applies it); Audio Visualizer zones show av, Reflect zones rf.
+func renderZonesAsleep(c *ConfigData, devs []*device, t int64, asleep bool, av *avFrame, rf *reflectFrame) (map[string]Color, map[string]int) {
 	out := make(map[string]Color, 128)
+	var dims map[string]int
 	ready := map[*Single]*compiled{}
 	for _, d := range devs {
 		for i := range d.Zones {
@@ -127,12 +130,26 @@ func renderZonesAsleep(c *ConfigData, devs []*device, t int64, asleep bool, av *
 				col = r.color(z.pos(), t)
 			}
 			if asleep && r.dim > 0 {
-				col = scale(col, 255-r.dim)
+				if dims == nil {
+					dims = map[string]int{}
+				}
+				dims[z.UniqueID] = r.dim
 			}
 			out[z.UniqueID] = col
 		}
 	}
-	return out
+	return out, dims
+}
+
+// applyDims dims each zone by its configuration's dimming while the
+// monitors sleep. It comes last, after key presses and GameSense are
+// drawn: those would otherwise keep their keys lit.
+func applyDims(colors map[string]Color, dims map[string]int) {
+	for id, dim := range dims {
+		if c, ok := colors[id]; ok {
+			colors[id] = scale(c, 255-dim)
+		}
+	}
 }
 
 // waveOrigin is where a configuration's foundation wave starts: its fixed
@@ -274,9 +291,10 @@ func (s *Service) renderLoop(ctx context.Context) {
 		} else {
 			s.screen.need(false)
 		}
-		colors := renderZonesAsleep(&layer, active, time.Since(started).Milliseconds(), asleep, av, rf)
+		colors, dims := renderZonesAsleep(&layer, active, time.Since(started).Milliseconds(), asleep, av, rf)
 		s.react(colors, active)
 		drawGameSense(gs, colors, active)
+		applyDims(colors, dims)
 		s.writeFrames(writers, active, colors, name)
 		s.dropGone(writers, present)
 	}

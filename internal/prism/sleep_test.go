@@ -62,18 +62,45 @@ func TestPickSleepWatcher(t *testing.T) {
 	}
 }
 
+// rendered renders the zones as the render loop does, dimmed last.
+func rendered(c *ConfigData, devs []*device, asleep bool) map[string]Color {
+	colors, dims := renderZonesAsleep(c, devs, 0, asleep, nil, nil)
+	applyDims(colors, dims)
+	return colors
+}
+
+// Keys a press or a game lights are dimmed too: they are drawn over the
+// configuration's colours, before the dimming.
+func TestDimCoversDrawnKeys(t *testing.T) {
+	fe := &fakeEngine{devs: testDevices(), frames: map[int][]devicert.PrismWrite{}}
+	devs := []*device{newDevice(fe.devs[0], nil, false)}
+	c := parseConfig(colorShift)
+	layer := ConfigData{Base: c.Base}
+	layer.Base.GlobalConfig.DimFactorOnMonitorSleep = 255
+	colors, dims := renderZonesAsleep(&layer, devs, 0, true, nil, nil)
+	for id := range colors {
+		colors[id] = Color{255, 0, 0} // a game's health bar, say
+	}
+	applyDims(colors, dims)
+	for id, col := range colors {
+		if col != (Color{}) {
+			t.Errorf("zone %s lit %v while the monitors sleep", id, col)
+		}
+	}
+}
+
 func TestDimWhileAsleep(t *testing.T) {
 	fe := &fakeEngine{devs: testDevices(), frames: map[int][]devicert.PrismWrite{}}
 	devs := []*device{newDevice(fe.devs[0], nil, false)}
 	c := parseConfig(colorShift)
 	layer := ConfigData{Base: c.Base}
-	awake := renderZonesAsleep(&layer, devs, 0, false, nil, nil)
+	awake := rendered(&layer, devs, false)
 
 	// Without a dim factor, sleeping monitors change nothing.
 	if usesDimming(&layer.Base) {
 		t.Fatal("no dim factor, yet dimming")
 	}
-	same := renderZonesAsleep(&layer, devs, 0, true, nil, nil)
+	same := rendered(&layer, devs, true)
 	for id, col := range awake {
 		if same[id] != col {
 			t.Errorf("zone %s: %v asleep, %v awake", id, same[id], col)
@@ -85,7 +112,7 @@ func TestDimWhileAsleep(t *testing.T) {
 		t.Fatal("dim factor set, yet not dimming")
 	}
 	lit := false
-	for id, col := range renderZonesAsleep(&layer, devs, 0, true, nil, nil) {
+	for id, col := range rendered(&layer, devs, true) {
 		if col != (Color{}) {
 			t.Errorf("zone %s lit %v while the monitors sleep", id, col)
 		}
@@ -232,7 +259,7 @@ func TestDimmingKeepsEachZonesEffect(t *testing.T) {
 	if !usesDimming(&c.Data.Base) {
 		t.Error("the layer does not dim")
 	}
-	for id, col := range renderZonesAsleep(&ConfigData{Base: c.Data.Base}, devs, 1000, true, nil, nil) {
+	for id, col := range rendered(&ConfigData{Base: c.Data.Base}, devs, true) {
 		if col != (Color{}) {
 			t.Errorf("zone %s lit %v while the monitors sleep", id, col)
 		}
