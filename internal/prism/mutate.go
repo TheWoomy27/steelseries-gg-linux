@@ -102,6 +102,11 @@ func (u *update) apply(s *Single) {
 	}
 	if u.UniqueEffectType != nil {
 		s.UniqueEffectType = *u.UniqueEffectType
+	} else if u.Metadata != nil {
+		// A new effect without a unique effect (Solid Color, Breathe...)
+		// ends the old one: GG omits the field instead of sending 0.
+		s.UniqueEffectType = 0
+		s.UniqueEffectData = json.RawMessage(`{}`)
 	}
 	if len(u.UniqueEffectData) > 0 {
 		s.UniqueEffectData = u.UniqueEffectData
