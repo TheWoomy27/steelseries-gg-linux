@@ -1,13 +1,12 @@
 package notify
 
 import (
-	"bufio"
-	"os/exec"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/godbus/dbus/v5"
+
+	"ggl/internal/dbustest"
 )
 
 type server struct{ got chan []any }
@@ -20,22 +19,10 @@ func (s server) Notify(app string, replaces uint32, icon, summary, body string, 
 // TestSend delivers notifications to a fake notification service on a
 // private session bus.
 func TestSend(t *testing.T) {
-	daemon := exec.Command("dbus-daemon", "--session", "--nofork", "--print-address=1")
-	out, err := daemon.StdoutPipe()
-	if err == nil {
-		err = daemon.Start()
-	}
-	if err != nil {
-		t.Skip("dbus-daemon:", err)
-	}
-	t.Cleanup(func() { daemon.Process.Kill(); daemon.Wait() })
-	addr, err := bufio.NewReader(out).ReadString('\n')
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("DBUS_SESSION_BUS_ADDRESS", strings.TrimSpace(addr))
+	addr := dbustest.Bus(t)
+	t.Setenv("DBUS_SESSION_BUS_ADDRESS", addr)
 
-	srv, err := dbus.Connect(strings.TrimSpace(addr))
+	srv, err := dbus.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
