@@ -57,6 +57,17 @@ const PATCHES = [
   },
   {
     file: 'render',
+    marker: 'SET_DIM_FACTOR_ON_MONITOR_SLEEP',
+    name: 'monitor sleep dimming: note the dropdown changed',
+    // The deploy saga below runs for every edit in the lighting palette;
+    // the dimming alone is sent for zones with different effects only when
+    // the "When Monitor Sleeps" dropdown changed it (its action creator
+    // notes that), so another edit doesn't overwrite zones' own dimming.
+    find: /const ([\w$]+)="SET_DIM_FACTOR_ON_MONITOR_SLEEP";function ([\w$]+)\(e\)\{return\{type:\1,dimFactor:e\}\}/,
+    replace: 'const $1="SET_DIM_FACTOR_ON_MONITOR_SLEEP";function $2(e){return globalThis.ggLinuxDimSet=!0,{type:$1,dimFactor:e}}',
+  },
+  {
+    file: 'render',
     marker: 'No zones selected, skipping deployment',
     name: 'monitor sleep dimming for zones with different effects',
     // Prism's "When Monitor Sleeps" is saved with an effect: the deploy
@@ -73,12 +84,16 @@ const PATCHES = [
         console.warn('[gg-linux] patch "monitor sleep dimming" found no update function; continuing unpatched');
         return all;
       }
+      // The update function must be the saga's own (typeof, should a
+      // future bundle put it out of the saga's reach), and the dimming is
+      // sent only when the dropdown set it (see the patch above).
       return (
-        `${zones}.length>0&&1===${effects}.length?${deploy}:` +
-        `${zones}.length>0&&${effects}.length>1&&("ACTIVE"===${layer}||"IDLE"===${layer})?` +
+        `${zones}.length>0&&1===${effects}.length?(globalThis.ggLinuxDimSet=!1,${deploy}):` +
+        `${zones}.length>0&&${effects}.length>1&&("ACTIVE"===${layer}||"IDLE"===${layer})&&` +
+        `globalThis.ggLinuxDimSet&&"function"==typeof ${send[1]}?(globalThis.ggLinuxDimSet=!1,` +
         `yield ${send[1]}({layer:${layer},configData:{dimFactorOnMonitorSleep:${dim}},` +
         `selectionData:{deviceSelection:{mode:"crossDevice"},zoneSelection:{zoneIds:${zones},mode:"ids"}}})` +
-        `.catch((x)=>console.error("[gg-linux] monitor sleep dimming not saved",x)):${skip}`
+        `.catch((x)=>console.error("[gg-linux] monitor sleep dimming not saved",x))):${skip}`
       );
     },
   },

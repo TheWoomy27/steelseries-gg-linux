@@ -62,8 +62,21 @@ test('one effect selected deploys it as before', () => {
   assert.deepStrictEqual(puts[0].zoneIds, ['1']);
 });
 
-test('several effects selected send the dimming alone', () => {
+// The action creator the "When Monitor Sleeps" dropdown dispatches through,
+// as shipped (render/index.js).
+const ACTIONS = 'const K="SET_DIM_FACTOR_ON_MONITOR_SLEEP";function W(e){return{type:K,dimFactor:e}}';
+
+test('the dropdown\'s action creator notes the change', () => {
+  const out = patches.apply(ACTIONS, 'render/index.js');
+  const W = new Function(out + ';return W')();
+  globalThis.ggLinuxDimSet = false;
+  assert.deepStrictEqual(W(255), { type: 'SET_DIM_FACTOR_ON_MONITOR_SLEEP', dimFactor: 255 });
+  assert.strictEqual(globalThis.ggLinuxDimSet, true);
+});
+
+test('several effects selected send the dimming alone when the dropdown changed it', () => {
   const out = patches.apply(CHUNK, 'render/249.js');
+  globalThis.ggLinuxDimSet = true;
   const { sent } = run(out, { layer: 'ACTIVE', effects: ['SINGLE_COLOR', 'OFF'], zones: ['1', '2'], dim: 255 });
   assert.deepStrictEqual(sent, [
     {
@@ -72,8 +85,23 @@ test('several effects selected send the dimming alone', () => {
       selectionData: { deviceSelection: { mode: 'crossDevice' }, zoneSelection: { zoneIds: ['1', '2'], mode: 'ids' } },
     },
   ]);
+  // Once only, and another edit (a colour) sends nothing: the zones keep
+  // their own dimming.
+  assert.strictEqual(globalThis.ggLinuxDimSet, false);
+  assert.strictEqual(run(out, { layer: 'ACTIVE', effects: ['SINGLE_COLOR', 'OFF'], zones: ['1', '2'], dim: 255 }).sent.length, 0);
   // Unpatched, nothing is sent.
+  globalThis.ggLinuxDimSet = true;
   assert.strictEqual(run(CHUNK, { layer: 'ACTIVE', effects: ['SINGLE_COLOR', 'OFF'], zones: ['1', '2'], dim: 255 }).sent.length, 0);
+  globalThis.ggLinuxDimSet = false;
+});
+
+test('an update function out of the saga\'s reach is not called', () => {
+  // A bundle where the matched function is in another module: the saga
+  // must not throw (it would stop saving the editor's changes).
+  const out = patches.apply(CHUNK, 'render/249.js').replace(/^function So\(e\)\{.*?\}\}/, '');
+  globalThis.ggLinuxDimSet = true;
+  assert.doesNotThrow(() => run(out, { layer: 'ACTIVE', effects: ['SINGLE_COLOR', 'OFF'], zones: ['1', '2'], dim: 255 }));
+  globalThis.ggLinuxDimSet = false;
 });
 
 test('no zones or the reactive layer send nothing', () => {
@@ -82,9 +110,13 @@ test('no zones or the reactive layer send nothing', () => {
   assert.strictEqual(run(out, { layer: 'REACTIVE', effects: ['FADE', 'RIPPLE'], zones: ['1'], dim: 255 }).sent.length, 0);
 });
 
-test('render scripts load from a patched copy only when a patch changes them', () => {
+test('render scripts load from a patched copy only when a patch changes them', (t) => {
   const app = fs.mkdtempSync(path.join(os.tmpdir(), 'gg-app-'));
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gg-patched-'));
+  t.after(() => {
+    fs.rmSync(app, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
   fs.mkdirSync(path.join(app, 'render'));
   fs.writeFileSync(path.join(app, 'render', '249.js'), CHUNK);
   fs.writeFileSync(path.join(app, 'render', '542.js'), 'var x=1');
