@@ -13,6 +13,9 @@ type Store struct {
 	path string
 	mu   sync.Mutex
 	data map[string]json.RawMessage
+	// saving makes saves take turns: they share a temporary file, and a
+	// later save must not be overtaken by an earlier one's older copy.
+	saving sync.Mutex
 }
 
 func Open(path string) (*Store, error) {
@@ -60,6 +63,8 @@ func (s *Store) Delete(key string) error {
 }
 
 func (s *Store) flush() error {
+	s.saving.Lock()
+	defer s.saving.Unlock()
 	s.mu.Lock()
 	b, err := json.MarshalIndent(s.data, "", " ")
 	s.mu.Unlock()
