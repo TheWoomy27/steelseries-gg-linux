@@ -295,7 +295,7 @@ func (e *Engine) rewatchSoft() {
 			continue
 		}
 		for _, d := range l.decls() {
-			for _, node := range e.hid.Devices(uint16(d.ID & 0xffff)) {
+			for _, node := range e.hid.Devices(d.ID) {
 				desc := node.Desc
 				if len(desc.Keys) == 0 && len(desc.Buttons) == 0 && len(desc.Extra) == 0 {
 					continue

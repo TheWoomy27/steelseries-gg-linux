@@ -37,7 +37,7 @@ type Transport interface {
 
 // Target addresses a HID top-level collection on a device.
 type Target struct {
-	ProductID uint16
+	ProductID uint32 // vendor and product
 	UsagePage uint16
 	Usage     uint16
 	Interface int // -1 for any

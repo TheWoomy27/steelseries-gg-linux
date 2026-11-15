@@ -123,6 +123,11 @@ Wine and Proton prefixes, under
   on-device EQ. With Sonar on, GG's Auto-Flatten EQ banner reports a
   headset EQ that stacks on Sonar's and flattens it when you ask.
 - A wireless mouse plugged in by cable while its dongle is in.
+- Bluetooth, for the devices GG supports over it: the Aerox 3, 5 and 9
+  Wireless and the Apex Pro TKL and Mini Wireless keyboards. It needs the
+  current udev rule (run `setup.sh` again). Tested with a virtual device
+  only so far. The Arctis GameBuds have no Bluetooth support in GG, on
+  Windows either; they work through their dongle.
 - Mouse rotation on the mice where GG marks it "GG required" (Sensei and
   Rival Pro, Aerox 3 Wireless Gen 2): GG's Windows driver turns their
   motion, and on Linux ggd does, through a virtual copy of the mouse. It
@@ -332,6 +337,9 @@ your device and a report from `ggctl report` (see below).
 
   Turn it off again with `systemctl --user unset-environment GG_LINUX_DEBUG`
   and another restart.
+- **One device at a time:** `GG_LINUX_ONLY_DEVICES=1038:1852,0111:1854`
+  (vendor:product in hex, as `ggctl hid` lists them) makes ggd use only
+  those devices and leave the others alone.
 - ggd's log: `journalctl --user -u steelseries-ggd`, also in
   `~/.local/share/steelseries-gg/Logs/ggd.log`.
 - The client's log: `~/.local/share/steelseries-gg/Logs/client.log`.

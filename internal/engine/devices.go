@@ -125,8 +125,7 @@ func (e *Engine) liveByID(id int) *liveDevice {
 // onHotplug reconciles live devices with the hidraw nodes present.
 func (e *Engine) onHotplug(added, removed []hid.Info) {
 	present := e.hid.Products()
-	for pid := range present {
-		phys := uint32(hid.SteelSeriesVID)<<16 | uint32(pid)
+	for phys := range present {
 		if e.physicalConnected(phys) {
 			continue
 		}
@@ -138,7 +137,7 @@ func (e *Engine) onHotplug(added, removed []hid.Info) {
 	for id, l := range e.live {
 		l.mu.Lock()
 		for phys := range l.physical {
-			if _, ok := present[uint16(phys&0xffff)]; !ok {
+			if _, ok := present[phys]; !ok {
 				delete(l.physical, phys)
 				unplugged = append(unplugged, phys)
 			}

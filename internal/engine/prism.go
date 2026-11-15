@@ -252,7 +252,7 @@ func (e *Engine) rewatchPrismInput() {
 	var removers []func()
 	for _, l := range lives {
 		for _, d := range l.decls() {
-			for _, node := range e.hid.Devices(uint16(d.ID & 0xffff)) {
+			for _, node := range e.hid.Devices(d.ID) {
 				desc := node.Desc
 				mouseIDs := map[uint8]bool{}
 				for _, c := range desc.Collections {

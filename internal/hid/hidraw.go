@@ -22,12 +22,20 @@ import (
 	"unsafe"
 )
 
-const SteelSeriesVID = 0x1038
+// SteelSeries devices use vendor 0x1038 over USB and 0x0111 over
+// Bluetooth, where a product can keep its USB product number (the Aerox 5
+// Wireless is 1038:1854 by cable and 0111:1854 over Bluetooth).
+const (
+	SteelSeriesVID = 0x1038
+	BluetoothVID   = 0x0111
+	busBluetooth   = 0x0005
+)
 
 // Info describes one hidraw node.
 type Info struct {
 	Path      string // /dev/hidrawN
 	Sysfs     string
+	Bus       uint16 // 0x0003 USB, 0x0005 Bluetooth
 	VendorID  uint16
 	ProductID uint16
 	Interface int
@@ -39,6 +47,35 @@ type Info struct {
 	// kernel adds, so a node freed by an unplug and given to a device
 	// plugged in again has a different one.
 	instance string
+}
+
+// ID is the device's id as GG's device specs know it: vendor and product.
+func (i Info) ID() uint32 { return uint32(i.VendorID)<<16 | uint32(i.ProductID) }
+
+// SteelSeries reports whether a node is a SteelSeries device's.
+func (i Info) SteelSeries() bool {
+	return i.VendorID == SteelSeriesVID || i.VendorID == BluetoothVID && i.Bus == busBluetooth
+}
+
+// onlyDevices limits ggd to some devices (GG_LINUX_ONLY_DEVICES, a list of
+// vendor:product in hex, such as 1038:1852,0111:1854), for finding which
+// device causes a problem and for tests.
+var onlyDevices = parseOnly(os.Getenv("GG_LINUX_ONLY_DEVICES"))
+
+func parseOnly(s string) map[uint32]bool {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	out := map[uint32]bool{}
+	for _, f := range strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == ' ' }) {
+		v, p, ok := strings.Cut(f, ":")
+		vid, err1 := strconv.ParseUint(v, 16, 16)
+		pid, err2 := strconv.ParseUint(p, 16, 16)
+		if ok && err1 == nil && err2 == nil {
+			out[uint32(vid)<<16|uint32(pid)] = true
+		}
+	}
+	return out
 }
 
 // sysClassHidraw and devDir are where Enumerate finds hidraw nodes.
@@ -54,7 +91,7 @@ func Enumerate() ([]Info, error) {
 	for _, e := range entries {
 		sys := filepath.Join(sysClassHidraw, e.Name())
 		info, err := readInfo(sys)
-		if err != nil || info.VendorID != SteelSeriesVID {
+		if err != nil || !info.SteelSeries() || onlyDevices != nil && !onlyDevices[info.ID()] {
 			continue
 		}
 		info.Path = filepath.Join(devDir, e.Name())
@@ -76,9 +113,10 @@ func readInfo(sys string) (Info, error) {
 		case "HID_ID": // bus:vendor:product
 			parts := strings.Split(v, ":")
 			if len(parts) == 3 {
+				bus, _ := strconv.ParseUint(parts[0], 16, 32)
 				vid, _ := strconv.ParseUint(parts[1], 16, 32)
 				pid, _ := strconv.ParseUint(parts[2], 16, 32)
-				info.VendorID, info.ProductID = uint16(vid), uint16(pid)
+				info.Bus, info.VendorID, info.ProductID = uint16(bus), uint16(vid), uint16(pid)
 			}
 		case "HID_NAME":
 			info.Name = v

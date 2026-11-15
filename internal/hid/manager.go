@@ -67,14 +67,15 @@ func (m *Manager) Scan() {
 	}
 }
 
-// Find returns the open node exposing (page, usage) for a product id.
-// iface >= 0 additionally pins the USB interface number.
-func (m *Manager) Find(pid, page, usage uint16, iface int) *Device {
+// Find returns the open node exposing (page, usage) for a device id
+// (vendor and product). iface >= 0 additionally pins the USB interface
+// number.
+func (m *Manager) Find(id uint32, page, usage uint16, iface int) *Device {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var cands []*Device
 	for _, d := range m.devices {
-		if d.ProductID != pid {
+		if d.ID() != id {
 			continue
 		}
 		if iface >= 0 && d.Interface != iface {
@@ -91,26 +92,26 @@ func (m *Manager) Find(pid, page, usage uint16, iface int) *Device {
 	return cands[0]
 }
 
-// Devices lists the open nodes of a product.
-func (m *Manager) Devices(pid uint16) []*Device {
+// Devices lists the open nodes of a device id.
+func (m *Manager) Devices(id uint32) []*Device {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var out []*Device
 	for _, d := range m.devices {
-		if d.ProductID == pid {
+		if d.ID() == id {
 			out = append(out, d)
 		}
 	}
 	return out
 }
 
-// Products lists the product ids currently connected.
-func (m *Manager) Products() map[uint16][]Info {
+// Products lists the device ids (vendor and product) currently connected.
+func (m *Manager) Products() map[uint32][]Info {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	out := map[uint16][]Info{}
+	out := map[uint32][]Info{}
 	for _, d := range m.devices {
-		out[d.ProductID] = append(out[d.ProductID], d.Info)
+		out[d.ID()] = append(out[d.ID()], d.Info)
 	}
 	return out
 }

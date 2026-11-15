@@ -20,7 +20,7 @@ func NewTransport(m *hid.Manager) devicert.Transport { return hidTransport{m} }
 func (t hidTransport) find(tg devicert.Target) (*hid.Device, error) {
 	d := t.m.Find(tg.ProductID, tg.UsagePage, tg.Usage, tg.Interface)
 	if d == nil {
-		return nil, fmt.Errorf("device %04x (usage %04x:%04x) is not connected", tg.ProductID, tg.UsagePage, tg.Usage)
+		return nil, fmt.Errorf("device %08x (usage %04x:%04x) is not connected", tg.ProductID, tg.UsagePage, tg.Usage)
 	}
 	return d, nil
 }

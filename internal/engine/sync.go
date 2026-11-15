@@ -12,9 +12,9 @@ import (
 // Devices push battery, connection, chat mix and on-device setting changes
 // there; the spec turns them into device events and settings updates.
 func (e *Engine) listenSync(l *liveDevice, d *devicert.Decl) {
-	node := e.hid.Find(uint16(d.ID&0xffff), d.SyncUsagePage, d.SyncUsage, d.SyncNum)
+	node := e.hid.Find(d.ID, d.SyncUsagePage, d.SyncUsage, d.SyncNum)
 	if node == nil {
-		node = e.hid.Find(uint16(d.ID&0xffff), d.SyncUsagePage, d.SyncUsage, -1)
+		node = e.hid.Find(d.ID, d.SyncUsagePage, d.SyncUsage, -1)
 	}
 	if node == nil {
 		slog.Debug("sync interface not found", "spec", d.Name)

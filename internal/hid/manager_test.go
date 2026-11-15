@@ -80,7 +80,7 @@ func TestScanReopensReplugOnSameNode(t *testing.T) {
 	if len(log.added) != 1 || len(log.removed) != 0 {
 		t.Fatalf("first scan: added %d removed %d", len(log.added), len(log.removed))
 	}
-	old := m.Devices(0x1640)[0]
+	old := m.Devices(0x10381640)[0]
 
 	f.plug(t, "hidraw3", "0003:1038:1640.0009", 0x1640)
 	log = hotplugLog{}
@@ -88,7 +88,7 @@ func TestScanReopensReplugOnSameNode(t *testing.T) {
 	if len(log.removed) != 1 || len(log.added) != 1 {
 		t.Fatalf("replugged: added %d removed %d, want 1 and 1", len(log.added), len(log.removed))
 	}
-	devs := m.Devices(0x1640)
+	devs := m.Devices(0x10381640)
 	if len(devs) != 1 || devs[0] == old {
 		t.Fatalf("the dead node is still in use")
 	}
@@ -108,7 +108,7 @@ func TestScanClosesNodeTakenByAnotherProduct(t *testing.T) {
 	m := NewManager(log.record)
 	defer m.Close()
 	m.Scan()
-	old := m.Devices(0x1640)[0]
+	old := m.Devices(0x10381640)[0]
 
 	f.plug(t, "hidraw3", "0003:1038:170E.0005", 0x170e)
 	log = hotplugLog{}
@@ -124,8 +124,8 @@ func TestScanClosesNodeTakenByAnotherProduct(t *testing.T) {
 	default:
 		t.Errorf("the old node was left open")
 	}
-	if len(m.Devices(0x1640)) != 0 || len(m.Devices(0x170e)) != 1 {
-		t.Errorf("devices after the swap: 1640 %d, 170e %d", len(m.Devices(0x1640)), len(m.Devices(0x170e)))
+	if len(m.Devices(0x10381640)) != 0 || len(m.Devices(0x1038170e)) != 1 {
+		t.Errorf("devices after the swap: 1640 %d, 170e %d", len(m.Devices(0x10381640)), len(m.Devices(0x1038170e)))
 	}
 }
 
@@ -137,10 +137,10 @@ func TestScanKeepsUnchangedNode(t *testing.T) {
 	m := NewManager(log.record)
 	defer m.Close()
 	m.Scan()
-	old := m.Devices(0x1640)[0]
+	old := m.Devices(0x10381640)[0]
 	log = hotplugLog{}
 	m.Scan()
-	if len(log.added)+len(log.removed) != 0 || m.Devices(0x1640)[0] != old {
+	if len(log.added)+len(log.removed) != 0 || m.Devices(0x10381640)[0] != old {
 		t.Errorf("an unchanged node was reopened")
 	}
 }

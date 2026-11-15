@@ -94,11 +94,13 @@ func reportCommand(args []string) error {
 	section("SteelSeries input devices")
 	events, _ := filepath.Glob("/sys/class/input/event*")
 	for _, p := range events {
-		if strings.TrimSpace(readFile(p+"/device/id/vendor")) != "1038" {
+		vendor := strings.TrimSpace(readFile(p + "/device/id/vendor"))
+		bus := strings.TrimSpace(readFile(p + "/device/id/bustype"))
+		if vendor != "1038" && !(vendor == "0111" && bus == "0005") {
 			continue
 		}
 		node := "/dev/input/" + filepath.Base(p)
-		fmt.Fprintf(&b, "%-18s 1038:%s  %-10s %s\n", node, strings.TrimSpace(readFile(p+"/device/id/product")),
+		fmt.Fprintf(&b, "%-18s %s:%s  %-10s %s\n", node, vendor, strings.TrimSpace(readFile(p+"/device/id/product")),
 			access(node), strings.TrimSpace(readFile(p+"/device/name")))
 	}
 

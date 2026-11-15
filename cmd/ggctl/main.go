@@ -97,8 +97,7 @@ func run(cmd string, args []string) error {
 
 	switch cmd {
 	case "devices":
-		for pid := range mgr.Products() {
-			id := uint32(hid.SteelSeriesVID)<<16 | uint32(pid)
+		for id := range mgr.Products() {
 			if !rt.KnownDevice(id) {
 				fmt.Printf("%#x  (no specification)\n", id)
 				continue

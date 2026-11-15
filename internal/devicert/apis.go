@@ -288,7 +288,7 @@ func (d *Decl) sendChunk(kind, size int, data []byte, read bool, st *ioState) ([
 }
 
 func (d *Decl) target() Target {
-	return Target{ProductID: uint16(d.ID & 0xffff), UsagePage: d.UsagePage, Usage: d.Usage, Interface: d.InterfaceNum}
+	return Target{ProductID: d.ID, UsagePage: d.UsagePage, Usage: d.Usage, Interface: d.InterfaceNum}
 }
 
 func (d *Decl) apiEnv(api *Api, payload *golisp.Data) (*golisp.SymbolTableFrame, error) {
