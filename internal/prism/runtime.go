@@ -171,6 +171,7 @@ func (s *Service) renderLoop(ctx context.Context) {
 	tick := time.NewTicker(33 * time.Millisecond)
 	defer tick.Stop()
 	writers := map[int]*frameWriter{}
+	dimmed := false // the last frames were dimmed for sleeping monitors
 	defer func() {
 		for _, w := range writers {
 			w.stop()
@@ -248,6 +249,16 @@ func (s *Service) renderLoop(ctx context.Context) {
 		s.watchInput(usesInput(&cur.Data))
 		layer := ConfigData{Base: *s.layerFor(&cur.Data, lastInput)}
 		asleep := usesDimming(&layer.Base) && monitorsAsleep()
+		if asleep != dimmed {
+			// Says in the log what the devices were sent, so a light
+			// left on can be told apart from frames not sent.
+			if asleep {
+				slog.Info("prism: dimming the lighting while the monitors sleep", "config", cur.Name)
+			} else {
+				slog.Info("prism: lighting back to full", "config", cur.Name)
+			}
+			dimmed = asleep
+		}
 		var av *avFrame
 		if usesVisualizer(&layer.Base) {
 			scalar, output := s.visualizerSettings()

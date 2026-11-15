@@ -7,8 +7,11 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -244,4 +247,134 @@ func TestDimmingKeepsEachZonesEffect(t *testing.T) {
 	if n := len(c.Data.Base.DeviceConfigs); n != 0 || renderZones(&c.Data, devs, 0)[kb0] != (Color{9, 9, 9}) {
 		t.Errorf("new effect everywhere: %d overrides left", n)
 	}
+}
+
+// switchSleep is a sleep watcher a test flips while the render loop runs.
+type switchSleep struct{ on atomic.Bool }
+
+func (f *switchSleep) asleep() bool { return f.on.Load() }
+
+// framesEngine keeps the last frame each device was sent, for a running
+// render loop.
+type framesEngine struct {
+	fakeEngine
+	mu   sync.Mutex
+	last map[int][]byte
+}
+
+func (f *framesEngine) PrismWrite(id int, w []devicert.PrismWrite) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.last[id] = flatten(w)
+	return nil
+}
+
+// lit reports whether the last frame sent to device id lights anything
+// (the test devices' frames are zeros but for the zone colours).
+func (f *framesEngine) lit(id int) (sent, lit bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	b, ok := f.last[id]
+	if !ok {
+		return false, false
+	}
+	for _, x := range b {
+		if x != 0 {
+			return true, true
+		}
+	}
+	return true, false
+}
+
+// TestRenderLoopTurnsOffWhileMonitorsSleep runs the whole path: the
+// lighting editor saves "Lighting Disabled" for every zone the way the
+// patched client does (PUT /configs/base), a QuickSet profile switches
+// configurations, and the frames the devices get go dark while the
+// monitors sleep and light again when they wake.
+func TestRenderLoopTurnsOffWhileMonitorsSleep(t *testing.T) {
+	fe := &framesEngine{fakeEngine: fakeEngine{devs: testDevices()}, last: map[int][]byte{}}
+	mig := ""
+	if _, err := os.Stat(paths.PrismDBMig()); err == nil {
+		mig = paths.PrismDBMig()
+	}
+	s, err := New(t.TempDir()+"/prism.db", mig, fe, func(string, any) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mig == "" {
+		// Without GG's migrations, the tables the lighting path reads.
+		for _, q := range []string{
+			`CREATE TABLE configs (id TEXT PRIMARY KEY, is_deleted INTEGER NOT NULL DEFAULT 0, is_hidden_immutable INTEGER NOT NULL DEFAULT 0,
+				is_current INTEGER NOT NULL DEFAULT 0, is_last_manually_deployed INTEGER NOT NULL DEFAULT 0, name TEXT, config_json TEXT,
+				schema INTEGER, is_per_device INTEGER NOT NULL DEFAULT 0)`,
+			`CREATE TABLE device_cache (device_id INTEGER PRIMARY KEY, has_bitmap_coordinates INTEGER, device_type INTEGER, name TEXT,
+				full_name TEXT, region TEXT, enabled INTEGER, first_connection INTEGER)`,
+			`CREATE TABLE device_coordinate_adjustments (device_id INTEGER PRIMARY KEY, x_adjustment INTEGER, y_adjustment INTEGER)`,
+			`CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)`,
+		} {
+			if _, err := s.db.Exec(q); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	s.db.Exec(`UPDATE configs SET is_current = 0`)
+	b, _ := json.Marshal(parseConfig(colorShift))
+	s.db.Exec(`INSERT INTO configs (id, name, config_json, schema, is_current) VALUES ('c1', 'Wow', ?, 1, 1)`, string(b))
+	s.db.Exec(`INSERT INTO configs (id, name, config_json, schema, is_current) VALUES ('c2', 'Main', ?, 1, 0)`, string(b))
+	sleep := &switchSleep{}
+	useSleepWatcher(t, sleep)
+	ctx, cancel := context.WithCancel(context.Background())
+	go s.Run(ctx)
+	t.Cleanup(func() { cancel(); s.Wait() })
+	srv := httptest.NewServer(s.Handler())
+	t.Cleanup(srv.Close)
+	put := func(path, body string) {
+		t.Helper()
+		req, _ := http.NewRequest(http.MethodPut, srv.URL+path, strings.NewReader(body))
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("PUT %s: %d", path, resp.StatusCode)
+		}
+	}
+	wait := func(what string, want bool) {
+		t.Helper()
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			ok := true
+			for _, d := range fe.devs {
+				if sent, lit := fe.lit(d.ID); !sent || lit != want {
+					ok = false
+				}
+			}
+			if ok {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Fatalf("%s: devices not %v", what, map[bool]string{true: "lit", false: "dark"}[want])
+	}
+	wait("awake", true)
+
+	// QuickSet: to Main and back, as Ctrl+[ / Ctrl+] do.
+	put("/configs/current/c2", "{}")
+	put("/configs/current/c1", "{}")
+	var zones []string
+	for _, d := range s.connected() {
+		for _, z := range d.Zones {
+			zones = append(zones, z.UniqueID)
+		}
+	}
+	ids, _ := json.Marshal(zones)
+	put("/configs/base", `{"configurationUpdateData":{"dimFactorOnMonitorSleep":255},`+
+		`"selectionInfo":{"deviceSelection":{"mode":"crossDevice"},"zoneSelection":{"zoneIds":`+string(ids)+`,"mode":"ids"}}}`)
+	wait("saved, monitors awake", true)
+
+	sleep.on.Store(true)
+	wait("monitors asleep", false)
+	sleep.on.Store(false)
+	wait("monitors awake again", true)
 }
