@@ -3,8 +3,11 @@ package prism
 import (
 	"context"
 	"encoding/binary"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net"
+	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -12,6 +15,7 @@ import (
 	"time"
 
 	"ggl/internal/devicert"
+	"ggl/internal/paths"
 )
 
 type fakeSleep struct{ on bool }
@@ -158,5 +162,86 @@ func TestKWinSleepReconnectsThenGivesUpWithoutDPMS(t *testing.T) {
 	}
 	if k.asleep() {
 		t.Error("asleep without being told")
+	}
+}
+
+// TestDimmingKeepsEachZonesEffect is "When Monitor Sleeps" changed with
+// zones selected that show different effects: the client then sends the
+// dimming alone (see client/linux/patches.js), which every selected zone
+// takes while keeping its own effect.
+func TestDimmingKeepsEachZonesEffect(t *testing.T) {
+	fe := &fakeEngine{devs: testDevices(), frames: map[int][]devicert.PrismWrite{}}
+	mig := ""
+	if _, err := os.Stat(paths.PrismDBMig()); err == nil {
+		mig = paths.PrismDBMig()
+	}
+	s, err := New(t.TempDir()+"/prism.db", mig, fe, func(string, any) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.refreshDevices()
+	devs := s.connected()
+	c := &configRow{ID: "c1", Name: "Test", Data: parseConfig(colorShift)}
+	s.db.Exec(`INSERT INTO configs (id, name, config_json, schema, is_current) VALUES ('c1', 'Test', '{}', 1, 1)`)
+	kb0, kb1, mic := devs[0].Zones[0].UniqueID, devs[0].Zones[1].UniqueID, devs[1].Zones[0].UniqueID
+	green := Color{0, 255, 0}
+	put := func(body string) {
+		t.Helper()
+		ups, err := parseUpdates([]byte(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.applyUpdates(c, modeBase, ups, parseSelection([]byte(body)))
+	}
+	sel := func(ids ...string) string {
+		b, _ := json.Marshal(ids)
+		return `"selectionInfo":{"deviceSelection":{"mode":"crossDevice"},"zoneSelection":{"zoneIds":` + string(b) + `,"mode":"ids"}}`
+	}
+	// One key green, the rest the colour shift: two effects.
+	put(`{"configurationUpdateData":{"defaultColor":{"red":0,"green":255,"blue":0},"metadata":{"effectType":"SINGLE_COLOR"},"dimFactorOnMonitorSleep":0},` + sel(kb0) + `}`)
+	shift := renderZones(&c.Data, devs, 1000)[kb1]
+	if shift == green {
+		t.Fatal("setup: the colour spread")
+	}
+	dims := func() map[string]int {
+		out := map[string]int{}
+		for _, d := range devs {
+			for i := range d.Zones {
+				out[d.Zones[i].UniqueID] = int(c.Data.Base.resolve(d, &d.Zones[i]).DimFactorOnMonitorSleep)
+			}
+		}
+		return out
+	}
+	check := func(what string, want map[string]int) {
+		t.Helper()
+		got := renderZones(&c.Data, devs, 1000)
+		if got[kb0] != green || got[kb1] != shift {
+			t.Errorf("%s: effects changed: key 0 %v (want %v), key 1 %v (want %v)", what, got[kb0], green, got[kb1], shift)
+		}
+		if d := dims(); fmt.Sprint(d) != fmt.Sprint(want) {
+			t.Errorf("%s: dim factors %v, want %v", what, d, want)
+		}
+	}
+
+	// "Lighting Disabled" with every zone selected.
+	put(`{"configurationUpdateData":{"dimFactorOnMonitorSleep":255},` + sel(kb0, kb1, mic) + `}`)
+	check("every zone", map[string]int{kb0: 255, kb1: 255, mic: 255})
+	if !usesDimming(&c.Data.Base) {
+		t.Error("the layer does not dim")
+	}
+	for id, col := range renderZonesAsleep(&ConfigData{Base: c.Data.Base}, devs, 1000, true, nil, nil) {
+		if col != (Color{}) {
+			t.Errorf("zone %s lit %v while the monitors sleep", id, col)
+		}
+	}
+
+	// "50% Brightness" on both keys (two effects), the mic left alone.
+	put(`{"configurationUpdateData":{"dimFactorOnMonitorSleep":160},` + sel(kb0, kb1) + `}`)
+	check("two keys", map[string]int{kb0: 160, kb1: 160, mic: 255})
+
+	// A new effect on every zone still replaces the overrides.
+	put(`{"configurationUpdateData":{"defaultColor":{"red":9,"green":9,"blue":9},"metadata":{"effectType":"SINGLE_COLOR"},"dimFactorOnMonitorSleep":0},` + sel(kb0, kb1, mic) + `}`)
+	if n := len(c.Data.Base.DeviceConfigs); n != 0 || renderZones(&c.Data, devs, 0)[kb0] != (Color{9, 9, 9}) {
+		t.Errorf("new effect everywhere: %d overrides left", n)
 	}
 }

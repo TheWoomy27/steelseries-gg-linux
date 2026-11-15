@@ -29,12 +29,20 @@ if (process.env.XDG_SESSION_TYPE === 'wayland' && !process.env.GG_LINUX_X11) {
 
 // The client reports its errors to SteelSeries' Sentry project. Errors
 // from a client running on gg-linux are not theirs to look into, so the
-// reports stay here.
-function keepErrorReports(ses) {
-  ses.webRequest.onBeforeRequest({ urls: ['*://*.sentry.io/*'] }, (details, done) => done({ cancel: true }));
+// reports stay here. The pages' own scripts load from file: URLs; those a
+// patch changes (see patches.js) load from the patched copy. A session has
+// one such listener, so both go through it.
+function filterRequests(ses) {
+  const appDir = app.getAppPath();
+  const dir = path.join(app.getPath('userData'), 'gg-linux');
+  ses.webRequest.onBeforeRequest({ urls: ['*://*.sentry.io/*', 'file:///*'] }, (details, done) => {
+    if (!details.url.startsWith('file:')) return done({ cancel: true });
+    const patched = patches.patchedRenderURL(appDir, details.url, dir);
+    done(patched ? { redirectURL: patched } : {});
+  });
 }
-app.on('session-created', keepErrorReports);
-app.whenReady().then(() => keepErrorReports(session.defaultSession));
+app.on('session-created', filterRequests);
+app.whenReady().then(() => filterRequests(session.defaultSession));
 
 // The Windows client asks `tasklist` whether SteelSeriesGG.exe and
 // SteelSeriesEngine.exe are running. On Linux both live inside ggd.

@@ -120,6 +120,13 @@ func (u *update) apply(s *Single) {
 	s.normalize()
 }
 
+// setsEffect reports whether an update sets the effect, rather than only
+// what goes with it (the dimming while the monitors sleep).
+func (u *update) setsEffect() bool {
+	return u.DefaultColor != nil || u.Foundations != nil || u.Graphics != nil || u.Metadata != nil ||
+		u.UniqueEffectType != nil || len(u.UniqueEffectData) > 0 || len(u.TriggerConfigs) > 0
+}
+
 func copySingle(s *Single) Single {
 	b, _ := json.Marshal(s)
 	var out Single
@@ -174,28 +181,60 @@ func (s *Service) applyUpdates(c *configRow, mode string, ups []update, sel []st
 			continue
 		}
 		if len(zones) == len(all) && u.PerKeySelectionLimitation == nil {
-			// Every zone: the global configuration, with no overrides left.
-			g.DeviceTypeConfigs, g.PerKeyConfigs, g.DeviceConfigs = []DeviceTypeConfig{}, []PerKeyConfig{}, []DeviceConfig{}
+			if u.setsEffect() {
+				// Every zone: the global configuration, with no overrides left.
+				g.DeviceTypeConfigs, g.PerKeyConfigs, g.DeviceConfigs = []DeviceTypeConfig{}, []PerKeyConfig{}, []DeviceConfig{}
+				u.apply(&g.GlobalConfig)
+				continue
+			}
+			// Every zone, effects kept (the dimming alone): each
+			// configuration in the layer takes it.
 			u.apply(&g.GlobalConfig)
+			for i := range g.DeviceTypeConfigs {
+				u.apply(&g.DeviceTypeConfigs[i].Config)
+			}
+			for i := range g.PerKeyConfigs {
+				u.apply(&g.PerKeyConfigs[i].Config)
+			}
+			for i := range g.DeviceConfigs {
+				u.apply(&g.DeviceConfigs[i].Config)
+			}
 			continue
 		}
 		for _, d := range devs {
+			// The picked zones, by the configuration each shows now: what
+			// the update leaves alone stays each zone's own.
 			var picked []string
-			var from *Single
+			var froms []*Single
+			byFrom := map[*Single][]string{}
 			for i := range d.Zones {
 				z := &d.Zones[i]
 				if zones[z.UniqueID] {
 					picked = append(picked, z.UniqueID)
-					if from == nil {
-						from = g.resolve(d, z)
+					from := g.resolve(d, z)
+					if _, ok := byFrom[from]; !ok {
+						froms = append(froms, from)
 					}
+					byFrom[from] = append(byFrom[from], z.UniqueID)
 				}
 			}
 			if len(picked) == 0 {
 				continue
 			}
-			cfg := copySingle(from)
-			u.apply(&cfg)
+			var made []DeviceConfig
+			seen := map[string]int{}
+			for _, from := range froms {
+				cfg := copySingle(from)
+				u.apply(&cfg)
+				// Zones that end up alike share one override.
+				key, _ := json.Marshal(cfg)
+				if i, ok := seen[string(key)]; ok {
+					made[i].ZoneIDs = append(made[i].ZoneIDs, byFrom[from]...)
+					continue
+				}
+				seen[string(key)] = len(made)
+				made = append(made, DeviceConfig{DeviceID: d.ID, ZoneIDs: byFrom[from], Config: cfg})
+			}
 			// The zones leave the overrides they were in.
 			kept := g.DeviceConfigs[:0]
 			for _, dc := range g.DeviceConfigs {
@@ -204,7 +243,7 @@ func (s *Service) applyUpdates(c *configRow, mode string, ups []update, sel []st
 					kept = append(kept, dc)
 				}
 			}
-			g.DeviceConfigs = append(kept, DeviceConfig{DeviceID: d.ID, ZoneIDs: picked, Config: cfg})
+			g.DeviceConfigs = append(kept, made...)
 		}
 	}
 	g.normalize()

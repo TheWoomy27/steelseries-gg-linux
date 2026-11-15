@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { fileURLToPath, pathToFileURL } = require('url');
 
 // Source patches for the client's webpack bundles, applied in memory at load
 // time. Each patch is optional: if the pattern is not found (for example
@@ -54,6 +55,33 @@ const PATCHES = [
     find: /platform:\(\)=>process\.platform/,
     replace: 'platform:()=>"linux"===process.platform?"win32":process.platform',
   },
+  {
+    file: 'render',
+    marker: 'No zones selected, skipping deployment',
+    name: 'monitor sleep dimming for zones with different effects',
+    // Prism's "When Monitor Sleeps" is saved with an effect: the deploy
+    // saga sends it only when the selected zones share one effect and
+    // otherwise drops the change ("No zones selected, skipping
+    // deployment"), so a configuration with several effects (all zones
+    // selected, as the page opens) never keeps it. In that case send the
+    // dimming alone for the selected zones; ggd keeps each zone's effect.
+    find: /([\w$]+)\.length>0&&1===([\w$]+)\.length\?(yield\(0,[\w$]+\.[\w$]+\)\(\(0,[\w$]+\.[\w$]+\)\(\{effectType:\2\[0\],layer:([\w$]+),[^}]*?zoneIds:\1,[^}]*?dimFactorOnMonitorSleep:([\w$]+)\}\)\)):(console\.info\("No zones selected, skipping deployment"\))/,
+    replace: (src, all, zones, effects, deploy, layer, dim, skip) => {
+      // The function that PUTs a configuration update on a layer.
+      const send = /function ([\w$]+)\(e\)\{switch\(e\.layer\)\{case [\w$]+\.[\w$]+\.Active:return\(0,[\w$]+\.[\w$]+\)\(e\.configData,e\.selectionData\)/.exec(src);
+      if (!send) {
+        console.warn('[gg-linux] patch "monitor sleep dimming" found no update function; continuing unpatched');
+        return all;
+      }
+      return (
+        `${zones}.length>0&&1===${effects}.length?${deploy}:` +
+        `${zones}.length>0&&${effects}.length>1&&("ACTIVE"===${layer}||"IDLE"===${layer})?` +
+        `yield ${send[1]}({layer:${layer},configData:{dimFactorOnMonitorSleep:${dim}},` +
+        `selectionData:{deviceSelection:{mode:"crossDevice"},zoneSelection:{zoneIds:${zones},mode:"ids"}}})` +
+        `.catch((x)=>console.error("[gg-linux] monitor sleep dimming not saved",x)):${skip}`
+      );
+    },
+  },
 ];
 
 // Code added to the client's preload, which runs in each of its pages.
@@ -72,12 +100,16 @@ window.addEventListener('click', (e) => {
 
 function apply(src, file) {
   for (const p of PATCHES) {
-    if (p.file !== file) continue;
+    // Render patches find their webpack chunk, whose name changes between
+    // GG builds, by a marker in it.
+    if (p.file === 'render' ? !file.startsWith('render/') || !src.includes(p.marker) : p.file !== file) continue;
     if (!p.find.test(src)) {
       console.warn(`[gg-linux] patch "${p.name}" did not match ${file}; continuing unpatched`);
       continue;
     }
-    src = src.replace(p.find, p.replace);
+    p.find.lastIndex = 0;
+    const whole = src;
+    src = src.replace(p.find, typeof p.replace === 'function' ? (...m) => p.replace(whole, ...m) : p.replace);
   }
   if (file === 'main/preload.js') src += PRELOAD_ADDITIONS;
   return src;
@@ -97,4 +129,37 @@ function patchedFile(appDir, file, dir) {
   return written.get(file);
 }
 
-module.exports = { apply, patchedFile, PATCHES };
+// patchedRenderURL returns the file: URL of a patched copy of the render
+// script at url (written into dir), or null when no patch changes it. The
+// pages load their scripts from file: URLs, which are sent there instead.
+const renderCopies = new Map();
+function patchedRenderURL(appDir, url, dir) {
+  if (!url.startsWith('file:')) return null;
+  let file;
+  try {
+    file = path.relative(appDir, fileURLToPath(url));
+  } catch {
+    return null;
+  }
+  if (!file.startsWith('render' + path.sep) || !file.endsWith('.js') || file.includes('..')) return null;
+  file = file.split(path.sep).join('/');
+  if (!renderCopies.has(file)) {
+    let copy = null;
+    try {
+      const src = fs.readFileSync(path.join(appDir, file), 'utf8');
+      const out = apply(src, file);
+      if (out !== src) {
+        copy = path.join(dir, 'patched-' + file.replace(/\//g, '-'));
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(copy, out);
+        copy = pathToFileURL(copy).href;
+      }
+    } catch (err) {
+      console.warn(`[gg-linux] could not patch ${file}:`, err.message);
+    }
+    renderCopies.set(file, copy);
+  }
+  return renderCopies.get(file);
+}
+
+module.exports = { apply, patchedFile, patchedRenderURL, PATCHES };
