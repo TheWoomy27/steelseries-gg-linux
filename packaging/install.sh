@@ -29,8 +29,17 @@ else
 fi
 
 mkdir -p "$datahome/applications" "$confighome/systemd/user"
-sed "s|@BINDIR@|$bindir|g" packaging/steelseries-gg.desktop > "$datahome/applications/steelseries-gg.desktop"
-sed "s|@BINDIR@|$bindir|g" packaging/steelseries-ggd.service > "$confighome/systemd/user/steelseries-ggd.service"
+# Installed from a distrobox container, the launcher and ggd need the
+# container's packages, but the desktop entry and the service are run by
+# the host: they enter the container first, as distrobox-export's
+# entries do.
+run=""
+if [ -n "${CONTAINER_ID:-}" ] && [ -n "${DISTROBOX_ENTER_PATH:-}" ]; then
+    run="$DISTROBOX_ENTER_PATH -n $CONTAINER_ID -- "
+fi
+fill() { sed -e "s|@BINDIR@|$bindir|g" -e "s|^\(Exec\(Start\)\{0,1\}=\)|\1$run|" "$1"; }
+fill packaging/steelseries-gg.desktop > "$datahome/applications/steelseries-gg.desktop"
+fill packaging/steelseries-ggd.service > "$confighome/systemd/user/steelseries-ggd.service"
 systemctl --user daemon-reload 2>/dev/null || true
 
 if [ -f "$data/client/app/package.json" ]; then

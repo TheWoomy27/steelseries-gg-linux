@@ -27,6 +27,7 @@ jobs:
           for test_shell in dash bash; do
             GG_TEST_SHELL="$test_shell" python3 packaging/dependencies_test.py
           done
+          python3 packaging/install_test.py
       - name: Test the drag fix
         run: python3 packaging/dragfix_test.py
       - name: Test the client's Linux patches
