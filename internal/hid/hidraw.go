@@ -358,15 +358,18 @@ func (d *Device) await(ch chan []byte, timeout time.Duration) ([]byte, error) {
 	if timeout <= 0 {
 		timeout = 500 * time.Millisecond
 	}
-	select {
-	case r := <-ch:
-		return r, nil
-	case <-time.After(timeout):
+	// However the wait ends, later reports are events again.
+	defer func() {
 		d.mu.Lock()
 		if d.waiting == ch {
 			d.waiting = nil
 		}
 		d.mu.Unlock()
+	}()
+	select {
+	case r := <-ch:
+		return r, nil
+	case <-time.After(timeout):
 		return nil, ErrTimeout
 	case <-d.closed:
 		return nil, os.ErrClosed

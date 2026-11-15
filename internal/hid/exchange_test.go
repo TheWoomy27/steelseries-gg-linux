@@ -39,3 +39,37 @@ func TestExchangeReplyBeforeSendReturns(t *testing.T) {
 		t.Errorf("reply % x", r)
 	}
 }
+
+// After ReadInput has its report, the reports that follow are events
+// again: none is kept for a reader that has gone.
+func TestReadInputReleasesLaterReports(t *testing.T) {
+	fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_SEQPACKET|syscall.SOCK_NONBLOCK, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dev := os.NewFile(uintptr(fds[1]), "device")
+	defer dev.Close()
+	d := &Device{Info: Info{Desc: Descriptor{Numbered: true}}, f: os.NewFile(uintptr(fds[0]), "hidraw"),
+		closed: make(chan struct{}), opened: time.Now().Add(-time.Second)}
+	go d.readLoop()
+	defer d.Close()
+	events := make(chan []byte, 4)
+	d.OnEvent(func(r []byte) { events <- r })
+
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		dev.Write([]byte{0x01, 0xaa})
+	}()
+	if r, err := d.ReadInput(time.Second); err != nil || len(r) < 2 || r[1] != 0xaa {
+		t.Fatalf("ReadInput: % x, %v", r, err)
+	}
+	dev.Write([]byte{0x01, 0xbb})
+	select {
+	case r := <-events:
+		if r[1] != 0xbb {
+			t.Errorf("event % x", r)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("the report after ReadInput's never reached OnEvent")
+	}
+}
