@@ -84,13 +84,16 @@ cc() { cat >/dev/null; [ "${CC_FAIL:-0}" = 0 ]; }
 
     def test_package_names(self):
         expected = {
-            "apt": ["golang-go", "build-essential", "libreadline-dev", "p7zip-full", "pipewire-bin", "pulseaudio-utils", "ffmpeg"],
-            "dnf": ["golang", "gcc", "readline-devel", "7zip", "pipewire-utils", "pulseaudio-utils", "ffmpeg-free"],
-            "pacman": ["go", "gcc", "readline", "7zip", "pipewire", "libpulse", "ffmpeg"],
+            "apt": ["golang-go", "build-essential", "libreadline-dev", "p7zip-full", "pipewire-bin", "pulseaudio-utils", "ffmpeg",
+                    "gstreamer1.0-tools", "gstreamer1.0-plugins-base", "gstreamer1.0-pipewire"],
+            "dnf": ["golang", "gcc", "readline-devel", "7zip", "pipewire-utils", "pulseaudio-utils", "ffmpeg-free",
+                    "gstreamer1", "gstreamer1-plugins-base", "pipewire-gstreamer"],
+            "pacman": ["go", "gcc", "readline", "7zip", "pipewire", "libpulse", "ffmpeg",
+                       "gstreamer", "gst-plugins-base", "gst-plugin-pipewire"],
         }
         expected["rpm-ostree"] = expected["dnf"]
         for manager, names in expected.items():
-            r = self.run_shell(f'manager={manager}; for key in go cc readline 7zip pipewire pactl ffmpeg; do package_for "$key"; done')
+            r = self.run_shell(f'manager={manager}; for key in go cc readline 7zip pipewire pactl ffmpeg gstreamer gst-base gst-pipewire; do package_for "$key"; done')
             self.assert_success(r)
             self.assertEqual(r.stdout.splitlines(), names)
 

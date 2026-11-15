@@ -205,7 +205,7 @@ linkable library: `libreadline-dev` on APT, `readline-devel` on Fedora, or
   The package is not in every distribution's default repositories.
 - Wayland capture can use `wf-recorder` on supported wlroots compositors.
   X11 capture can use FFmpeg. These alternatives have different desktop support.
-- Prism's Reflect effect on KDE Plasma needs `gst-launch-1.0` and GStreamer's
+- Prism's Reflect effect on KDE Plasma, GNOME and other non-wlroots desktops needs `gst-launch-1.0` and GStreamer's
   PipeWire plugin: `pipewire-gstreamer` on Fedora, `gstreamer1.0-pipewire` on
   Debian/Ubuntu, `gst-plugin-pipewire` on Arch. Install it where ggd runs (in the
   distrobox, if you use one). Wlroots compositors need nothing extra.

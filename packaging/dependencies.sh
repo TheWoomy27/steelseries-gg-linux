@@ -35,6 +35,9 @@ package_for() {
         apt:7zip) apt_package p7zip-full 7zip ;;
         apt:pipewire) echo pipewire-bin ;;
         apt:pactl) echo pulseaudio-utils ;;
+        apt:gstreamer) echo gstreamer1.0-tools ;;
+        apt:gst-base) echo gstreamer1.0-plugins-base ;;
+        apt:gst-pipewire) echo gstreamer1.0-pipewire ;;
         dnf:go|rpm-ostree:go) echo golang ;;
         dnf:cc|rpm-ostree:cc) echo gcc ;;
         dnf:readline|rpm-ostree:readline) echo readline-devel ;;
@@ -42,8 +45,13 @@ package_for() {
         dnf:pipewire|rpm-ostree:pipewire) echo pipewire-utils ;;
         dnf:pactl|rpm-ostree:pactl) echo pulseaudio-utils ;;
         dnf:ffmpeg|rpm-ostree:ffmpeg) echo ffmpeg-free ;;
+        dnf:gstreamer|rpm-ostree:gstreamer) echo gstreamer1 ;;
+        dnf:gst-base|rpm-ostree:gst-base) echo gstreamer1-plugins-base ;;
+        dnf:gst-pipewire|rpm-ostree:gst-pipewire) echo pipewire-gstreamer ;;
         pacman:cc) echo gcc ;;
         pacman:pactl) echo libpulse ;;
+        pacman:gst-base) echo gst-plugins-base ;;
+        pacman:gst-pipewire) echo gst-plugin-pipewire ;;
         *) echo "$1" ;;
     esac
 }
@@ -200,18 +208,27 @@ setup_dependencies() {
 
     optional=""
     uses=""
-    want() {
-        have "$1" && return 0
-        pkg=$(package_for "$2")
+    recommend() {
+        pkg=$(package_for "$1")
         optional="$optional $pkg"
-        uses="$uses$(printf '\n      %-20s %s' "$pkg" "$3")"
+        uses="$uses$(printf '\n      %-20s %s' "$pkg" "$2")"
     }
+    want() { have "$1" || recommend "$2" "$3"; }
     want pw-dump pipewire "Sonar, Prism audio effects"
     want wpctl wireplumber "Sonar device volumes"
     want pactl pactl "Moments audio"
     want ffmpeg ffmpeg "Moments clips"
     want wl-copy wl-clipboard "text macros, sharing clips"
     want xdg-open xdg-utils "opening links and files"
+    # Prism's Reflect reads the screen through GStreamer except on wlroots
+    # compositors (Hyprland, sway), which copy it themselves.
+    if [ -z "${HYPRLAND_INSTANCE_SIGNATURE:-}" ] && [ -z "${SWAYSOCK:-}" ]; then
+        want gst-launch-1.0 gstreamer "Prism's Reflect (screen capture)"
+        if ! have gst-inspect-1.0 || ! gst-inspect-1.0 --exists pipewiresrc videoscale videoconvert 2>/dev/null; then
+            recommend gst-base "Prism's Reflect"
+            recommend gst-pipewire "Prism's Reflect"
+        fi
+    fi
     if [ -n "$optional" ]; then
         note "Recommended packages:$uses"
         manual_packages $optional
