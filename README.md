@@ -212,8 +212,8 @@ configuration's lighting back.
   (Hyprland, sway and other wlroots compositors) at most 10 times a second,
   when the screen changes. It costs the compositor some CPU (Hyprland:
   about 10% of a core on a 2560x1440 monitor).
-- On Hyprland, lighting dims or goes off while the monitors sleep, as each
-  configuration's "When Monitor Sleeps" says.
+- On Hyprland and KDE Plasma (Wayland), lighting dims or goes off while
+  every monitor sleeps, as each configuration's "When Monitor Sleeps" says.
 - ImageSync plays a GIF on per-key keyboards.
 
 GG's previews of the Audio Visualizer and Reflect use made-up sound and a
