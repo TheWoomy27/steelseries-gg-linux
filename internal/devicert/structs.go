@@ -248,7 +248,10 @@ func (f *Field) decodeOne(rt *Runtime, data []byte, off int) (any, int, error) {
 		}
 		switch f.Type {
 		case "float32":
-			return float64(math.Float32frombits(uint32(u))), n, nil
+			// The Engine reads a float as its bits; specs turn them into
+			// the number with (bits->float), as the Sensei and Aerox
+			// mouse rotation reads do.
+			return int64(uint32(u)), n, nil
 		case "int8":
 			return int64(int8(u)), n, nil
 		case "int16":

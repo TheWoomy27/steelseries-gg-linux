@@ -201,6 +201,63 @@ func TestMouseRotationToDriver(t *testing.T) {
 	}
 }
 
+type replyTransport struct{ reply []byte }
+
+func (r replyTransport) Chunk(_ Target, _, _ int, _ []byte, read bool, _, _ time.Duration) ([]byte, error) {
+	if read {
+		return r.reply, nil
+	}
+	return nil, nil
+}
+
+func (replyTransport) Connected(Target) bool { return true }
+
+// A float read from a device comes as its bits, which specs turn into the
+// number: the Sensei Pro syncs its rotation angle so, and an angle read
+// as a number came back as 45 bits (6.3e-44 degrees) and was written.
+func TestReadFloatAsBits(t *testing.T) {
+	const spec = `
+(device 0x10380004
+    (usage-page 0xffc0)
+    (usage 0x0001)
+    (struct read_engine_settings
+        (unaligned)
+        (outgoing
+            (field report_id uint8 (constant 0x00))
+            (field command uint8 (constant 0x97)))
+        (incoming
+            (field report_id uint8 (constant 0x00))
+            (field command uint8 (constant 0x97))
+            (field command_status uint8)
+            (field mouse_rotation_enabled uint8 (values 0 1))
+            (field mouse_rotation_angle float32 (range -180 180))))
+    (api read_engine_settings
+        (api-read HID (chunk HIDIO 65 payload)))
+    (define (rotation)
+        (bits->float (mouse_rotation_angle: (read_engine_settings: (json->lisp (read-from-device 0x10380004 "{\"read_engine_settings\": {}}")))))))
+`
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "test.lsp"), []byte(spec), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// 45.0 is 0x42340000.
+	rt, err := New(dir, dir, replyTransport{[]byte{0, 0x97, 0, 1, 0x00, 0x00, 0x34, 0x42}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := rt.Device(0x10380004)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := d.Call("rotation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !golisp.FloatP(v) || golisp.FloatValue(v) != 45 {
+		t.Errorf("rotation read back as %s, want 45.0", golisp.String(v))
+	}
+}
+
 type timedTransport struct {
 	at   []time.Time
 	sent [][]byte
