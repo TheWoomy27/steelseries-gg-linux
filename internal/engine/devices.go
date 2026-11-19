@@ -239,8 +239,13 @@ func (e *Engine) initDevice(l *liveDevice, d *devicert.Decl) {
 // reconnected (earbuds taken out of their case), as the Windows Engine
 // runs its connect steps again then.
 func (e *Engine) deviceReady(l *liveDevice, d *devicert.Decl) {
+	managed := e.managed(l.dbID)
 	if s, err := d.SyncSettings(); err == nil {
-		e.applyDeviceSettings(l, d, s)
+		if managed {
+			e.noteDeviceSettings(l, d, s)
+		} else {
+			e.applyDeviceSettings(l, d, s)
+		}
 	}
 	if d.HasFunction("read_headset_status") {
 		d.Call("read_headset_status")
@@ -263,7 +268,7 @@ func (e *Engine) deviceReady(l *liveDevice, d *devicert.Decl) {
 	// deployed from GG, reconnecting the device re-applies it, as the
 	// Windows Engine does. A device GG has never configured keeps its
 	// onboard settings untouched.
-	if cfg, err := e.activeConfig(l.dbID); err == nil && e.managed(l.dbID) {
+	if cfg, err := e.activeConfig(l.dbID); err == nil && managed {
 		if err := e.deploy(l, cfg.settingsMap(), false, false); err != nil {
 			slog.Warn("deploy on connect", "device", l.cat.Name, "err", err)
 		}

@@ -108,6 +108,37 @@ func (e *Engine) mergeIntoConfig(cfg *config, d *devicert.Decl, changed map[stri
 	e.emit("configSettingsChanged", map[string]any{"id": cfg.ID, "settings": string(out)})
 }
 
+// noteDeviceSettings takes settings a device reports when it connects
+// while GG manages it: GG's configuration stays as it is (a Sensei Pro
+// back from a battery swap reports its default 800 DPI), the values
+// only say what is on the device, so the deploy that follows writes what
+// differs. Settings the configuration doesn't have are kept in it.
+func (e *Engine) noteDeviceSettings(l *liveDevice, d *devicert.Decl, raw string) {
+	reported := parseSettings(raw)
+	if len(reported) == 0 {
+		return
+	}
+	cfg, err := e.activeConfig(l.dbID)
+	if err != nil {
+		return
+	}
+	settings := cfg.settingsMap()
+	missing := map[string]any{}
+	for api, v := range reported {
+		if _, ok := settings[api]; !ok {
+			missing[api] = v
+			continue
+		}
+		if m, ok := v.(map[string]any); ok {
+			cached, _ := mergeSetting(d.CachedValues(api), m).(map[string]any)
+			d.SetCachedValues(api, cached)
+		}
+	}
+	if len(missing) > 0 {
+		e.mergeIntoConfig(cfg, d, missing)
+	}
+}
+
 func parseSettings(raw string) map[string]any {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || raw == "{}" {

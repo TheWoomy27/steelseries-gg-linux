@@ -2,8 +2,10 @@ package engine
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"ggl/internal/devicert"
 	"ggl/internal/events"
@@ -63,5 +65,70 @@ func TestMergeSettingByPosition(t *testing.T) {
 	got, _ := json.Marshal(mergeSetting(cur, map[string]any{"index": 0.0, "mouse_sensitivity": []any{map[string]any{"x_dpi": 500.0}}}))
 	if want := `{"index":0,"mouse_sensitivity":[{"x_dpi":500},{"x_dpi":800}]}`; string(got) != want {
 		t.Errorf("merged %s, want %s", got, want)
+	}
+}
+
+const syncSpec = `
+(device 0x10380005
+    (usage-page 0xffc0)
+    (usage 0x0001)
+    (struct dpi
+        (unaligned)
+        (field report_id uint8 (constant 0x00))
+        (field command uint8 (constant 0x34))
+        (field x_dpi uint16))
+    (api dpi
+        (api-write HID (chunk HIDIO 65 payload)))
+    (define (sync_settings_function) "{\"dpi\": {\"x_dpi\": 800}, \"lan_mode\": {\"enabled\": 1}}"))
+`
+
+type sentTransport struct{ sent [][]byte }
+
+func (s *sentTransport) Chunk(_ devicert.Target, _, _ int, data []byte, _ bool, _, _ time.Duration) ([]byte, error) {
+	s.sent = append(s.sent, append([]byte{}, data...))
+	return nil, nil
+}
+
+func (s *sentTransport) Connected(devicert.Target) bool { return true }
+
+// A Sensei Pro back from a battery swap reports its default 800 DPI. GG
+// manages it, so its configuration (500) stays and is written again,
+// where it used to take the 800 and write nothing.
+func TestReconnectKeepsManagedConfig(t *testing.T) {
+	e := syncEngine(t, `{"dpi":{"x_dpi":500}}`)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "test.lsp"), []byte(syncSpec), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tr := &sentTransport{}
+	rt, err := devicert.New(dir, dir, tr, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := rt.Device(0x10380005)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := &liveDevice{dbID: 1, cat: &catalogDevice{Name: "mouse", FullName: "Mouse"}, physical: map[uint32]*devicert.Decl{d.ID: d}}
+	e.markManaged(1)
+	d.SetCachedValues("dpi", map[string]any{"x_dpi": 500}) // written before the swap
+
+	s, err := d.SyncSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.noteDeviceSettings(l, d, s)
+	settings := e.settingsOf(t, "c1")
+	if dpi := settings["dpi"].(map[string]any)["x_dpi"]; dpi != 500.0 {
+		t.Errorf("configuration has %v DPI, want 500", dpi)
+	}
+	if _, ok := settings["lan_mode"]; !ok {
+		t.Error("a setting the configuration didn't have was not kept")
+	}
+	if err := e.deploy(l, settings, false, false); err != nil {
+		t.Fatal(err)
+	}
+	if len(tr.sent) != 1 || tr.sent[0][2] != 0xf4 || tr.sent[0][3] != 0x01 {
+		t.Errorf("wrote %x, want the 500 DPI (f401)", tr.sent)
 	}
 }
