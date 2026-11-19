@@ -111,6 +111,13 @@ func (e *Engine) handleDeviceEvent(ev deviceEvent) {
 			}
 		}
 	}
+	if s, ok := ev.data["syncDataToConfig"].(map[string]any); ok {
+		// A setting changed on the device itself (an Apex keyboard's
+		// rapid trigger or actuation from its own menu).
+		id, _ := s["configId"].(string)
+		settings, _ := s["settings"].(map[string]any)
+		e.syncToConfig(l, id, settings)
+	}
 	if _, ok := ev.data["updateCachedProperties"]; ok {
 		// A keyboard's region changed (write_region_id): its key layout
 		// for Prism and GameSense is read again.
