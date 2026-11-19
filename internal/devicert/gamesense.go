@@ -117,3 +117,23 @@ func (d *Decl) ScreenReset(zone string) error {
 	_, err := d.rt.eval(golisp.ArrayToList([]*golisp.Data{fn, golisp.Intern(zone + ":")}), d.Env)
 	return err
 }
+
+// MonitoringWrite shows the Sensei/Rival Pro Display's picture (128x40,
+// packed by rows as ScreenWrite takes it) with the spec's
+// write-shihan-monitoring-data, which the 2024 Apex Pro keyboards and
+// the Arctis Nova Pro bases define.
+func (d *Decl) MonitoringWrite(packed []byte) error {
+	items := make([]*golisp.Data, len(packed))
+	for i, b := range packed {
+		items[i] = golisp.IntegerWithValue(int64(b))
+	}
+	_, err := d.Call("write-shihan-monitoring-data", golisp.ArrayToList(items))
+	return err
+}
+
+// MonitoringReset gives the screen back after the Sensei/Rival Pro
+// Display.
+func (d *Decl) MonitoringReset() error {
+	_, err := d.Call("reset-shihan-monitoring-screen")
+	return err
+}

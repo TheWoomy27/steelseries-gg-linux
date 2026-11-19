@@ -111,6 +111,9 @@ func (e *Engine) handleDeviceEvent(ev deviceEvent) {
 			}
 		}
 	}
+	if m, ok := ev.data["shihanMonitoringEngineApp"].(map[string]any); ok {
+		e.proDisplayReadings(m)
+	}
 	if s, ok := ev.data["syncDataToConfig"].(map[string]any); ok {
 		// A setting changed on the device itself (an Apex keyboard's
 		// rapid trigger or actuation from its own menu).

@@ -296,3 +296,45 @@ func (c *Canvas) Image() *image.Gray {
 	}
 	return img
 }
+
+// Stat is a reading on a stats screen: a label, the value and a unit
+// after it ("Mouse 85%", "1k Hz").
+type Stat struct {
+	Label, Value, Unit string
+}
+
+func (s Stat) text() string {
+	if s.Label == "" {
+		return s.Value + s.Unit
+	}
+	return s.Label + " " + s.Value + s.Unit
+}
+
+// Stats lays out rows of two readings, one at each side, in the biggest
+// type that fits every row (the Sensei/Rival Pro Display).
+func Stats(w, h int, rows [][2]Stat) *Canvas {
+	c := New(w, h)
+	if len(rows) == 0 {
+		return c
+	}
+	rowH := h / len(rows)
+	size := 8
+	for s := min(rowH-4, 16); s > 8; s-- {
+		f, fits := face(s, false), true
+		for _, r := range rows {
+			fits = fits && textWidth(f, r[0].text())+textWidth(f, r[1].text())+8 <= w-4
+		}
+		if fits {
+			size = s
+			break
+		}
+	}
+	f := face(size, false)
+	for i, r := range rows {
+		mid := i*rowH + rowH/2
+		c.text(2, mid, r[0].text(), f)
+		right := r[1].text()
+		c.text(w-2-textWidth(f, right), mid, right, f)
+	}
+	return c
+}

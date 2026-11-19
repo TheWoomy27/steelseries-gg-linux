@@ -73,6 +73,7 @@ func (e *Engine) runOLED(ctx context.Context) {
 		last    []byte
 		written time.Time
 		showing bool
+		pro     bool // showing the Sensei/Rival Pro Display
 		failed  time.Time
 	}
 	states := map[int]*devState{}
@@ -83,13 +84,18 @@ func (e *Engine) runOLED(ctx context.Context) {
 		case <-ctx.Done():
 			for _, d := range e.oledDevices() {
 				if st := states[d.id]; st != nil && st.showing {
-					screenReset(d)
+					if st.pro {
+						d.decl.MonitoringReset()
+					} else {
+						screenReset(d)
+					}
 				}
 			}
 			return
 		case <-tick.C:
 		}
 		devs := e.oledDevices()
+		pro := e.proDisplayPicture()
 		showing := map[int]string{}
 		for _, d := range devs {
 			st := states[d.id]
@@ -99,6 +105,30 @@ func (e *Engine) runOLED(ctx context.Context) {
 			}
 			if time.Since(st.failed) < 5*time.Second {
 				continue
+			}
+			if pro != nil && d.decl.HasFunction("write-shihan-monitoring-data") {
+				showing[d.id] = proDisplayName
+				if bytes.Equal(pro, st.last) && time.Since(st.written) < 10*time.Second {
+					continue
+				}
+				if err := d.decl.MonitoringWrite(pro); err != nil {
+					slog.Warn("oled: write", "device", d.name, "err", err)
+					st.failed = time.Now()
+					continue
+				}
+				if !st.pro {
+					slog.Info("oled: showing", "device", d.name, "game", proDisplayName)
+				}
+				st.last, st.written, st.showing, st.pro = pro, time.Now(), true, true
+				continue
+			}
+			if st.pro {
+				// Turned off, or the mouse went: GameSense or the device's
+				// own picture has the screen again.
+				if err := d.decl.MonitoringReset(); err != nil {
+					slog.Debug("oled: reset after the Pro Display", "device", d.name, "err", err)
+				}
+				st.pro, st.showing, st.last = false, false, nil
 			}
 			sc := e.gameSense.state.Screen(&d.gs)
 			if sc == nil {
@@ -176,6 +206,9 @@ func (e *Engine) OLEDActive(deviceID int) (bool, string) {
 	e.oled.mu.Unlock()
 	if game == "" {
 		return false, ""
+	}
+	if game == proDisplayName {
+		return true, game
 	}
 	for _, g := range e.gameSense.state.Games() {
 		if g.Name == game && g.DisplayName != "" {

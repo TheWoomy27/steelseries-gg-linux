@@ -257,6 +257,9 @@ func (e *Engine) deviceReady(l *liveDevice, d *devicert.Decl) {
 		l.mu.Unlock()
 		e.db.Exec(`UPDATE physical_devices SET firmware_version = ? WHERE product_id = ?`, fw, d.ID)
 	}
+	if proDisplayMouse(d) {
+		e.proDisplayMouseReady(l, d)
+	}
 	l.mu.Lock()
 	l.ready = true
 	l.mu.Unlock()

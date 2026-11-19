@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
-	"sync"
 
 	"ggl/internal/httpx"
 )
@@ -109,40 +108,8 @@ func (e *Engine) macroRoutes() {
 	})
 }
 
-// featureState stores simple on/off feature flags the UI toggles (Prism
-// Sync, Image Sync, ...).
-type featureState struct {
-	mu sync.Mutex
-	m  map[string]any
-}
-
-func (f *featureState) get(k string, def any) any {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if v, ok := f.m[k]; ok {
-		return v
-	}
-	return def
-}
-
-func (f *featureState) set(k string, v any) {
-	f.mu.Lock()
-	f.m[k] = v
-	f.mu.Unlock()
-}
-
 func (e *Engine) miscRoutes() {
 	s := e.srv
-	feats := &featureState{m: map[string]any{}}
-	toggle := func(path, key, event string, on bool) {
-		s.Handle("POST "+path, func(w http.ResponseWriter, r *http.Request) {
-			feats.set(key, on)
-			if event != "" {
-				e.emit(event, map[string]any{"enabled": on})
-			}
-			httpx.OK(w)
-		})
-	}
 	for _, p := range []string{"/prismSync/updateBaseEffect", "/prismSync/updateTriggeredEffect", "/prismSync/updateIdleTimeAndEffect",
 		"/prismSync/updatePrismSyncDevices", "/prismSync/leftHanded/enable", "/prismSync/leftHanded/disable",
 		"/prismSync/inactiveMode/enable", "/prismSync/inactiveMode/disable", "/prismSync/updateTriggerModes",
@@ -159,10 +126,16 @@ func (e *Engine) miscRoutes() {
 	})
 
 	s.Handle("GET /senseiRivalProDisplay", func(w http.ResponseWriter, r *http.Request) {
-		httpx.JSON(w, map[string]any{"enabled": feats.get("shihan", false)})
+		httpx.JSON(w, map[string]any{"shihan_monitoring": e.proDisplayStatus()})
 	})
-	toggle("/senseiRivalProDisplay/enable", "shihan", "", true)
-	toggle("/senseiRivalProDisplay/disable", "shihan", "", false)
+	s.Handle("POST /senseiRivalProDisplay/enable", func(w http.ResponseWriter, r *http.Request) {
+		e.setProDisplay(true)
+		httpx.OK(w)
+	})
+	s.Handle("POST /senseiRivalProDisplay/disable", func(w http.ResponseWriter, r *http.Request) {
+		e.setProDisplay(false)
+		httpx.OK(w)
+	})
 
 	// OS mouse settings (Windows pointer speed / acceleration). Linux
 	// desktops own these; report neutral values.

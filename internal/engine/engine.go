@@ -44,6 +44,7 @@ type Engine struct {
 	gameSense  *gameSense
 	imageSync  *imageSync
 	oled       oledState
+	proDisplay proDisplayState
 	rotation   rotationState
 	userID     int
 	appSet     map[string]any
