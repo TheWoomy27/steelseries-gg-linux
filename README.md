@@ -19,7 +19,7 @@ installer from steelseries.com and unpacks it on your machine.
   runs Sonar's audio on PipeWire, and puts GG's icon in the tray.
 - `internal/devicert` runs SteelSeries' device specifications (the Engine's
   device DSL) on [golisp](https://github.com/steelseries/golisp), the
-  interpreter the Engine embeds. All 606 device declarations in GG 123's
+  interpreter the Engine embeds. All 606 device declarations in GG 124's
   489 specification files load.
 - `client/linux` is the Electron bootstrap: it starts `ggd`, stands in for
   the client's handful of Windows-only calls, and loads the original

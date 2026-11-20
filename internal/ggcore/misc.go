@@ -30,6 +30,13 @@ func importedVersion() string {
 
 func (c *Core) miscRoutes() {
 	s := c.srv
+	// Windows' "Enhance pointer precision" (mouse acceleration), which GG
+	// 124's Sensei/Rival Pro guide offers to turn off. Linux desktops have
+	// their own acceleration settings; report it off.
+	s.Handle("GET /v1/system/mouse/enhancePointerPrecision", func(w http.ResponseWriter, r *http.Request) {
+		httpx.JSON(w, map[string]any{"enhancePointerPrecision": map[string]any{"enabled": false}})
+	})
+	s.Handle("PUT /v1/system/mouse/enhancePointerPrecision", func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })
 	s.Handle("GET /startup/allowed", func(w http.ResponseWriter, r *http.Request) {
 		httpx.JSON(w, map[string]any{"allowed": true})
 	})

@@ -290,6 +290,7 @@ func (e *Engine) routes() {
 	e.miscRoutes()
 	e.appRoutes()
 	e.eqPresetRoutes()
+	e.eqLimitRoutes()
 }
 
 func appVersion() string { return "123.0.0" }

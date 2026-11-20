@@ -214,6 +214,14 @@ func (e *Engine) miscRoutes() {
 		}})
 	})
 	s.Handle("POST /v1/device/settings", func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })
+	// GG 124's first-connect guides (only the Sensei/Rival Pro has one),
+	// answered as the Windows Engine does with them switched off: the
+	// guide is about Windows (its pointer precision setting) and ends by
+	// saving the mouse's settings to its memory.
+	s.Handle("GET /device/onboarding", func(w http.ResponseWriter, r *http.Request) {
+		httpx.JSON(w, map[string]any{"deviceOnboarding": map[string]bool{}})
+	})
+	s.Handle("POST /device/onboarding", func(w http.ResponseWriter, r *http.Request) { httpx.OK(w) })
 
 	// "Audio lite": the Windows Engine's built-in audio EQ for headsets
 	// when Sonar is off. On Linux, audio processing is Sonar (PipeWire).
