@@ -31,20 +31,38 @@ type oledApp struct {
 var oledApps = []oledApp{
 	{"NOW_PLAYING", "NOW_PLAYING", "Now Playing", -1, true,
 		`{"device-type":"screened","zone":"one","mode":"screen","datas":[{"lines":[{"has-text":true,"context-frame-key":"title","bold":true},{"has-text":true,"context-frame-key":"artist"}]}]}`},
-	{"STATS", "STATS", "System Stats", -2, false,
-		`{"device-type":"screened","zone":"one","mode":"screen","datas":[{"lines":[{"has-text":true,"context-frame-key":"cpu","prefix":"CPU ","suffix":"%","bold":true},{"has-text":true,"context-frame-key":"ram","prefix":"RAM ","suffix":"%","bold":true}]}]}`},
+	{"STATS", "STATS", "System Stats", -2, false, ""}, // statsHandler
 	{"CLOCK", "CLOCK", "Clock", -2, false,
 		`{"device-type":"screened","zone":"one","mode":"screen","datas":[{"lines":[{"has-text":true,"context-frame-key":"time","bold":true},{"has-text":true,"context-frame-key":"date"}]}]}`},
 }
 
-func (e *Engine) registerOLEDApps() {
+// statsHandler shows CPU use and temperature, the graphics card's when
+// there is one to read, and memory use, in regular type (bold makes the
+// degree sign a blot at three lines a screen).
+func statsHandler(gpu bool) string {
+	line := func(key, prefix string) string {
+		return `{"has-text":true,"context-frame-key":"` + key + `","prefix":"` + prefix + `"}`
+	}
+	lines := []string{line("cpu", "CPU ")}
+	if gpu {
+		lines = append(lines, line("gpu", "GPU "))
+	}
+	lines = append(lines, line("ram", "RAM "))
+	return `{"device-type":"screened","zone":"one","mode":"screen","datas":[{"lines":[` + strings.Join(lines, ",") + `]}]}`
+}
+
+func (e *Engine) registerOLEDApps(gpu bool) {
 	gs := e.gameSense.state
 	var defaulted bool
 	e.state.Get("oledAppsDefaulted", &defaulted)
 	for _, a := range oledApps {
 		gs.Metadata(a.game, a.display, "gg-linux", 0)
 		gs.SetPriority(a.game, a.priority)
-		gs.Bind(a.game, a.event, gamesense.EventInfo{Max: 100, ValueOptional: true}, []json.RawMessage{json.RawMessage(a.handler)})
+		handler := a.handler
+		if a.game == "STATS" {
+			handler = statsHandler(gpu)
+		}
+		gs.Bind(a.game, a.event, gamesense.EventInfo{Max: 100, ValueOptional: true}, []json.RawMessage{json.RawMessage(handler)})
 		if !defaulted && !a.on {
 			e.gameSense.setEnabled(a.game, false)
 		}
@@ -60,7 +78,8 @@ func (e *Engine) sendOLEDApp(game string, frame map[string]string) {
 
 // runOLEDApps feeds the apps while a device with a screen is connected.
 func (e *Engine) runOLEDApps(ctx context.Context) {
-	e.registerOLEDApps()
+	var gpu gpuMeter
+	e.registerOLEDApps(gpu.available())
 	gs := e.gameSense.state
 	np := &nowPlaying{}
 	defer np.close()
@@ -94,7 +113,12 @@ func (e *Engine) runOLEDApps(ctx context.Context) {
 		}
 		if gs.Enabled("STATS") && time.Since(lastStats) >= 2*time.Second {
 			lastStats = time.Now()
-			e.sendOLEDApp("STATS", map[string]string{"cpu": strconv.Itoa(cpu.percent()), "ram": strconv.Itoa(memPercent())})
+			t, hasT := cpuTemp()
+			frame := map[string]string{"cpu": statLine(cpu.percent(), t, hasT), "ram": strconv.Itoa(memPercent()) + "%"}
+			if gpu.available() {
+				frame["gpu"] = statLine(gpu.read())
+			}
+			e.sendOLEDApp("STATS", frame)
 		}
 		if gs.Enabled("CLOCK") {
 			now := time.Now()
