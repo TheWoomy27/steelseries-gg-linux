@@ -86,7 +86,11 @@ func (c *Core) miscRoutes() {
 	// The Windows handlers wrap each result in a key named after the
 	// operation.
 	s.Handle("GET /known_games", func(w http.ResponseWriter, r *http.Request) {
-		httpx.JSON(w, map[string]any{"known_games": []any{}})
+		var games any = []any{}
+		if gs := c.gameSenseUI(); gs != nil {
+			games = gs.KnownGames()
+		}
+		httpx.JSON(w, map[string]any{"known_games": games})
 	})
 	// GameSense: the games lighting devices and their handlers.
 	s.Handle("GET /game_integration_games", func(w http.ResponseWriter, r *http.Request) {
@@ -186,6 +190,7 @@ func isExecutable(path string) bool {
 // GameSenseUI is what GG's GameSense pages need from the Engine.
 type GameSenseUI interface {
 	GameIntegrationGames() any
+	KnownGames() any
 	GameIntegrationDevices() any
 	ToggleGame(game string, on bool)
 	SetUserHandlers(body []byte) error

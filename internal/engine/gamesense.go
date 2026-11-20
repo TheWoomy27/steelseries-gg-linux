@@ -5,6 +5,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -14,6 +16,7 @@ import (
 	"ggl/internal/devicert"
 	"ggl/internal/gamesense"
 	"ggl/internal/httpx"
+	"ggl/internal/paths"
 )
 
 // gameSense serves the public GameSense SDK endpoints games call. Their
@@ -312,6 +315,37 @@ func (e *Engine) GameIntegrationGames() any {
 		}
 		out = append(out, map[string]any{"id": i + 1, "game": g.Name, "game_display_name": name, "developer": g.Developer,
 			"launchable_engine_app_id": "", "local_app_logo_path": "", "local_app_tile_path": "", "game_enabled": g.Enabled})
+	}
+	return out
+}
+
+// KnownGames is GET /known_games: the games with GameSense of their own
+// that GG's Apps page lists with a link to them, as GG's database has
+// them. Games whose GameSense the Engine itself drives (its bundled
+// scripts for CS2, Dota 2, the Minecraft mod) don't run on Linux and are
+// left out, as are games that have registered (listed with the others).
+func (e *Engine) KnownGames() any {
+	out := []map[string]any{}
+	rows, err := e.db.Query(`SELECT game_name, coalesce(game_display_name,''), coalesce(website_uri,''), coalesce(developer,''), coalesce(game_id,'')
+		FROM known_engine_apps WHERE available = 1`)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	registered := map[string]bool{}
+	for _, g := range e.gameSense.state.Games() {
+		registered[g.Name] = true
+	}
+	for rows.Next() {
+		var name, display, site, dev, id string
+		if rows.Scan(&name, &display, &site, &dev, &id) != nil || registered[name] {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(paths.EngineRoot(), "game-integration", "games", strings.ToLower(name)+".lsp")); err == nil {
+			continue
+		}
+		out = append(out, map[string]any{"id": id, "game": name, "game_display_name": display, "website_uri": site,
+			"developer": dev, "available": true, "local_app_logo_path": "", "local_app_tile_path": ""})
 	}
 	return out
 }
