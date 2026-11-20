@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+<title>Set up SteelSeries GG</title>
+<style>
+  :root { color-scheme: dark; --bg: #17191c; --panel: #202328; --line: #2e3238; --text: #e6e8eb; --dim: #9aa1a9; --accent: #4d8dff; --ok: #4cc38a; --bad: #ef6b6b; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 28px 32px; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, sans-serif; }
+  h1 { margin: 0 0 6px; font-size: 20px; font-weight: 600; }
+  p { margin: 0 0 10px; color: var(--dim); }
+  section { margin-top: 18px; padding: 16px 18px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+  section.off { opacity: .45; pointer-events: none; }
+  h2 { margin: 0 0 6px; font-size: 15px; font-weight: 600; }
+  button { font: inherit; padding: 7px 14px; border-radius: 6px; border: 1px solid var(--line); background: #2a2e34; color: var(--text); cursor: pointer; }
+  button:hover:not(:disabled) { background: #333840; }
+  button:disabled { opacity: .5; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  progress { width: 100%; height: 6px; margin-top: 12px; accent-color: var(--accent); }
+  .status { min-height: 21px; margin-top: 6px; color: var(--dim); overflow-wrap: anywhere; }
+  .status.ok { color: var(--ok); }
+  .status.bad { color: var(--bad); }
+  label { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
+  code { display: block; margin-top: 8px; padding: 8px 10px; background: var(--bg); border-radius: 6px; font: 12px/1.4 ui-monospace, monospace; color: var(--text); user-select: all; overflow-wrap: anywhere; }
+  footer { margin-top: 20px; display: flex; justify-content: flex-end; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+  <h1>Set up SteelSeries GG</h1>
+  <p>gg-linux runs SteelSeries GG's own client, taken from GG's Windows installer. Nothing from SteelSeries comes with gg-linux, so it needs that installer once.</p>
+
+  <section id="installer">
+    <h2>GG's installer</h2>
+    <p id="installer-text">Download it from steelseries.com (about 430 MB), or use one you have. gg-linux unpacks the parts it needs into your home folder.</p>
+    <div class="row">
+      <button id="download" class="primary">Download from steelseries.com</button>
+      <button id="choose">Use an installer I have…</button>
+    </div>
+    <progress id="bar" max="1" value="0" hidden></progress>
+    <div id="installer-status" class="status"></div>
+  </section>
+
+  <section id="devices" class="off">
+    <h2>Device access</h2>
+    <p>A udev rule lets your user talk to SteelSeries devices, play macros and turn mouse motion. Installing it asks for your password.</p>
+    <div class="row">
+      <button id="allow">Allow device access</button>
+      <button id="manual">Show the command instead</button>
+    </div>
+    <code id="command" hidden></code>
+    <div id="devices-status" class="status"></div>
+    <p id="input-note" hidden>Recording macros in GG reads your keyboard and mouse, which needs the input group (it can read all keyboards). To allow it, run <code id="input-command"></code>then log in again.</p>
+  </section>
+
+  <section id="options" class="off">
+    <h2>Options</h2>
+    <label><input type="checkbox" id="service" checked> Start GG's services (ggd) when I log in</label>
+    <label><input type="checkbox" id="menu" checked> Add SteelSeries GG to the application menu</label>
+  </section>
+
+  <footer>
+    <button id="open" class="primary" disabled>Open SteelSeries GG</button>
+  </footer>
+  <div id="finish-status" class="status bad"></div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

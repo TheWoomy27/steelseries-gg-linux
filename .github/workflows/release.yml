@@ -1,0 +1,81 @@
+name: Release
+
+# Builds the AppImage. A published release gets it (and its .zsync, for
+# AppImageUpdate) as assets; a manual run keeps it as a workflow artifact.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  ELECTRON_VERSION: 39.8.10
+  SEVENZIP_URL: https://github.com/ip7z/7zip/releases/download/26.06/7z2606-linux-x64.tar.xz
+  SEVENZIP_SHA256: 2b539cf067b2ad48e1baa5093dbaa8818b73542d1222a0ffde9dc5f2922ea62e
+  APPIMAGETOOL_URL: https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
+  APPIMAGETOOL_SHA256: ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
+  RUNTIME_URL: https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64
+  RUNTIME_SHA256: 2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d
+
+jobs:
+  appimage:
+    # The oldest Ubuntu here, so that the AppImage runs on newer systems.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install golisp's build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libreadline-dev
+      - name: Get Electron, 7-Zip and appimagetool
+        run: |
+          tools=$RUNNER_TEMP/tools
+          mkdir -p "$tools/7zip"
+          # npm checks Electron's download against the checksums it ships.
+          npm install --prefix "$tools/electron" --no-save "electron@$ELECTRON_VERSION"
+          fetch() {
+              curl -fsSL -o "$1" "$2"
+              echo "$3  $1" | sha256sum -c -
+          }
+          fetch "$tools/7z.tar.xz" "$SEVENZIP_URL" "$SEVENZIP_SHA256"
+          tar -xJf "$tools/7z.tar.xz" -C "$tools/7zip"
+          fetch "$tools/appimagetool" "$APPIMAGETOOL_URL" "$APPIMAGETOOL_SHA256"
+          fetch "$tools/runtime" "$RUNTIME_URL" "$RUNTIME_SHA256"
+          chmod +x "$tools/appimagetool"
+          echo "TOOLS=$tools" >> "$GITHUB_ENV"
+      - name: Build the AppImage
+        env:
+          # appimagetool is an AppImage itself; runners have no FUSE.
+          APPIMAGE_EXTRACT_AND_RUN: 1
+        run: |
+          ELECTRON_DIR=$TOOLS/electron/node_modules/electron/dist \
+          SEVENZIP=$TOOLS/7zip/7zzs \
+          APPIMAGETOOL=$TOOLS/appimagetool \
+          RUNTIME=$TOOLS/runtime \
+          UPDATE_INFO='gh-releases-zsync|${{ github.repository_owner }}|${{ github.event.repository.name }}|latest|SteelSeries_GG-*-x86_64.AppImage.zsync' \
+          packaging/appimage.sh dist
+          ls -la dist
+      - name: Check it runs
+        run: |
+          out=$(./dist/SteelSeries_GG-*-x86_64.AppImage --appimage-extract-and-run ggctl 2>&1 || true)
+          echo "$out" | grep -q '^usage: ggctl'
+          ./dist/SteelSeries_GG-*-x86_64.AppImage --appimage-extract-and-run --help | grep -q 'AppRun of the gg-linux AppImage'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: appimage
+          path: |
+            dist/*.AppImage
+            dist/*.zsync
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" dist/*.AppImage dist/*.zsync --clobber

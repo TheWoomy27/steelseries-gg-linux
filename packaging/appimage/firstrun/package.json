@@ -1,0 +1,6 @@
+{
+  "name": "gg-linux-setup",
+  "productName": "Set up SteelSeries GG",
+  "private": true,
+  "main": "main.js"
+}

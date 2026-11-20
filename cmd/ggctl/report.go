@@ -50,7 +50,17 @@ func reportCommand(args []string) error {
 		fmt.Fprintf(&b, "imported GG: none (%v)\n", err)
 	}
 	b.WriteString(command("ggd service: ", "systemctl", "--user", "is-active", "steelseries-ggd"))
-	b.WriteString(command("electron: ", "sh", "-c", "for e in electron39 electron38 electron37 electron; do command -v $e >/dev/null && { echo \"$e $($e --version 2>/dev/null)\"; break; }; done"))
+	if appDir := os.Getenv("APPDIR"); os.Getenv("APPIMAGE") != "" && appDir != "" {
+		// Run from the AppImage, with its own Electron.
+		read := func(p string) string {
+			v, _ := os.ReadFile(filepath.Join(appDir, p))
+			return strings.TrimSpace(string(v))
+		}
+		fmt.Fprintf(&b, "appimage: %s (%s)\n", os.Getenv("APPIMAGE"), read("usr/share/steelseries-gg/version"))
+		fmt.Fprintf(&b, "electron: bundled %s\n", read("usr/lib/steelseries-gg/electron/version"))
+	} else {
+		b.WriteString(command("electron: ", "sh", "-c", "for e in electron39 electron38 electron37 electron; do command -v $e >/dev/null && { echo \"$e $($e --version 2>/dev/null)\"; break; }; done"))
+	}
 
 	section("Device access")
 	if rules, err := os.ReadFile("/etc/udev/rules.d/70-steelseries-gg.rules"); err == nil {

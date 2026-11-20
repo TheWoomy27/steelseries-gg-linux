@@ -1,5 +1,9 @@
 # Dependency setup
 
+This page is for installing from source. The AppImage needs none of the
+build dependencies or Electron; its optional features use the same
+packages as below (see [Optional features](#optional-features)).
+
 Run `./setup.sh` as your normal user. It offers to install missing packages
 with APT on Ubuntu, Linux Mint and Debian, DNF on Fedora, rpm-ostree on
 Bazzite, or pacman on Arch and its derivatives. It asks before it uses sudo.

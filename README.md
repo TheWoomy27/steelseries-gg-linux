@@ -8,9 +8,9 @@ on Linux Electron and replaces the Windows services behind it.
 ![GG's Engine page on GNOME, listing an Apex 7, Aerox 5 Wireless, Alias and Arctis Nova 7](docs/screenshot-gnome.webp)
 
 gg-linux is an unofficial project, not affiliated with or endorsed by
-SteelSeries. Nothing from SteelSeries' installer is in this repository: the
-setup script downloads the installer from steelseries.com and unpacks it on
-your machine.
+SteelSeries. Nothing from SteelSeries' installer is in this repository or
+the AppImage: the setup script or the AppImage's setup window downloads the
+installer from steelseries.com and unpacks it on your machine.
 
 ## How it works
 
@@ -29,6 +29,34 @@ your machine.
   device specifications from that installer's `SteelSeriesEngine.exe`.
 
 ## Install
+
+### AppImage
+
+Download `SteelSeries_GG-<version>-x86_64.AppImage` from the
+[latest release](https://github.com/TheWoomy27/steelseries-gg-linux/releases/latest),
+make it executable and run it:
+
+    chmod +x SteelSeries_GG-*-x86_64.AppImage
+    ./SteelSeries_GG-*-x86_64.AppImage
+
+The first run opens a setup window. It downloads SteelSeries GG's installer
+from steelseries.com (about 430 MB) or takes one you have, and imports it.
+It also installs the udev rule for device access (it asks for your
+password), and can start ggd at login and add GG to the application menu.
+Run the AppImage with `--setup` to import a newer GG later.
+
+The AppImage carries gg-linux, Electron 39 and 7-Zip. It needs glibc 2.34
+or newer: Ubuntu 22.04, Debian 12, Fedora 35 and later. The recommended
+packages below still come from your system. Where user namespaces are
+restricted (Ubuntu 24.04's AppArmor rule), it runs Electron without its
+sandbox. From a terminal it also runs gg-linux's programs, for example
+`./SteelSeries_GG-*-x86_64.AppImage ggctl report`.
+
+If you move the AppImage, run it once from its new place: it updates the
+login service and the menu entry. To update gg-linux, replace the AppImage
+with a newer one and run it; AppImageUpdate can also update it in place.
+
+### From source
 
     git clone https://github.com/TheWoomy27/steelseries-gg-linux.git
     cd steelseries-gg-linux
@@ -74,7 +102,7 @@ Recommended:
 Recording macros reads every keyboard and mouse through `/dev/input`, so
 your user has to be in the `input` group for it.
 
-### By hand
+#### By hand
 
     go build -o bin/ ./cmd/...
     bin/gg-setup SteelSeriesGG<version>Setup.exe      # import into ~/.local/share/steelseries-gg
@@ -90,10 +118,19 @@ running.
 
 ### Updating
 
-Pull and run `./setup.sh` again. It downloads a newer GG when there is one,
+From source, pull and run `./setup.sh` again. It downloads a newer GG when there is one,
 imports only when the installer changed, rebuilds and restarts ggd.
 
 ### Uninstalling
+
+For the AppImage, delete it, then:
+
+    systemctl --user disable --now steelseries-ggd.service
+    rm ~/.config/systemd/user/steelseries-ggd.service ~/.local/share/applications/steelseries-gg.desktop
+    rm ~/.local/share/icons/hicolor/*/apps/steelseries-gg.*
+    sudo rm /etc/udev/rules.d/70-steelseries-gg.rules
+
+For an installation from source:
 
     systemctl --user disable --now steelseries-ggd.service
     rm ~/.local/bin/{ggd,ggctl,gg-setup,steelseries-gg}

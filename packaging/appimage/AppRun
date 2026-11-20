@@ -1,0 +1,175 @@
+#!/bin/sh
+# AppRun of the gg-linux AppImage.
+#
+#   SteelSeries_GG.AppImage                 opens GG (sets it up on first run)
+#   SteelSeries_GG.AppImage --setup         imports a GG installer again
+#   SteelSeries_GG.AppImage ggd|ggctl|gg-setup [ARGS]
+#                                           runs that program
+#   SteelSeries_GG.AppImage --integrate [service] [menu]
+#                                           starts ggd at login / adds GG
+#                                           to the application menu
+#
+# Each run of an AppImage has its own mount, gone when the run ends. So
+# ggd runs as a run of its own (the user service's, or one the client
+# starts), never from the client's run, and GG opened from ggd's tray is
+# a run of its own too.
+set -eu
+
+here=$(dirname "$(readlink -f "$0")")
+bin=$here/usr/bin
+lib=$here/usr/lib/steelseries-gg
+share=$here/usr/share/steelseries-gg
+data=${GG_LINUX_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/steelseries-gg}
+datahome=${XDG_DATA_HOME:-$HOME/.local/share}
+confighome=${XDG_CONFIG_HOME:-$HOME/.config}
+# How to run this AppImage again ($APPIMAGE is set by its runtime; an
+# extracted AppDir runs this script).
+self=${APPIMAGE:-$here/AppRun}
+marker="# Written by the gg-linux AppImage."
+
+electron=$lib/electron/electron
+# The bundled 7-Zip unpacks GG's installer.
+PATH=$lib/bin:$PATH
+export PATH
+
+# electron_args: Chromium sandboxes its renderers with user namespaces
+# here (an AppImage can't carry its setuid helper). Where they are off
+# (Ubuntu 24.04's AppArmor rule, some hardened kernels), it runs without.
+electron_args() {
+    if command -v unshare >/dev/null 2>&1 && ! unshare -Ur true 2>/dev/null; then
+        echo "--no-sandbox"
+    fi
+}
+
+# systemd_quote and desktop_quote quote a path for a unit's ExecStart and
+# a desktop entry's Exec.
+systemd_quote() { printf '"%s"' "$(printf %s "$1" | sed -e 's/[\\"]/\\&/g' -e 's/%/%%/g' -e 's/\$/$$/g')"; }
+desktop_quote() { printf '"%s"' "$(printf %s "$1" | sed -e 's/[\\"`$]/\\&/g' -e 's/\\/\\\\/g' -e 's/%/%%/g')"; }
+
+write_service() {
+    unit=$confighome/systemd/user/steelseries-ggd.service
+    mkdir -p "$(dirname "$unit")"
+    cat >"$unit" <<EOF
+$marker
+[Unit]
+Description=SteelSeries GG services (ggd)
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=$(systemd_quote "$self") ggd
+# The tray's Exit stops ggd on purpose.
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target
+EOF
+    systemctl --user daemon-reload 2>/dev/null || true
+}
+
+write_menu() {
+    entry=$datahome/applications/steelseries-gg.desktop
+    mkdir -p "$(dirname "$entry")"
+    cat >"$entry" <<EOF
+[Desktop Entry]
+$marker
+Type=Application
+Name=SteelSeries GG
+Comment=Configure SteelSeries devices and Sonar audio
+Exec=$(desktop_quote "$self")
+Icon=steelseries-gg
+Terminal=false
+Categories=Settings;HardwareSettings;
+Keywords=SteelSeries;Sonar;Engine;
+EOF
+    # GG's own icon, from your installer, else gg-linux's.
+    found=0
+    for size in 16 24 32 48 256; do
+        icon=$data/gg/tray/ok-$size.png
+        if [ -f "$icon" ]; then
+            mkdir -p "$datahome/icons/hicolor/${size}x$size/apps"
+            cp "$icon" "$datahome/icons/hicolor/${size}x$size/apps/steelseries-gg.png"
+            found=1
+        fi
+    done
+    if [ "$found" = 0 ]; then
+        mkdir -p "$datahome/icons/hicolor/scalable/apps"
+        cp "$here/steelseries-gg.svg" "$datahome/icons/hicolor/scalable/apps/steelseries-gg.svg"
+    fi
+    command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -q -t "$datahome/icons/hicolor" 2>/dev/null || true
+    command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database -q "$datahome/applications" 2>/dev/null || true
+}
+
+integrate() {
+    for what in "$@"; do
+        case "$what" in
+        service)
+            write_service
+            systemctl --user enable steelseries-ggd.service >/dev/null 2>&1 || true ;;
+        menu) write_menu ;;
+        *) echo "--integrate takes service and menu" >&2; exit 2 ;;
+        esac
+    done
+}
+
+# follow_move rewrites the service and menu entry this AppImage wrote
+# when it has moved since; files written by install.sh are left alone.
+follow_move() {
+    [ -n "${APPIMAGE:-}" ] || return 0
+    unit=$confighome/systemd/user/steelseries-ggd.service
+    if grep -qxF "$marker" "$unit" 2>/dev/null && ! grep -qF "ExecStart=$(systemd_quote "$self") ggd" "$unit"; then
+        write_service
+    fi
+    entry=$datahome/applications/steelseries-gg.desktop
+    if grep -qxF "$marker" "$entry" 2>/dev/null && ! grep -qxF "Exec=$(desktop_quote "$self")" "$entry"; then
+        write_menu
+    fi
+}
+
+setup() {
+    # shellcheck disable=SC2046
+    "$electron" "$share/firstrun" $(electron_args) "$@"
+}
+
+open_gg() {
+    if [ ! -f "$data/client/app/package.json" ]; then
+        setup || exit $?
+        [ -f "$data/client/app/package.json" ] || exit 0
+    fi
+    # The client's Linux side comes with this AppImage: put it in place,
+    # as install.sh does after an update.
+    "$bin/gg-setup" --bootstrap || true
+    follow_move
+    # The client starts ggd when it isn't running: as a run of its own.
+    mkdir -p "$data/state"
+    wrapper=$data/state/appimage-ggd
+    printf '#!/bin/sh\nexec %s ggd "$@"\n' "$(printf "'%s'" "$(printf %s "$self" | sed "s/'/'\\\\''/g")")" >"$wrapper.new"
+    chmod 755 "$wrapper.new"
+    mv "$wrapper.new" "$wrapper"
+    export GG_LINUX_GGD="$wrapper" GG_LINUX_ELECTRON="$electron"
+    # shellcheck disable=SC2046
+    exec "$bin/steelseries-gg" $(electron_args) "$@"
+}
+
+case "${1:-}" in
+ggd)
+    shift
+    # GG opened from the tray is a run of its own.
+    export GG_LINUX_CLIENT="$self"
+    exec "$bin/ggd" "$@" ;;
+ggctl|gg-setup)
+    cmd=$1
+    shift
+    exec "$bin/$cmd" "$@" ;;
+--setup)
+    shift
+    setup "$@" ;;
+--integrate)
+    shift
+    integrate "$@" ;;
+--help|-h)
+    sed -n '2,/^set -eu/{ /^set -eu/d; p; }' "$0" | sed 's/^# \{0,1\}//' ;;
+*)
+    open_gg "$@" ;;
+esac
