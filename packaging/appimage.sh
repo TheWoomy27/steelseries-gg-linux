@@ -78,5 +78,11 @@ set --
 [ -n "${RUNTIME:-}" ] && set -- "$@" --runtime-file "$RUNTIME"
 [ -n "${UPDATE_INFO:-}" ] && set -- "$@" --updateinformation "$UPDATE_INFO"
 rm -f "$file" "$file.zsync"
+# appimagetool writes the .zsync into the folder it runs in.
+cd "$out"
 ARCH=x86_64 VERSION=$version "$APPIMAGETOOL" "$@" "$appdir" "$file"
+if [ -n "${UPDATE_INFO:-}" ] && [ ! -f "$file.zsync" ]; then
+    echo "appimagetool made no $file.zsync" >&2
+    exit 1
+fi
 echo "Built $file"
