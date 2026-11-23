@@ -1,0 +1,90 @@
+name: GG update check
+
+# Once a day, sees which SteelSeries GG steelseries.com serves. A version
+# not checked before is downloaded, checked against what gg-linux handles
+# (tools/gg-check/check.sh) and reported in an issue titled "GG <version>
+# check". The installer and everything unpacked from it stay on the
+# runner: none of it goes into artifacts, caches or the repository.
+on:
+  schedule:
+    - cron: '23 7 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Check the current version even if it was checked before
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Find the current GG
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.force || false }}
+        run: |
+          url=$(curl -fsSIL -o /dev/null -w '%{url_effective}' https://steelseries.com/gg/downloads/gg/latest/windows)
+          name=$(basename "$url")
+          case "$name" in
+              SteelSeriesGG*Setup.exe) ;;
+              *) echo "unexpected download $url"; exit 1 ;;
+          esac
+          version=${name#SteelSeriesGG}
+          version=${version%Setup.exe}
+          title="GG $version check"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "title=$title" >> "$GITHUB_OUTPUT"
+          # Checked before: gg-linux records it in known/, or an issue has it.
+          issues=$(gh issue list --state all --search "\"$title\" in:title" --json title --jq "[.[] | select(.title == \"$title\")] | length")
+          if [ "$FORCE" != true ] && { [ "$version" = "$(cat tools/gg-check/known/version)" ] || [ "$issues" != 0 ]; }; then
+              echo "GG $version was checked before."
+              echo "check=false" >> "$GITHUB_OUTPUT"
+          else
+              echo "GG $version is new: checking it."
+              echo "check=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-go@v5
+        if: steps.latest.outputs.check == 'true'
+        with:
+          go-version-file: go.mod
+      - name: Install golisp's build dependencies and 7-Zip
+        if: steps.latest.outputs.check == 'true'
+        run: sudo apt-get update && sudo apt-get install -y libreadline-dev p7zip-full
+      - name: Download and check
+        id: check
+        if: steps.latest.outputs.check == 'true'
+        env:
+          URL: ${{ steps.latest.outputs.url }}
+          NAME: ${{ steps.latest.outputs.name }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/gg"
+          curl -fsSL -o "$RUNNER_TEMP/gg/$NAME" "$URL"
+          [ "$(head -c 2 "$RUNNER_TEMP/gg/$NAME")" = MZ ] || { echo "$NAME is not a Windows installer"; exit 1; }
+          status=0
+          tools/gg-check/check.sh "$RUNNER_TEMP/gg/$NAME" "$RUNNER_TEMP/gg-check" || status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          {
+              cat "$RUNNER_TEMP/gg-check/report.md"
+              echo
+              echo "From [this run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)."
+          } | head -c 60000 > "$RUNNER_TEMP/issue.md"
+          cat "$RUNNER_TEMP/issue.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Report in an issue
+        if: steps.latest.outputs.check == 'true' && steps.check.outputs.status != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: ${{ steps.latest.outputs.title }}
+        run: gh issue create --title "$TITLE" --body-file "$RUNNER_TEMP/issue.md"
+      - name: Fail when the check did
+        if: steps.check.outputs.status != '' && steps.check.outputs.status != '0'
+        run: |
+          echo "GG needs a look: see the issue."
+          exit 1

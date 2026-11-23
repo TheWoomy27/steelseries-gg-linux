@@ -411,6 +411,14 @@ To run a source checkout without installing, point the launcher at it:
 Engine and PrismSync APIs were mapped; `tools/sonar-oracle` checks Sonar's
 config upgrades against Sonar's own code.
 
+`tools/gg-check/check.sh INSTALLER OUTDIR` checks a SteelSeries GG installer
+against what gg-linux handles: the import, the client patches, the device
+specifications and database migrations, and the API calls and routes new
+since the version in `tools/gg-check/known`. A daily workflow
+([gg-update.yml](.github/workflows/gg-update.yml)) runs it on each new GG
+that steelseries.com serves and opens an issue with the report. Once ggd
+handles a new version, `check.sh --update` records it in `known`.
+
 ## License
 
 gg-linux is licensed under the GNU General Public License v3.0; see

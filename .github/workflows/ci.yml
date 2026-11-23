@@ -34,5 +34,7 @@ jobs:
         run: python3 packaging/dragfix_test.py
       - name: Test the client's Linux patches
         run: node --test client/linux/windows_test.js client/linux/patches_test.js
-      - name: Check the AppImage's setup window
-        run: for f in packaging/appimage/firstrun/*.js; do node --check "$f"; done
+      - name: Check the AppImage's setup window and the GG update check
+        run: |
+          for f in packaging/appimage/firstrun/*.js tools/gg-check/*.js; do node --check "$f"; done
+          sh -n tools/gg-check/check.sh
