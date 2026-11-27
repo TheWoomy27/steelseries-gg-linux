@@ -19,7 +19,9 @@ import (
 // apps (see oledapps.go), show text and pictures on them. The Engine
 // draws each screen (package oled) and writes it with the device's
 // gamesense_oled_display command; when nothing is showing it hands the
-// screen back to the device's own picture (disable_gamesense_oled).
+// screen back to the device's own picture (disable_gamesense_oled), or to
+// the configuration's picture when it has one (a screen sequence, see
+// sequencer.go).
 
 type oledState struct {
 	mu      sync.Mutex
@@ -107,6 +109,7 @@ func (e *Engine) runOLED(ctx context.Context) {
 				continue
 			}
 			if pro != nil && d.decl.HasFunction("write-shihan-monitoring-data") {
+				e.sequencer.PauseScreen(d.decl.ID)
 				showing[d.id] = proDisplayName
 				if bytes.Equal(pro, st.last) && time.Since(st.written) < 10*time.Second {
 					continue
@@ -129,6 +132,9 @@ func (e *Engine) runOLED(ctx context.Context) {
 					slog.Debug("oled: reset after the Pro Display", "device", d.name, "err", err)
 				}
 				st.pro, st.showing, st.last = false, false, nil
+				if e.gameSense.state.Screen(&d.gs) == nil {
+					e.sequencer.ResumeScreen(d.decl.ID)
+				}
 			}
 			sc := e.gameSense.state.Screen(&d.gs)
 			if sc == nil {
@@ -138,11 +144,18 @@ func (e *Engine) runOLED(ctx context.Context) {
 						st.failed = time.Now()
 						continue
 					}
-					slog.Info("oled: device's own picture", "device", d.name)
+					// The configuration's picture (a screen sequence) has
+					// the screen again, or else the device's own.
+					if e.sequencer.ResumeScreen(d.decl.ID) {
+						slog.Info("oled: configuration's picture", "device", d.name)
+					} else {
+						slog.Info("oled: device's own picture", "device", d.name)
+					}
 					st.showing, st.last = false, nil
 				}
 				continue
 			}
+			e.sequencer.PauseScreen(d.decl.ID)
 			showing[d.id] = sc.Game
 			pic := sc.Image
 			if pic == nil {

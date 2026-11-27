@@ -421,7 +421,19 @@ func (d *Decl) newIOState() *ioState {
 }
 
 // WriteApi serializes values through the api's struct and sends it.
-func (d *Decl) WriteApi(name string, values any) error {
+func (d *Decl) WriteApi(name string, values any) error { return d.writeApi(name, "", values) }
+
+// WriteSequenceFrame writes one frame of a sequence through the
+// sequence's template struct, as the Windows sequencer does. A spec can
+// declare a struct with the sequence api's own name too (the legacy Apex
+// keyboards' oled_display stores the picture with 0x65, which their
+// firmware ignores, while the macho_oled_display template draws it with
+// 0x61); the frames go through the template.
+func (d *Decl) WriteSequenceFrame(seq *Sequence, values any) error {
+	return d.writeApi(seq.Api, seq.Template, values)
+}
+
+func (d *Decl) writeApi(name, structOverride string, values any) error {
 	api := d.Api(name)
 	if api == nil {
 		return fmt.Errorf("device %s has no api %q", d.Name, name)
@@ -441,6 +453,9 @@ func (d *Decl) WriteApi(name string, values any) error {
 	structName := name
 	if api.derivedFrom != "" && d.Struct(name) == nil {
 		structName = api.derivedFrom
+	}
+	if structOverride != "" && d.Struct(structOverride) != nil {
+		structName = structOverride
 	}
 	var payload []byte
 	var payloadObj *golisp.Data
